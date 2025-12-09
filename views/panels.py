@@ -73,8 +73,11 @@ class SpectralViewPanel(QWidget):
         self.setup_plot_style()
         
         for i, roi_data in enumerate(roi_data_list):
-            color = color_list[i % len(color_list)]
-            color_normalized = tuple(c / 255.0 for c in color)
+            if i < len(color_list):
+                color = color_list[i]
+                color_normalized = tuple(c / 255.0 for c in color)
+            else:
+                color_normalized = (1.0, 1.0, 1.0)
             
             wavelengths = roi_data['wavelengths']
             spectrum = roi_data['spectrum']
@@ -104,8 +107,11 @@ class SpectralViewPanel(QWidget):
             self.setup_plot_style()
             
             for i, roi_data in enumerate(roi_data_list):
-                color = color_list[i % len(color_list)]
-                color_normalized = tuple(c / 255.0 for c in color)
+                if i < len(color_list):
+                    color = color_list[i]
+                    color_normalized = tuple(c / 255.0 for c in color)
+                else:
+                    color_normalized = (1.0, 1.0, 1.0)
                 
                 wls = roi_data['wavelengths']
                 spec = roi_data['spectrum']
@@ -690,6 +696,11 @@ class ImageEditingPanel(QWidget):
     spectral_preview_signal = pyqtSignal(int, int)
     tool_changed_signal = pyqtSignal(str)
     
+    # NEW: Signals for ROI editing
+    roi_changed = pyqtSignal(int, tuple)
+    roi_deleted = pyqtSignal(int)
+    roi_created = pyqtSignal(tuple)
+    
     def __init__(self):
         super().__init__()
         self.current_tool = "selection"
@@ -812,6 +823,12 @@ class ImageEditingPanel(QWidget):
         
         self.canvas_container = CanvasContainer()
         self.canvas_container.scene_dropped.connect(self.scene_dropped_signal.emit)
+        
+        # Connect Canvas interactions to external signals
+        self.canvas_container.roi_changed.connect(self.roi_changed.emit)
+        self.canvas_container.roi_deleted.connect(self.roi_deleted.emit)
+        self.canvas_container.roi_created.connect(self.roi_created.emit)
+        
         content_layout.addWidget(self.canvas_container)
         
         layout.addWidget(content_widget)
@@ -825,6 +842,7 @@ class ImageEditingPanel(QWidget):
         self.btn_selection.set_selected(tool_name == "selection")
         self.btn_rectangle.set_selected(tool_name == "rectangle")
         
+        self.canvas_container.set_tool(tool_name) # Pass to canvas
         self.canvas_container.set_hover_preview_enabled(tool_name == "rectangle")
         
         self.tool_changed_signal.emit(tool_name)
@@ -837,9 +855,9 @@ class ImageEditingPanel(QWidget):
             from PyQt5.QtGui import QCursor, QPixmap
             cursor_pixmap = QPixmap("graphics/selection.png")
             cursor = QCursor(cursor_pixmap, 0, 0)
-            self.canvas_container.setCursor(cursor)
+            self.canvas_container.set_tool_cursor(cursor)
         elif self.current_tool == "rectangle":
-            self.canvas_container.setCursor(Qt.CrossCursor)
+            self.canvas_container.set_tool_cursor(Qt.CrossCursor)
     
     def eventFilter(self, obj, event):
         """Filters events for pixel hover."""
@@ -872,6 +890,10 @@ class ImageEditingPanel(QWidget):
     def set_image(self, pixmap):
         """Sets image on canvas."""
         self.canvas_container.set_image(pixmap)
+        
+    def set_rois(self, rois, colors=None):
+        """Passes ROI list to canvas."""
+        self.canvas_container.set_rois(rois, colors)
 
 
 class StatusPanel(QWidget):

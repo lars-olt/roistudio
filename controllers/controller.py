@@ -18,14 +18,39 @@ class Controller(QObject):
         self._view = view
         self._current_scene_id = None
         
+        self._current_rois_data = [] # List of ROI dicts
+        self._current_colors = []    # List of RGB tuples
+        
+        # Color Management
+        self.color_palette = []
+        self.color_stack = [] # Stack for recycled colors
+        self.next_color_index = 0
+        
         self.config_path = 'config.yml'
         self.load_config()
+        self._init_color_palette()
         
         self.scene_controller = SceneController()
         self.sparc_controller = SparcController()
         
         self._connect_view_signals()
         self._connect_controller_signals()
+    
+    def _init_color_palette(self):
+        """Initializes the color palette."""
+        # Hardcoded palette matching typical MERSPECT style
+        hex_colors = [
+            "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#00FFFF", "#FF00FF",
+            "#FFA500", "#800080", "#008000", "#000080", "#800000", "#008080"
+        ]
+        try:
+            from marslab.compat import mertools
+            if hasattr(mertools, 'MERSPECT_M20_COLOR_MAPPINGS'):
+                hex_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
+        except ImportError:
+            pass
+            
+        self.color_palette = [hex_to_rgb(c) for c in hex_colors]
     
     def _connect_view_signals(self):
         """Connects view signals to controller methods."""
@@ -34,6 +59,11 @@ class Controller(QObject):
         self._view.scene_dropped_signal.connect(self.load_scene_by_id)
         self._view.run_algorithm_signal.connect(self.run_algorithm)
         self._view.pixel_hover_callback = self.on_pixel_hover
+        
+        # Connect ROI modification signals
+        self._view.panel_image_editing.roi_changed.connect(self.on_roi_changed)
+        self._view.panel_image_editing.roi_deleted.connect(self.on_roi_deleted)
+        self._view.panel_image_editing.roi_created.connect(self.on_roi_created)
     
     def _connect_controller_signals(self):
         """Connects sub-controller signals."""
@@ -125,6 +155,10 @@ class Controller(QObject):
     def _on_scene_load_complete(self, load_result):
         """Handles successful scene load."""
         self._model.sparc_load_result = load_result
+        self._current_rois_data = [] # Clear old ROIs
+        self._current_colors = []
+        self.color_stack = [] # Reset color stack
+        self.next_color_index = 0
         
         self._view.select_scene(self._current_scene_id)
         
@@ -132,6 +166,10 @@ class Controller(QObject):
             rgb_img = load_result['rgb_img']
             pixmap = numpy_to_pixmap(rgb_img)
             self._view.panel_image_editing.set_image(pixmap)
+            # Clear Canvas ROIs
+            self._view.panel_image_editing.set_rois([])
+            self._view.panel_spectral_view.clear_roi_spectra()
+            self._view.panel_spectral_view.clear_plot()
             
             self._view.stop_loading()
             self._view.show_status_message(f"Scene loaded: {load_result['id']}")
@@ -144,7 +182,7 @@ class Controller(QObject):
         self._view.stop_loading()
         self._view.show_status_message(f"Error loading scene: {error_msg}")
     
-    def run_algorithm(self, algorithm_name):
+    def run_algorithm(self, algorithm_name, params):
         """Runs the selected SPARC algorithm."""
         if algorithm_name != "full algorithm":
             self._view.show_status_message(f"Algorithm '{algorithm_name}' not yet implemented")
@@ -169,28 +207,29 @@ class Controller(QObject):
     def _on_sparc_complete(self, result):
         """Handles successful SPARC completion."""
         try:
-            from marslab.compat import mertools
-            
             if result.final_rois is None or len(result.final_rois) == 0:
                 self._view.show_status_message("SPARC found no ROIs")
                 self._view.stop_loading()
                 return
             
             num_rois = len(result.final_rois)
-            
             self._view.show_status_message(f"Visualizing {num_rois} ROIs...")
             
-            hex_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
-            color_list = [hex_to_rgb(c) for c in hex_colors]
+            # Extract data
+            self._current_rois_data = self.sparc_controller.extract_roi_data(result)
             
-            rois_with_spectra = self.sparc_controller.extract_roi_data(result)
+            # Reset and assign colors from start
+            self.color_stack = []
+            self.next_color_index = 0
+            self._current_colors = []
             
-            rgb_pixmap = self._view.panel_image_editing.canvas_container.canvas.image
-            if rgb_pixmap:
-                updated_pixmap = visualize_rois_on_image(rgb_pixmap, rois_with_spectra, color_list)
-                self._view.panel_image_editing.set_image(updated_pixmap)
+            for _ in self._current_rois_data:
+                color = self._get_next_color()
+                self._current_colors.append(color)
             
-            self._view.panel_spectral_view.plot_roi_spectra(rois_with_spectra, color_list)
+            # Update View
+            self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
+            self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
             
             self._view.stop_loading()
             self._view.show_status_message(f"SPARC complete: {num_rois} ROIs found")
@@ -207,6 +246,93 @@ class Controller(QObject):
         self._view.show_status_message(f"Error running SPARC: {error_msg}")
         import traceback
         traceback.print_exc()
+
+    def _get_next_color(self):
+        """Gets next color from Stack (recycle) or Queue (palette)."""
+        if self.color_stack:
+            return self.color_stack.pop()
+        
+        color = self.color_palette[self.next_color_index % len(self.color_palette)]
+        self.next_color_index += 1
+        return color
+
+    def _recycle_color(self, color):
+        """Pushes a color back onto the stack for recycling."""
+        self.color_stack.append(color)
+
+    def on_roi_created(self, rect):
+        """Handles creation of a new ROI via Rectangle Tool."""
+        if self._model.sparc_load_result is None:
+            return
+            
+        try:
+            cube = self._model.sparc_load_result['cube']
+            
+            # Get color
+            color = self._get_next_color()
+            
+            # Calculate spectrum
+            new_roi_data = self.sparc_controller.update_roi_spectrum(cube, rect)
+            new_roi_data['mineral'] = f"Manual ROI"
+            
+            # Add to lists
+            self._current_rois_data.append(new_roi_data)
+            self._current_colors.append(color)
+            
+            # Update View
+            self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
+            self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            
+            self._view.show_status_message("ROI created")
+            
+        except Exception as e:
+            self._view.show_status_message(f"Error creating ROI: {str(e)}")
+
+    def on_roi_deleted(self, roi_index):
+        """Handles deletion of an ROI."""
+        if 0 <= roi_index < len(self._current_rois_data):
+            try:
+                # Recycle Color
+                deleted_color = self._current_colors.pop(roi_index)
+                self._recycle_color(deleted_color)
+                
+                # Remove Data
+                self._current_rois_data.pop(roi_index)
+                
+                # Update View
+                self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
+                self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+                
+                self._view.show_status_message(f"ROI {roi_index+1} deleted")
+                
+            except Exception as e:
+                self._view.show_status_message(f"Error deleting ROI: {str(e)}")
+
+    def on_roi_changed(self, roi_index, new_rect):
+        """
+        Handles interactive ROI changes. 
+        Re-calculates spectrum for the modified ROI using SPARC controller.
+        """
+        if self._model.sparc_load_result is None or 'cube' not in self._model.sparc_load_result:
+            return
+        
+        try:
+            cube = self._model.sparc_load_result['cube']
+            
+            # Calculate new spectrum
+            updated_roi_data = self.sparc_controller.update_roi_spectrum(cube, new_rect)
+            
+            # Update internal state
+            old_label = self._current_rois_data[roi_index].get('mineral', f'ROI_{roi_index+1}')
+            updated_roi_data['mineral'] = old_label
+            
+            self._current_rois_data[roi_index] = updated_roi_data
+            
+            # Update Plots (Re-plot all)
+            self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            
+        except Exception as e:
+            self._view.show_status_message(f"Error updating ROI: {str(e)}")
     
     def on_pixel_hover(self, x, y):
         """Extracts and plots spectrum for hovered pixel."""
