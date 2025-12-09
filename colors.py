@@ -23,3 +23,16 @@ class Colors:
     # derived colors
     ACCENT_HOVER = "#0AA0FC"            # lighter accent for hover
     ACCENT_PRESSED = "#076EAD"          # darker accent for pressed
+    
+    color_palette = [
+        (255, 99, 71),
+        (135, 206, 250),
+        (144, 238, 144),
+        (255, 215, 0),
+        (218, 112, 214),
+        (255, 160, 122),
+        (64, 224, 208),
+        (255, 182, 193),
+        (173, 216, 230),
+        (240, 230, 140),
+    ]
