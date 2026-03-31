@@ -1,8 +1,9 @@
 from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QPoint, QRectF, QRect, QTimer
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QSplitter
 from PyQt5.QtGui import QPainter, QColor, QKeyEvent, QMouseEvent, QWheelEvent, QPen, QCursor
 
 from colors import Colors
+import numpy as np
 
 
 class CanvasContainer(QWidget):
@@ -134,6 +135,9 @@ class CanvasContainer(QWidget):
             painter.drawRect(self.current_creation_rect)
         
         painter.restore()
+        
+        # 6. Draw Zoom Indicator (in screen space)
+        self._draw_zoom_indicator(painter)
 
     def _draw_rois(self, painter):
         """Draws the ROI rectangles and handles."""
@@ -181,6 +185,41 @@ class CanvasContainer(QWidget):
                 painter.setPen(pen_idle)
                 painter.setBrush(brush_roi)
                 painter.drawRect(rect)
+
+    def _draw_zoom_indicator(self, painter):
+        """Draws zoom level indicator in bottom-right corner."""
+        # Format zoom text
+        zoom_text = f"{self.zoom_level:.2f}x"
+        
+        # Set font
+        from PyQt5.QtGui import QFont
+        font = QFont("Arial", 11)
+        painter.setFont(font)
+        
+        # Measure text size
+        from PyQt5.QtGui import QFontMetrics
+        metrics = QFontMetrics(font)
+        text_width = metrics.horizontalAdvance("10.00x")  # Max width for zoom up to 10x
+        text_height = metrics.height()
+        
+        # Position in bottom-right corner with padding
+        padding = 10
+        margin = 8  # Internal padding
+        box_width = text_width + 2 * margin
+        box_height = text_height + 2 * margin
+        
+        x = self.width() - box_width - padding
+        y = self.height() - box_height - padding
+        
+        # Draw semi-transparent background
+        bg_color = QColor(40, 40, 40, 180)  # Dark gray with alpha
+        painter.fillRect(x, y, box_width, box_height, bg_color)
+        
+        # Draw text
+        painter.setPen(QColor(255, 255, 255))  # White text
+        text_x = x + margin
+        text_y = y + margin + metrics.ascent()
+        painter.drawText(text_x, text_y, zoom_text)
 
     def _get_image_coords(self, widget_pos):
         canvas_viewport_x = self.pan_offset.x() + (self.width() / self.zoom_level - self.canvas.width()) / 2 * self.zoom_level
@@ -455,3 +494,292 @@ class ImageCanvas(QWidget):
             event.acceptProposedAction()
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(0, lambda: self.scene_dropped.emit(scene_id))
+
+
+class DualCanvasContainer(QWidget):
+    """
+    Container that manages both single and split-screen canvas modes.
+    In split mode, left canvas shows left camera, right canvas shows right camera.
+    Forwards all signals from active canvas(es) to maintain compatibility.
+    """
+    
+    # Forward all signals from CanvasContainer
+    scene_dropped = pyqtSignal(str)
+    pixel_hovered = pyqtSignal(int, int)
+    roi_changed = pyqtSignal(int, tuple)
+    roi_selected = pyqtSignal(int)
+    roi_deleted = pyqtSignal(int)
+    roi_created = pyqtSignal(tuple)
+    
+    def __init__(self):
+        super().__init__()
+        self.is_split_mode = False
+        
+        # Store homography for ROI transformation
+        self.homography_matrix = None
+        self.inverse_homography_matrix = None
+        
+        # Create layout
+        self.layout = QHBoxLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+        self.setLayout(self.layout)
+        
+        # Create single canvas
+        self.canvas_single = CanvasContainer()
+        self._connect_canvas_signals(self.canvas_single)
+        
+        # Create split canvases (initially hidden)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setHandleWidth(2)
+        self.splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background-color: {Colors.PANEL_ACCENT};
+            }}
+            QSplitter::handle:hover {{
+                background-color: {Colors.ACCENT};
+            }}
+        """)
+        
+        self.canvas_left = CanvasContainer()
+        self.canvas_right = CanvasContainer()
+        self._connect_canvas_signals(self.canvas_left)
+        self._connect_canvas_signals(self.canvas_right)
+        
+        self.splitter.addWidget(self.canvas_left)
+        self.splitter.addWidget(self.canvas_right)
+        self.splitter.setSizes([500, 500])  # Equal split by default
+        
+        # Start in single mode
+        self.layout.addWidget(self.canvas_single)
+        self.splitter.hide()
+    
+    def _connect_canvas_signals(self, canvas):
+        """Connect canvas signals to forward them."""
+        canvas.scene_dropped.connect(self.scene_dropped.emit)
+        canvas.pixel_hovered.connect(self.pixel_hovered.emit)
+        canvas.roi_selected.connect(self.roi_selected.emit)
+        canvas.roi_deleted.connect(self.roi_deleted.emit)
+        
+        # For roi_changed and roi_created, we need to know which canvas emitted it
+        # so we can transform coordinates appropriately
+        canvas.roi_changed.connect(lambda idx, rect, c=canvas: self._on_canvas_roi_changed(c, idx, rect))
+        canvas.roi_created.connect(lambda rect, c=canvas: self._on_canvas_roi_created(c, rect))
+    
+    def set_split_mode(self, split_mode):
+        """Toggle between single and split-screen mode."""
+        if split_mode == self.is_split_mode:
+            return
+        
+        self.is_split_mode = split_mode
+        
+        if split_mode:
+            # Switch to split mode
+            self.layout.removeWidget(self.canvas_single)
+            self.canvas_single.hide()
+            self.layout.addWidget(self.splitter)
+            self.splitter.show()
+            
+            # Images are set externally via set_camera_images
+            # ROIs are set externally via set_rois which handles transformation
+        else:
+            # Switch to single mode
+            self.layout.removeWidget(self.splitter)
+            self.splitter.hide()
+            self.layout.addWidget(self.canvas_single)
+            self.canvas_single.show()
+            
+            # Sync from right canvas back to single (right is the reference)
+            if self.canvas_right.canvas.image is not None:
+                self.canvas_single.set_image(self.canvas_right.canvas.image)
+            
+            if self.canvas_right.rois:
+                roi_dicts = [{'roi': r} for r in self.canvas_right.rois]
+                self.canvas_single.set_rois(roi_dicts, self.canvas_right.roi_colors)
+    
+    def _on_canvas_roi_changed(self, source_canvas, roi_index, rect):
+        """
+        Handle ROI change from a specific canvas.
+        Transform coordinates if from left canvas to right camera space.
+        """
+        if self.is_split_mode and source_canvas == self.canvas_left:
+            # ROI changed on left canvas - transform to right camera space
+            transformed_rect = self._transform_roi_to_right(rect)
+            self.roi_changed.emit(roi_index, transformed_rect)
+        else:
+            # ROI changed on right canvas or single mode - use as-is
+            self.roi_changed.emit(roi_index, rect)
+    
+    def _on_canvas_roi_created(self, source_canvas, rect):
+        """
+        Handle ROI creation from a specific canvas.
+        Transform coordinates if from left canvas to right camera space.
+        """
+        if self.is_split_mode and source_canvas == self.canvas_left:
+            # ROI created on left canvas - transform to right camera space
+            transformed_rect = self._transform_roi_to_right(rect)
+            self.roi_created.emit(transformed_rect)
+        else:
+            # ROI created on right canvas or single mode - use as-is
+            self.roi_created.emit(rect)
+    
+    # Forward all methods to active canvas(es)
+    
+    def set_homography_matrix(self, homography_matrix):
+        """
+        Set the homography matrix for ROI transformation.
+        This matrix maps left camera to right camera coordinates.
+        """
+        self.homography_matrix = homography_matrix
+        if homography_matrix is not None:
+            import cv2
+            self.inverse_homography_matrix = cv2.invert(homography_matrix)[1]
+    
+    def set_camera_images(self, left_pixmap, right_pixmap):
+        """
+        Set separate images for left and right cameras in split mode.
+        Only affects split mode - single mode uses the right image.
+        """
+        if self.is_split_mode:
+            self.canvas_left.set_image(left_pixmap)
+            self.canvas_right.set_image(right_pixmap)
+        else:
+            # Single mode uses right camera
+            self.canvas_single.set_image(right_pixmap)
+    
+    def _transform_roi_to_left(self, roi_tuple):
+        """
+        Transform ROI from right camera space to left camera space.
+        Uses inverse homography matrix.
+        """
+        if self.inverse_homography_matrix is None:
+            return roi_tuple
+        
+        import cv2
+        x, y, w, h = roi_tuple
+        
+        # Get four corners of the ROI rectangle in right camera space
+        corners_right = np.array([
+            [x, y],
+            [x + w, y],
+            [x + w, y + h],
+            [x, y + h]
+        ], dtype=np.float32).reshape(-1, 1, 2)
+        
+        # Transform corners to left camera space
+        corners_left = cv2.perspectiveTransform(corners_right, self.inverse_homography_matrix)
+        corners_left = corners_left.reshape(-1, 2)
+        
+        # Find bounding box in left camera space
+        x_left = corners_left[:, 0].min()
+        y_left = corners_left[:, 1].min()
+        x_right = corners_left[:, 0].max()
+        y_right = corners_left[:, 1].max()
+        
+        w_left = x_right - x_left
+        h_left = y_right - y_left
+        
+        return (x_left, y_left, w_left, h_left)
+    
+    def _transform_roi_to_right(self, roi_tuple):
+        """
+        Transform ROI from left camera space to right camera space.
+        Uses forward homography matrix.
+        """
+        if self.homography_matrix is None:
+            return roi_tuple
+        
+        import cv2
+        x, y, w, h = roi_tuple
+        
+        # Get four corners of the ROI rectangle in left camera space
+        corners_left = np.array([
+            [x, y],
+            [x + w, y],
+            [x + w, y + h],
+            [x, y + h]
+        ], dtype=np.float32).reshape(-1, 1, 2)
+        
+        # Transform corners to right camera space
+        corners_right = cv2.perspectiveTransform(corners_left, self.homography_matrix)
+        corners_right = corners_right.reshape(-1, 2)
+        
+        # Find bounding box in right camera space
+        x_left = corners_right[:, 0].min()
+        y_left = corners_right[:, 1].min()
+        x_right = corners_right[:, 0].max()
+        y_right = corners_right[:, 1].max()
+        
+        w_right = x_right - x_left
+        h_right = y_right - y_left
+        
+        return (x_left, y_left, w_right, h_right)
+    
+    # Forward all methods to active canvas(es)
+    
+    def set_tool_cursor(self, cursor):
+        """Forward to active canvas(es)."""
+        if self.is_split_mode:
+            self.canvas_left.set_tool_cursor(cursor)
+            self.canvas_right.set_tool_cursor(cursor)
+        else:
+            self.canvas_single.set_tool_cursor(cursor)
+    
+    def set_hover_preview_enabled(self, enabled):
+        """Forward to active canvas(es)."""
+        if self.is_split_mode:
+            self.canvas_left.set_hover_preview_enabled(enabled)
+            self.canvas_right.set_hover_preview_enabled(enabled)
+        else:
+            self.canvas_single.set_hover_preview_enabled(enabled)
+    
+    def set_image(self, pixmap):
+        """
+        Forward to active canvas(es).
+        In split mode, this only updates the right canvas (use set_camera_images for both).
+        """
+        if self.is_split_mode:
+            # In split mode, only update right canvas when set_image is called
+            # (set_camera_images should be used for proper split-screen)
+            self.canvas_right.set_image(pixmap)
+        else:
+            self.canvas_single.set_image(pixmap)
+    
+    def set_rois(self, rois, colors=None):
+        """
+        Forward to active canvas(es).
+        In split mode, ROIs are in right camera space and are transformed for left camera.
+        """
+        if self.is_split_mode:
+            # Right canvas gets ROIs as-is (they're in right camera space)
+            self.canvas_right.set_rois(rois, colors)
+            
+            # Left canvas needs transformed ROIs
+            if self.homography_matrix is not None:
+                transformed_rois = []
+                for roi_data in rois:
+                    roi_tuple = tuple(map(float, roi_data['roi']))
+                    transformed_roi = self._transform_roi_to_left(roi_tuple)
+                    transformed_rois.append({'roi': transformed_roi})
+                self.canvas_left.set_rois(transformed_rois, colors)
+            else:
+                # No homography available, just use same ROIs
+                self.canvas_left.set_rois(rois, colors)
+        else:
+            self.canvas_single.set_rois(rois, colors)
+    
+    def set_tool(self, tool_name):
+        """Forward to active canvas(es)."""
+        if self.is_split_mode:
+            self.canvas_left.set_tool(tool_name)
+            self.canvas_right.set_tool(tool_name)
+        else:
+            self.canvas_single.set_tool(tool_name)
+    
+    @property
+    def canvas(self):
+        """Return the active canvas for compatibility with existing code."""
+        if self.is_split_mode:
+            return self.canvas_left.canvas
+        else:
+            return self.canvas_single.canvas

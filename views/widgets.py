@@ -16,7 +16,8 @@ class LoadingIndicator(QLabel):
         self.movie = QMovie("graphics/load.gif")
         self.setMovie(self.movie)
         
-        self.setFixedSize(30, 30)
+        # Increased height to accommodate padding while keeping gif square
+        self.setFixedSize(30, 38)
         self.setScaledContents(True)
         
         size_policy = self.sizePolicy()
@@ -26,7 +27,7 @@ class LoadingIndicator(QLabel):
         self.setStyleSheet("""
             QLabel {
                 background-color: transparent;
-                padding: 0px;
+                padding: 4px 0px;
                 margin: 0px;
             }
         """)
@@ -55,6 +56,7 @@ class ToolbarButton(QPushButton):
         
         self.setFixedSize(46, 38)
         self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)  # Pointer cursor on hover
         self.setStyleSheet(f"""
             QPushButton {{
                 border: none;

@@ -13,7 +13,7 @@ class View(QWidget):
     load_cube_signal = pyqtSignal()
     set_sam_path_signal = pyqtSignal()
     open_folder_signal = pyqtSignal()
-    run_algorithm_signal = pyqtSignal(str, dict) # Updated to pass params
+    run_algorithm_signal = pyqtSignal()
     scene_dropped_signal = pyqtSignal(str)
     
     def __init__(self):
@@ -105,7 +105,7 @@ class View(QWidget):
         
         # Connect internal signals
         # 1. Image editing run button -> View logic (receives algorithm name)
-        self.panel_image_editing.run_algorithm_signal.connect(self._on_run_clicked)
+        self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)
         
         # 2. Parameter view settings -> Spectral view update
         self.panel_parameter_selection.view_settings_changed.connect(
@@ -116,12 +116,6 @@ class View(QWidget):
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
     
-    def _on_run_clicked(self, algorithm_name):
-        """Collects params and emits run signal."""
-        # Get params from the parameter panel
-        params = self.panel_parameter_selection.get_parameters()
-        # Emit complete signal to controller
-        self.run_algorithm_signal.emit(algorithm_name, params)
 
     def _setup_splitters(self):
         """Sets up splitter layout."""
