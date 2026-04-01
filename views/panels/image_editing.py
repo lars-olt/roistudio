@@ -2,6 +2,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton)
 
 from colors import Colors
+from utils.paths import _resource_path
 from ..canvas import DualCanvasContainer
 from ..widgets import ToolbarButton
 
@@ -24,7 +25,6 @@ class ImageEditingPanel(QWidget):
         super().__init__()
         self.current_tool = "selection"
         self.init_ui()
-
         self.canvas_container.installEventFilter(self)
 
     def init_ui(self):
@@ -64,9 +64,7 @@ class ImageEditingPanel(QWidget):
         """)
         self.run_button.clicked.connect(self.on_run_clicked)
         top_bar_layout.addWidget(self.run_button)
-
         top_bar_layout.addStretch()
-
         layout.addWidget(top_bar)
 
         content_widget = QWidget()
@@ -87,16 +85,16 @@ class ImageEditingPanel(QWidget):
         self.toolbar.setLayout(toolbar_layout)
 
         self.btn_selection = ToolbarButton(
-            "graphics/toolbar_selection.png",
-            "graphics/toolbar_selection_selected.png"
+            _resource_path("graphics/toolbar_selection.png"),
+            _resource_path("graphics/toolbar_selection_selected.png")
         )
         self.btn_selection.set_selected(True)
         self.btn_selection.clicked.connect(lambda: self.select_tool("selection"))
         toolbar_layout.addWidget(self.btn_selection)
 
         self.btn_rectangle = ToolbarButton(
-            "graphics/toolbar_rectangle.png",
-            "graphics/toolbar_rectangle_selected.png"
+            _resource_path("graphics/toolbar_rectangle.png"),
+            _resource_path("graphics/toolbar_rectangle_selected.png")
         )
         self.btn_rectangle.clicked.connect(lambda: self.select_tool("rectangle"))
         toolbar_layout.addWidget(self.btn_rectangle)
@@ -104,8 +102,8 @@ class ImageEditingPanel(QWidget):
         toolbar_layout.addStretch()
 
         self.btn_split_screen = ToolbarButton(
-            "graphics/toolbar_single_screen.png",
-            "graphics/toolbar_split_screen.png"
+            _resource_path("graphics/toolbar_single_screen.png"),
+            _resource_path("graphics/toolbar_split_screen.png")
         )
         self.btn_split_screen.set_selected(False)
         self.btn_split_screen.clicked.connect(self.toggle_split_screen)
@@ -115,60 +113,48 @@ class ImageEditingPanel(QWidget):
 
         self.canvas_container = DualCanvasContainer()
         self.canvas_container.scene_dropped.connect(self.scene_dropped_signal.emit)
-
         self.canvas_container.roi_changed.connect(self.roi_changed.emit)
         self.canvas_container.roi_deleted.connect(self.roi_deleted.emit)
         self.canvas_container.roi_created.connect(self.roi_created.emit)
-
         content_layout.addWidget(self.canvas_container)
 
         layout.addWidget(content_widget)
-
         self.update_cursor()
 
     def select_tool(self, tool_name):
         """Selects tool and updates UI."""
         self.current_tool = tool_name
-
         self.btn_selection.set_selected(tool_name == "selection")
         self.btn_rectangle.set_selected(tool_name == "rectangle")
-
         self.canvas_container.set_tool(tool_name)
         self.canvas_container.set_hover_preview_enabled(tool_name == "rectangle")
-
         self.tool_changed_signal.emit(tool_name)
-
         self.update_cursor()
 
     def update_cursor(self):
         """Updates canvas cursor based on tool."""
         if self.current_tool == "selection":
             from PyQt5.QtGui import QCursor, QPixmap
-            cursor_pixmap = QPixmap("graphics/selection.png")
+            cursor_pixmap = QPixmap(_resource_path("graphics/selection.png"))
             cursor = QCursor(cursor_pixmap, 0, 0)
             self.canvas_container.set_tool_cursor(cursor)
         elif self.current_tool == "rectangle":
             self.canvas_container.set_tool_cursor(Qt.CrossCursor)
 
     def eventFilter(self, obj, event):
-        """Filters events for pixel hover - handled by individual canvases."""
         return super().eventFilter(obj, event)
 
     def on_run_clicked(self):
-        """Emits run signal with full algorithm."""
         self.run_algorithm_signal.emit()
 
     def toggle_split_screen(self):
-        """Toggles split-screen mode."""
         is_selected = not self.btn_split_screen.is_selected
         self.btn_split_screen.set_selected(is_selected)
         self.canvas_container.set_split_mode(is_selected)
         self.split_screen_toggled.emit(is_selected)
 
     def set_image(self, pixmap):
-        """Sets image on canvas."""
         self.canvas_container.set_image(pixmap)
 
     def set_rois(self, rois, colors=None):
-        """Passes ROI list to canvas."""
         self.canvas_container.set_rois(rois, colors)

@@ -20,9 +20,9 @@ from colors import Colors
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    
+
     app.setStyle("Fusion")
-    
+
     palette = QPalette()
     palette.setColor(QPalette.Window, QColor(Colors.APP_BACKGROUND))
     palette.setColor(QPalette.WindowText, QColor(Colors.TEXT_PRIMARY))
@@ -38,11 +38,11 @@ if __name__ == '__main__':
     palette.setColor(QPalette.Highlight, QColor(Colors.ACCENT))
     palette.setColor(QPalette.HighlightedText, Qt.white)
     app.setPalette(palette)
-    
+
     model = Model()
     view = View()
     controller = Controller(model, view)
-    
+
     view.show()
-    
+
     sys.exit(app.exec_())
