@@ -9,3 +9,5 @@ wheels/
 .venv
 
 tree.txt
+uv.lock
+roistudio_tree.txt
