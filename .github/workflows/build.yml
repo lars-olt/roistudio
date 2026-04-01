@@ -1,7 +1,5 @@
 name: Build ROIStudio
 
-# Trigger on version tags (e.g. v0.2.0)
-# Also allows manual trigger from the Actions tab
 on:
   push:
     tags:
@@ -10,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.artifact_name }})
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -19,83 +17,54 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: ROIStudio-windows-x64
-            torch_install: |
-              uv pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cu124
-              uv pip install "numpy<2" --reinstall
+            torch_cmd: uv pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cu124
 
           - os: macos-13
             artifact_name: ROIStudio-macos-intel
-            torch_install: |
-              uv pip install torch==2.2.2 torchvision==0.17.2
+            torch_cmd: uv pip install torch==2.2.2 torchvision==0.17.2
 
           - os: macos-14
             artifact_name: ROIStudio-macos-silicon
-            torch_install: |
-              uv pip install torch==2.2.2 torchvision==0.17.2
+            torch_cmd: uv pip install torch==2.2.2 torchvision==0.17.2
 
     steps:
-      # ----------------------------------------------------------------
-      # Checkout roistudio
-      # ----------------------------------------------------------------
       - name: Checkout roistudio
         uses: actions/checkout@v4
 
-      # ----------------------------------------------------------------
-      # Set up SSH key for private repo access
-      #    (MillionConcepts repos + sparc)
-      # ----------------------------------------------------------------
-      - name: Set up SSH key
+      - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # ----------------------------------------------------------------
-      # Set up Python 3.11
-      # ----------------------------------------------------------------
+      - name: Add GitHub to known hosts
+        run: ssh-keyscan github.com >> ~/.ssh/known_hosts
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ----------------------------------------------------------------
-      # Install uv
-      # ----------------------------------------------------------------
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      # ----------------------------------------------------------------
-      # Create venv and install platform-specific torch first
-      # ----------------------------------------------------------------
       - name: Create venv
         run: uv venv --python 3.11
 
       - name: Install torch (platform-specific)
-        run: ${{ matrix.torch_install }}
+        run: ${{ matrix.torch_cmd }}
 
-      # ----------------------------------------------------------------
-      # Install all other dependencies via uv sync
-      #    The SSH agent is active so private repos are accessible
-      # ----------------------------------------------------------------
       - name: Install dependencies
         run: uv sync
 
-      # ----------------------------------------------------------------
-      # Install PyInstaller
-      # ----------------------------------------------------------------
       - name: Install PyInstaller
         run: uv pip install pyinstaller
 
-      # ----------------------------------------------------------------
-      # Build with PyInstaller
-      # ----------------------------------------------------------------
       - name: Build executable
         run: uv run pyinstaller roistudio.spec --clean
 
-      # ----------------------------------------------------------------
-      # Zip the output
-      # ----------------------------------------------------------------
       - name: Zip build (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           cd dist
           Compress-Archive -Path ROIStudio -DestinationPath ../${{ matrix.artifact_name }}.zip
@@ -104,11 +73,8 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.artifact_name }}.zip ROIStudio
+          zip -r ../${{ matrix.artifact_name }}.zip ROIStudio.app
 
-      # ----------------------------------------------------------------
-      # Upload artifact
-      # ----------------------------------------------------------------
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -116,14 +82,10 @@ jobs:
           path: ${{ matrix.artifact_name }}.zip
           retention-days: 7
 
-  # ----------------------------------------------------------------
-  # Release job - runs after all builds succeed
-  # ----------------------------------------------------------------
   release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    # Only create a release when triggered by a tag push
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
@@ -146,9 +108,9 @@ jobs:
           body: |
             ## Installation
 
-            Download the zip for your platform, unzip it, and run `ROIStudio` (`ROIStudio.exe` on Windows).
+            Download the zip for your platform, unzip it, and run `ROIStudio` inside.
 
-            **Before first launch:** Go to File -> Set SAM Path and point it to your SAM model weights file (`sam_vit_h_4b8939.pth`).
+            **Before first launch:** Go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
             Download SAM weights: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
             | Platform | Download |
