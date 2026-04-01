@@ -1,13 +1,19 @@
-*__pycache__/
+# Python
+__pycache__/
 *.py[oc]
+
+# Virtual environment
+.venv/
+
+# PyInstaller
 build/
 dist/
 wheels/
 *.egg-info
-.vscode
 
-.venv
+# Editor
+.vscode/
 
+# Other
 tree.txt
-uv.lock
 roistudio_tree.txt
