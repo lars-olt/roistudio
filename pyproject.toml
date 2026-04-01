@@ -1,9 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0,<81"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "roistudio"
 version = "0.1.0"
-description = "Add your description here"
+description = "GUI for hyperspectral ROI analysis using SPARC"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.11.*"
 dependencies = [
+    # --- SPARC pipeline ---
+    # Installed as an editable local package during development.
+    # Pinned to a specific commit for reproducible builds.
+    # See [tool.uv.sources] below for local dev override.
+    "sparc @ git+ssh://git@github.com/lars-olt/sparc.git",
+
+    # --- GUI ---
+    "PyQt5==5.15.11",
+    "pyqt5-qt5==5.15.2",
+    "pyqt5-sip>=12.11",
+
+    # --- Plotting (Qt backend) ---
+    "matplotlib>=3.3.0",
+
+    # --- Utilities ---
+    "PyYAML>=6.0",
     "setuptools<81",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.uv]
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.uv.sources]
+# During local development, use the local sparc checkout instead of
+# pulling from GitHub. This means changes to sparc are reflected
+# immediately without needing to push and re-lock.
+# Point this to wherever sparc lives on your machine.
+sparc = { path = "../sparc", editable = true }
