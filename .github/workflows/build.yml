@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build (${{ matrix.artifact_name }})
@@ -45,7 +48,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Force -ItemType Directory -Path "$env:USERPROFILE\.ssh" | Out-Null
-          ssh-keyscan -t rsa github.com >> "$env:USERPROFILE\.ssh\known_hosts"
+          # GitHub's ED25519 public host key (from https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints)
+          $key = "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GkZH"
+          Add-Content -Path "$env:USERPROFILE\.ssh\known_hosts" -Value $key
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -73,14 +78,15 @@ jobs:
       - name: Install PyInstaller
         run: uv pip install pyinstaller
 
+      # Call pyinstaller directly from the venv — avoids uv run reading the lockfile
       - name: Build executable (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: uv run pyinstaller roistudio.spec --clean
+        run: .venv\Scripts\pyinstaller.exe roistudio.spec --clean
 
       - name: Build executable (macOS)
         if: runner.os == 'macOS'
-        run: uv run pyinstaller roistudio.spec --clean
+        run: .venv/bin/pyinstaller roistudio.spec --clean
 
       - name: Zip build (Windows)
         if: runner.os == 'Windows'
