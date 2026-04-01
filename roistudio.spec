@@ -188,7 +188,7 @@ exe = EXE(
     strip=False,
     upx=False,        # UPX corrupts torch DLLs
     console=False,    # Set True to see traceback during debugging
-    icon=None,        # Need to add graphics/icon.ico
+    icon=None,        # Add graphics/icon.ico when available
 )
 
 coll = COLLECT(
@@ -204,6 +204,9 @@ coll = COLLECT(
 
 # macOS .app bundle
 if sys.platform == "darwin":
+    # MACOSX_DEPLOYMENT_TARGET is set by the CI workflow per-platform.
+    # Locally it defaults to whatever the build machine supports.
+    deployment_target = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "12.0")
     app = BUNDLE(
         coll,
         name="ROIStudio.app",
@@ -212,5 +215,6 @@ if sys.platform == "darwin":
             "NSHighResolutionCapable": True,
             "CFBundleShortVersionString": "0.1.0",
             "CFBundleName": "ROIStudio",
+            "LSMinimumSystemVersion": deployment_target,
         },
     )

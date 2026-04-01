@@ -25,10 +25,12 @@ jobs:
           - os: macos-latest
             artifact_name: ROIStudio-macos-intel
             pyqt5_install: uv pip install "PyQt5==5.15.11" "pyqt5-sip>=12.11"
+            macos_target: "12.0"
 
           - os: macos-14
             artifact_name: ROIStudio-macos-silicon
             pyqt5_install: uv pip install "PyQt5==5.15.11" "pyqt5-sip>=12.11"
+            macos_target: "14.0"
 
     steps:
       - name: Checkout roistudio
@@ -86,6 +88,8 @@ jobs:
 
       - name: Build executable (macOS)
         if: runner.os == 'macOS'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target }}
         run: .venv/bin/pyinstaller roistudio.spec --clean
 
       - name: Zip build (Windows)
@@ -138,7 +142,7 @@ jobs:
 
             Download the zip for your platform, unzip it, and run `ROIStudio` inside.
 
-            **Before first launch:** Go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
+            **Before first run:** In the GUI, go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
             Download SAM weights: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
             | Platform | Download |
