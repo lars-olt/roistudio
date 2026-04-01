@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build (${{ matrix.artifact_name }})
@@ -17,72 +20,66 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: ROIStudio-windows-x64
-            torch_cmd: uv pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cu124
 
-          - os: macos-12
+          - os: macos-13
             artifact_name: ROIStudio-macos-intel
-            torch_cmd: uv pip install torch==2.2.2 torchvision==0.17.2
 
           - os: macos-14
             artifact_name: ROIStudio-macos-silicon
-            torch_cmd: uv pip install torch==2.2.2 torchvision==0.17.2
 
     steps:
       - name: Checkout roistudio
         uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Add GitHub to known hosts (macOS/Linux)
-        if: runner.os != 'Windows'
+      - name: Add GitHub to known hosts (macOS)
+        if: runner.os == 'macOS'
         run: ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Add GitHub to known hosts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $knownHostsPath = "$env:USERPROFILE\.ssh\known_hosts"
           New-Item -Force -ItemType Directory -Path "$env:USERPROFILE\.ssh" | Out-Null
-          $githubKey = "github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SSSbA5kYBWgUvd6e4HcP4IWMdXcHWHuT7vI7vvXn2M7IvA/n5z7k5sRhcBNnMoMnFcE0lQFYoOFsECTXHPD3GYTh3QFqVqFSbsBVn30MRomFSGVJZHxfMvAl9g+4aS9O8lJ+Bt8OVSo6jx1eqz3z0B2BmCq3/Loh0gRiLIHwRCj5J5RjLLfZTLI0="
-          Add-Content -Path $knownHostsPath -Value $githubKey
+          $key = "github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SSSbA5kYBWgUvd6e4HcP4IWMdXcHWHuT7vI7vvXn2M7IvA/n5z7k5sRhcBNnMoMnFcE0lQFYoOFsECTXHPD3GYTh3QFqVqFSbsBVn30MRomFSGVJZHxfMvAl9g+4aS9O8lJ+Bt8OVSo6jx1eqz3z0B2BmCq3/Loh0gRiLIHwRCj5J5RjLLfZTLI0="
+          Add-Content -Path "$env:USERPROFILE\.ssh\known_hosts" -Value $key
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Create venv
         run: uv venv --python 3.11
 
-      - name: Install torch (platform-specific)
-        run: ${{ matrix.torch_cmd }}
+      # Install CPU torch for all CI builds.
+      # The PyTorch CPU index has wheels for all platforms including Windows.
+      - name: Install torch (CPU)
+        run: uv pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
 
-      # Override the local editable sparc path for CI - use the Git URL instead
-      - name: Install sparc from GitHub (CI override)
+      # Install sparc and all its deps (including MillionConcepts private repos)
+      # directly from GitHub via SSH — bypasses the local editable path
+      - name: Install sparc from GitHub
         run: uv pip install "sparc @ git+ssh://git@github.com/lars-olt/sparc.git"
 
-      - name: Install dependencies
-        run: uv sync --no-install-package sparc
+      # Install roistudio's own deps (PyQt5, matplotlib, pyyaml) directly.
+      # We skip uv sync entirely because the lockfile references ../sparc
+      # which doesn't exist on CI runners.
+      - name: Install roistudio dependencies
+        run: uv pip install "PyQt5==5.15.11" "pyqt5-qt5==5.15.2" "pyqt5-sip>=12.11" "matplotlib>=3.3.0" "PyYAML>=6.0" "setuptools<81"
 
       - name: Install PyInstaller
         run: uv pip install pyinstaller
 
       - name: Build executable
-        run: uv run pyinstaller roistudio.spec --clean
+        run: pyinstaller roistudio.spec --clean
 
       - name: Zip build (Windows)
         if: runner.os == 'Windows'
