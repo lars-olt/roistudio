@@ -85,6 +85,7 @@ class ClickableLabel(QLabel):
     """Label that emits clicked signal and supports drag."""
 
     clicked = pyqtSignal()
+    double_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -96,6 +97,10 @@ class ClickableLabel(QLabel):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
             self.drag_start_pos = event.pos()
+    
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.double_clicked.emit()
 
     def mouseMoveEvent(self, event):
         """Starts drag operation."""

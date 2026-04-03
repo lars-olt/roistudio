@@ -54,7 +54,8 @@ class Controller(QObject):
         self._view.set_sam_path_signal.connect(self.set_sam_path)
         self._view.open_folder_signal.connect(self.open_iof_folder)
         self._view.scene_dropped_signal.connect(self.load_scene_by_id)
-        self._view.run_algorithm_signal.connect(self.run_algorithm)
+        self._view.run_algorithm_signal.connect(self.run_algorithm)  # drag + drop
+        self._view.scene_double_clicked_signal.connect(self.load_scene_by_id)  # double-click
         self._view.pixel_hover_callback = self.on_pixel_hover
 
         self._view.panel_image_editing.roi_changed.connect(self.on_roi_changed)

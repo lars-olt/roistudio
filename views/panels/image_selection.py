@@ -11,6 +11,7 @@ class ImageSelectionPanel(QFrame):
     """Panel for scene thumbnail selection."""
     
     resized = pyqtSignal()
+    scene_double_clicked = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -122,6 +123,7 @@ class ImageSelectionPanel(QFrame):
             }}
         """)
         thumb_label.clicked.connect(lambda sid=scene_id: self.select_scene(sid))
+        thumb_label.double_clicked.connect(lambda sid=scene_id: self.scene_double_clicked.emit(sid))
         thumb_label.set_scene_data(scene_id, scaled_pixmap)
         thumb_layout.addWidget(thumb_label)
         
@@ -211,6 +213,7 @@ class ImageSelectionPanel(QFrame):
                 }}
             """)
             thumb_label.clicked.connect(lambda sid=scene_id: self.select_scene(sid))
+            thumb_label.double_clicked.connect(lambda sid=scene_id: self.scene_double_clicked.emit(sid))
             thumb_label.set_scene_data(scene_id, scaled_pixmap)
             thumb_layout.addWidget(thumb_label)
             

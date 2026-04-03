@@ -14,6 +14,7 @@ class View(QWidget):
     open_folder_signal = pyqtSignal()
     run_algorithm_signal = pyqtSignal()
     scene_dropped_signal = pyqtSignal(str)
+    scene_double_clicked_signal = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -90,11 +91,11 @@ class View(QWidget):
         self.panel_status = StatusPanel()
         self.panel_parameter_selection = ParameterSelectionPanel()
         
-        # Connect internal signals
-        # 1. Image editing run button -> View logic (receives algorithm name)
-        self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)
+        # connect internal signals
+        self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)  # drag + drop
+        self.panel_image_selection.scene_double_clicked.connect(self.scene_double_clicked_signal.emit)  # double-click
         
-        # 2. Parameter view settings -> Spectral view update
+        # connect spectral view (graph)
         self.panel_parameter_selection.view_settings_changed.connect(
             self.panel_spectral_view.set_y_range
         )
