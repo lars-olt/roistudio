@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton)
 from colors import Colors
 from utils.paths import _resource_path
 from ..canvas import DualCanvasContainer
-from ..widgets import ToolbarButton
+from ..widgets import ToolbarButton, LoadingIndicator
 
 
 class ImageEditingPanel(QWidget):
@@ -64,6 +64,10 @@ class ImageEditingPanel(QWidget):
         """)
         self.run_button.clicked.connect(self.on_run_clicked)
         top_bar_layout.addWidget(self.run_button)
+
+        self.loading_indicator = LoadingIndicator()
+        top_bar_layout.addSpacing(5)
+        top_bar_layout.addWidget(self.loading_indicator)
         top_bar_layout.addStretch()
         layout.addWidget(top_bar)
 
@@ -158,3 +162,9 @@ class ImageEditingPanel(QWidget):
 
     def set_rois(self, rois, colors=None):
         self.canvas_container.set_rois(rois, colors)
+    
+    def start_loading(self):
+        self.loading_indicator.start_loading()
+
+    def stop_loading(self):
+        self.loading_indicator.stop_loading()

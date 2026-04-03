@@ -17,7 +17,7 @@ class LoadingIndicator(QLabel):
         self.movie = QMovie(_resource_path("graphics/load.gif"))
         self.setMovie(self.movie)
 
-        self.setFixedSize(30, 38)
+        self.setFixedSize(22, 30)
         self.setScaledContents(True)
 
         size_policy = self.sizePolicy()

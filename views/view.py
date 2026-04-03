@@ -3,7 +3,6 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction,
                              QSplitter, QHBoxLayout, QFrame)
 
 from .panels import SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel, StatusPanel, ParameterSelectionPanel
-from .widgets import LoadingIndicator
 from colors import Colors
 
 
@@ -82,18 +81,6 @@ class View(QWidget):
         
         self.menu_window = QMenu("Window", self.menubar)
         self.menubar.addMenu(self.menu_window)
-        
-        corner_widget = QWidget()
-        corner_layout = QHBoxLayout()
-        corner_layout.setContentsMargins(0, 0, 8, 0)
-        corner_layout.setSpacing(0)
-        corner_widget.setLayout(corner_layout)
-        corner_widget.setStyleSheet("background-color: transparent;")
-        
-        self.loading_indicator = LoadingIndicator(corner_widget)
-        corner_layout.addWidget(self.loading_indicator)
-        
-        self.menubar.setCornerWidget(corner_widget, Qt.TopRightCorner)
     
     def _create_panels(self):
         """Creates all panel widgets."""
@@ -166,12 +153,10 @@ class View(QWidget):
             self.panel_spectral_view.hide_preview()
             
     def start_loading(self):
-        """Shows loading indicator."""
-        self.loading_indicator.start_loading()
-    
+        self.panel_image_editing.start_loading()
+
     def stop_loading(self):
-        """Hides loading indicator."""
-        self.loading_indicator.stop_loading()
+        self.panel_image_editing.stop_loading()
     
     def show_status_message(self, message):
         """Displays message in status panel."""
