@@ -274,11 +274,20 @@ class Controller(QObject):
             color             = self._get_next_color()
 
             if self._has_dual_cubes():
-                right_rect = tuple(rect)
                 homography = load_result.get('homography_matrix')
-                left_rect  = right_rect_to_left_inscribed(right_rect, homography) if homography is not None else right_rect
-                if left_rect is None:
-                    left_rect = right_rect
+                if camera == 'left':
+                    # rect is in left-camera space; derive right rect via forward homography.
+                    left_rect  = tuple(rect)
+                    right_rect = self._left_rect_to_right(left_rect, homography)
+                    if right_rect is None:
+                        right_rect = left_rect
+                else:
+                    # rect is in right-camera space (right canvas or single mode).
+                    right_rect = tuple(rect)
+                    left_rect  = right_rect_to_left_inscribed(right_rect, homography) if homography is not None else right_rect
+                    if left_rect is None:
+                        left_rect = right_rect
+
                 spec_data = self.sparc_controller.update_roi_spectrum_dual(
                     load_result, left_rect, right_rect, instrument_config
                 )
@@ -332,7 +341,7 @@ class Controller(QObject):
                 elif camera == 'left':
                     left_rect  = tuple(new_rect)
                     right_rect = roi_data['right_rect']
-                else:  # single - move both together
+                else:  # single — move both together
                     right_rect = tuple(new_rect)
                     left_rect  = self._apply_rect_delta(
                         roi_data.get('left_rect', roi_data['roi']),
@@ -362,6 +371,24 @@ class Controller(QObject):
 
         except Exception as e:
             self._view.show_status_message(f"Error updating ROI: {str(e)}")
+
+    @staticmethod
+    def _left_rect_to_right(left_rect, homography_matrix):
+        """
+        Transform a left-camera rect into right-camera space via forward homography.
+        Returns the axis-aligned bounding box — no inscription needed since
+        right is the reference frame.
+        """
+        if homography_matrix is None:
+            return left_rect
+        import cv2
+        import numpy as np
+        x, y, w, h = left_rect
+        corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], dtype=np.float32)
+        rc = cv2.perspectiveTransform(corners.reshape(-1, 1, 2), homography_matrix).reshape(-1, 2)
+        rx = float(rc[:, 0].min());  ry = float(rc[:, 1].min())
+        rw = float(rc[:, 0].max()) - rx;  rh = float(rc[:, 1].max()) - ry
+        return (rx, ry, rw, rh)
 
     @staticmethod
     def _apply_rect_delta(left_rect, old_right_rect, new_right_rect):
