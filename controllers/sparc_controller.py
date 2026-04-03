@@ -54,7 +54,7 @@ class SparcController(QObject):
         Driven by merged_band_recipe from load_result, which maps every merged-cube
         band to its named source band(s) in left_cube and right_cube. This is
         instrument-agnostic: ZCAM shared bands are positional; PCAM stereo pairs
-        are scattered — but the recipe always tells us exactly which band index
+        are scattered - but the recipe always tells us exactly which band index
         to read from which raw cube.
 
         left_rect and right_rect are in their respective camera's pixel space.

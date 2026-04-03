@@ -5,7 +5,7 @@
 #   pyinstaller roistudio.spec --clean
 #
 # OUTPUT: dist/ROIStudio/ (one-folder bundle)
-# Do NOT use --onefile — torch DLLs make startup unbearably slow.
+# Do NOT use --onefile - torch DLLs make startup unbearably slow.
 
 import sys
 import os

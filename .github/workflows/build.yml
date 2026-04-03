@@ -75,7 +75,7 @@ jobs:
       - name: Install PyInstaller
         run: uv pip install pyinstaller
 
-      # Call pyinstaller directly from the venv — avoids uv run reading the lockfile
+      # Call pyinstaller directly from the venv - avoids uv run reading the lockfile
       - name: Build executable (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

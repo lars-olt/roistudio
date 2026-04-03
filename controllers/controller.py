@@ -332,7 +332,7 @@ class Controller(QObject):
                 elif camera == 'left':
                     left_rect  = tuple(new_rect)
                     right_rect = roi_data['right_rect']
-                else:  # single — move both together
+                else:  # single - move both together
                     right_rect = tuple(new_rect)
                     left_rect  = self._apply_rect_delta(
                         roi_data.get('left_rect', roi_data['roi']),
