@@ -32,6 +32,10 @@ class SceneController(QObject):
         """Starts background scene scanning."""
         from workers.scene_scanner import SceneScanThread
 
+        if self._scan_thread is not None and self._scan_thread.isRunning():
+            self._scan_thread.quit()
+            self._scan_thread.wait()
+
         self._scene_cache.clear()
 
         self._scan_thread = SceneScanThread(folder_path)
@@ -48,12 +52,16 @@ class SceneController(QObject):
         self.scene_found.emit(scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument)
 
     def start_load(self, scene_id):
-        """Starts background scene loading."""
         from workers.scene_loader import SceneLoadThread
 
         if scene_id not in self._scene_cache:
             self.load_error.emit(f"Scene {scene_id} not found in cache")
             return None
+
+        # Cancel any in-flight load before starting a new one.
+        if self._load_thread is not None and self._load_thread.isRunning():
+            self._load_thread.quit()
+            self._load_thread.wait()
 
         folder_path, seq_id, obs_ix, instrument = self._scene_cache[scene_id]
 
