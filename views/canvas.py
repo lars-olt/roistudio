@@ -420,54 +420,34 @@ class CanvasContainer(QWidget):
                 super().setCursor(self.tool_cursor)
     
     def wheelEvent(self, event: QWheelEvent):
-        # pixelDelta is populated by trackpad drivers for smooth scrolling.
-        # angleDelta is the classic mouse wheel fallback.
-        pixel = event.pixelDelta()
-        angle = event.angleDelta()
-
-        if event.modifiers() & Qt.ControlModifier:
-            # Mouse-wheel zoom (Ctrl+scroll). Trackpad pinch comes via event() below.
-            delta = angle.y()
-            if delta:
-                self._apply_zoom(1.1 if delta > 0 else 0.9, event.pos())
-        elif not pixel.isNull():
-            # Trackpad two-finger scroll - pixel-precise, pan both axes.
-            self.pan_offset += QPointF(pixel.x(), pixel.y())
+        modifiers = event.modifiers()
+        if modifiers & Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            zoom_factor = 1.1 if delta > 0 else 0.9
+            
+            mouse_viewport_x = event.pos().x()
+            mouse_viewport_y = event.pos().y()
+            
+            canvas_viewport_x = self.pan_offset.x() + (self.width() / self.zoom_level - self.canvas.width()) / 2 * self.zoom_level
+            canvas_viewport_y = self.pan_offset.y() + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level
+            mouse_canvas_x = (mouse_viewport_x - canvas_viewport_x) / self.zoom_level
+            mouse_canvas_y = (mouse_viewport_y - canvas_viewport_y) / self.zoom_level
+            
+            self.zoom_level *= zoom_factor
+            self.zoom_level = max(0.1, min(10.0, self.zoom_level))
+            
+            new_canvas_viewport_x = self.pan_offset.x() + (self.width() / self.zoom_level - self.canvas.width()) / 2 * self.zoom_level
+            new_canvas_viewport_y = self.pan_offset.y() + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level
+            desired_canvas_viewport_x = mouse_viewport_x - mouse_canvas_x * self.zoom_level
+            desired_canvas_viewport_y = mouse_viewport_y - mouse_canvas_y * self.zoom_level
+            
+            self.pan_offset.setX(self.pan_offset.x() + (desired_canvas_viewport_x - new_canvas_viewport_x))
+            self.pan_offset.setY(self.pan_offset.y() + (desired_canvas_viewport_y - new_canvas_viewport_y))
             self.update()
         else:
-            # Mouse wheel - pan vertically.
-            self.pan_offset.setY(self.pan_offset.y() + angle.y() * 0.5)
+            delta = event.angleDelta().y()
+            self.pan_offset.setY(self.pan_offset.y() + delta * 0.5)
             self.update()
-
-    def event(self, event):
-        # handles QNativeGestureEvent (pinch-to-zoom)
-        if event.type() == event.NativeGesture:
-            from PyQt5.QtCore import QNativeGestureEvent
-            gesture = event  # already the right type
-            if gesture.gestureType() == Qt.ZoomNativeGesture:
-                # value() is the incremental scale delta, e.g. 0.02 for 2% zoom.
-                factor = 1.0 + gesture.value()
-                self._apply_zoom(factor, gesture.pos().toPoint())
-                return True
-        return super().event(event)
-
-    def _apply_zoom(self, factor: float, anchor):
-        """Zoom by factor, keeping the point under anchor fixed in screen space."""
-        mx, my = anchor.x(), anchor.y()
-
-        cvx = self.pan_offset.x() + (self.width()  / self.zoom_level - self.canvas.width())  / 2 * self.zoom_level
-        cvy = self.pan_offset.y() + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level
-        img_x = (mx - cvx) / self.zoom_level
-        img_y = (my - cvy) / self.zoom_level
-
-        self.zoom_level = max(0.1, min(10.0, self.zoom_level * factor))
-
-        new_cvx = self.pan_offset.x() + (self.width()  / self.zoom_level - self.canvas.width())  / 2 * self.zoom_level
-        new_cvy = self.pan_offset.y() + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level
-        self.pan_offset.setX(self.pan_offset.x() + (mx - img_x * self.zoom_level) - new_cvx)
-        self.pan_offset.setY(self.pan_offset.y() + (my - img_y * self.zoom_level) - new_cvy)
-
-        self.update()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
