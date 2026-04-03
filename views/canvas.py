@@ -506,10 +506,10 @@ class DualCanvasContainer(QWidget):
     # Forward all signals from CanvasContainer
     scene_dropped = pyqtSignal(str)
     pixel_hovered = pyqtSignal(int, int)
-    roi_changed = pyqtSignal(int, tuple)
+    roi_changed = pyqtSignal(int, tuple, str)   # (index, rect, camera: 'left'|'right'|'single')
     roi_selected = pyqtSignal(int)
     roi_deleted = pyqtSignal(int)
-    roi_created = pyqtSignal(tuple)
+    roi_created = pyqtSignal(tuple, str)         # (rect, camera)
     
     def __init__(self):
         super().__init__()
@@ -555,14 +555,10 @@ class DualCanvasContainer(QWidget):
         self.splitter.hide()
     
     def _connect_canvas_signals(self, canvas):
-        """Connect canvas signals to forward them."""
         canvas.scene_dropped.connect(self.scene_dropped.emit)
         canvas.pixel_hovered.connect(self.pixel_hovered.emit)
         canvas.roi_selected.connect(self.roi_selected.emit)
         canvas.roi_deleted.connect(self.roi_deleted.emit)
-        
-        # For roi_changed and roi_created, we need to know which canvas emitted it
-        # so we can transform coordinates appropriately
         canvas.roi_changed.connect(lambda idx, rect, c=canvas: self._on_canvas_roi_changed(c, idx, rect))
         canvas.roi_created.connect(lambda rect, c=canvas: self._on_canvas_roi_created(c, rect))
     
@@ -598,30 +594,18 @@ class DualCanvasContainer(QWidget):
                 self.canvas_single.set_rois(roi_dicts, self.canvas_right.roi_colors)
     
     def _on_canvas_roi_changed(self, source_canvas, roi_index, rect):
-        """
-        Handle ROI change from a specific canvas.
-        Transform coordinates if from left canvas to right camera space.
-        """
-        if self.is_split_mode and source_canvas == self.canvas_left:
-            # ROI changed on left canvas - transform to right camera space
-            transformed_rect = self._transform_roi_to_right(rect)
-            self.roi_changed.emit(roi_index, transformed_rect)
+        if self.is_split_mode:
+            camera = 'left' if source_canvas is self.canvas_left else 'right'
         else:
-            # ROI changed on right canvas or single mode - use as-is
-            self.roi_changed.emit(roi_index, rect)
+            camera = 'single'
+        self.roi_changed.emit(roi_index, rect, camera)
     
     def _on_canvas_roi_created(self, source_canvas, rect):
-        """
-        Handle ROI creation from a specific canvas.
-        Transform coordinates if from left canvas to right camera space.
-        """
-        if self.is_split_mode and source_canvas == self.canvas_left:
-            # ROI created on left canvas - transform to right camera space
-            transformed_rect = self._transform_roi_to_right(rect)
-            self.roi_created.emit(transformed_rect)
+        if self.is_split_mode:
+            camera = 'left' if source_canvas is self.canvas_left else 'right'
         else:
-            # ROI created on right canvas or single mode - use as-is
-            self.roi_created.emit(rect)
+            camera = 'single'
+        self.roi_created.emit(rect, camera)
     
     # Forward all methods to active canvas(es)
     
@@ -746,25 +730,23 @@ class DualCanvasContainer(QWidget):
             self.canvas_single.set_image(pixmap)
     
     def set_rois(self, rois, colors=None):
-        """
-        Forward to active canvas(es).
-        In split mode, ROIs are in right camera space and are transformed for left camera.
-        """
         if self.is_split_mode:
-            # Right canvas gets ROIs as-is (they're in right camera space)
+            # Right canvas: ROIs are in right-camera space.
             self.canvas_right.set_rois(rois, colors)
-            
-            # Left canvas needs transformed ROIs
-            if self.homography_matrix is not None:
-                transformed_rois = []
-                for roi_data in rois:
-                    roi_tuple = tuple(map(float, roi_data['roi']))
-                    transformed_roi = self._transform_roi_to_left(roi_tuple)
-                    transformed_rois.append({'roi': transformed_roi})
-                self.canvas_left.set_rois(transformed_rois, colors)
-            else:
-                # No homography available, just use same ROIs
-                self.canvas_left.set_rois(rois, colors)
+    
+            # Left canvas: use the pre-computed inscribed left rects from the ROI data.
+            # Fall back to homography transform only if left_rect is missing
+            # (e.g. manually created ROIs before a SPARC run).
+            left_rois = []
+            for roi_data in rois:
+                if 'left_rect' in roi_data:
+                    left_rois.append({'roi': roi_data['left_rect']})
+                elif self.homography_matrix is not None:
+                    transformed = self._transform_roi_to_left(tuple(map(float, roi_data['roi'])))
+                    left_rois.append({'roi': transformed})
+                else:
+                    left_rois.append({'roi': roi_data['roi']})
+            self.canvas_left.set_rois(left_rois, colors)
         else:
             self.canvas_single.set_rois(rois, colors)
     

@@ -138,11 +138,16 @@ jobs:
 
             Download the zip for your platform, unzip it, and run `ROIStudio` inside.
 
-            **Before first run:** In the GUI, go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
+            **Before the first run:** In the GUI, go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
             Download SAM weights: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
             | Platform | Download |
             |----------|----------|
             | Windows (x64) | ROIStudio-windows-x64.zip |
-            | macOS Intel | Upload manually — see notes below |
-            | macOS Apple Silicon | ROIStudio-macos-silicon.zip |
+            | macOS Apple Silicon* | ROIStudio-macos-silicon.zip |
+
+            (\*) macOS quarantines the program for security. After downloading on macOS, check quarantine status by running this in your terminal:
+            `xattr -l /path/to/ROIStudio.app`
+            Remove it from quarantine with this command:
+            `xattr -dr com.apple.quarantine /path/to/ROIStudio.app`
+            Note: be sure to replace `/path/to/ROIStudio.app` with your actual file path.

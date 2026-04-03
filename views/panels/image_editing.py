@@ -15,9 +15,9 @@ class ImageEditingPanel(QWidget):
     spectral_preview_signal = pyqtSignal(int, int)
     tool_changed_signal = pyqtSignal(str)
 
-    roi_changed = pyqtSignal(int, tuple)
+    roi_changed = pyqtSignal(int, tuple, str)
     roi_deleted = pyqtSignal(int)
-    roi_created = pyqtSignal(tuple)
+    roi_created = pyqtSignal(tuple, str)
 
     split_screen_toggled = pyqtSignal(bool)
 
