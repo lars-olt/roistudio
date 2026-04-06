@@ -109,6 +109,7 @@ class Controller(QObject):
             self.save_config()
             self._view.show_status_message(f"SAM model path set: {sam_path}")
 
+
     # ------------------------------------------------------------------
     # SEL Export
     # ------------------------------------------------------------------
@@ -143,8 +144,8 @@ class Controller(QObject):
             n_rois = len(self._current_rois_data)
 
             # Build right_rois and left_rois from the live ROI data list.
-            # These are already in cropped-image space for ZCAM; we shift them
-            # back to full-sensor coordinates here (same logic as result.export_sel).
+            # Coordinates are in cropped-image space and are written as-is —
+            # the consuming tool applies the crop offset itself when reading.
             right_rois = np.array(
                 [roi_data['right_rect'] for roi_data in self._current_rois_data],
                 dtype=np.int32,
@@ -155,15 +156,19 @@ class Controller(QObject):
                 dtype=np.int32,
             )
 
-            # ZCAM images are cropped before processing; add the crop offsets back
-            # so the sel file references full-sensor pixel coordinates.
+            # ZCAM ROIs are in cropped space; shift back to full-sensor
+            # coordinates before writing. full_H/W come from the raw band.
             if instrument in {'ZCAM', 'MCZ'}:
                 try:
                     from asdf_settings import rapidlooks
                     crop = rapidlooks.CROP_SETTINGS["crop"]
                     col_off, row_off = int(crop[0]), int(crop[2])
                     raw_band = next(iter(load_result["base_bands"].values()))
-                    full_H, full_W = raw_band.shape
+                    cropped_H, cropped_W = raw_band.shape
+                    # The band is already cropped; reconstruct full sensor size
+                    # by adding the margins back: crop = (left, right, top, bottom).
+                    full_H = cropped_H + crop[2] + crop[3]
+                    full_W = cropped_W + crop[0] + crop[1]
                 except Exception:
                     col_off, row_off = 0, 0
                     full_H, full_W = load_result['rgb_img'].shape[:2]
