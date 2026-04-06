@@ -12,6 +12,7 @@ class View(QWidget):
     load_cube_signal = pyqtSignal()
     set_sam_path_signal = pyqtSignal()
     open_folder_signal = pyqtSignal()
+    export_sel_signal = pyqtSignal()
     run_algorithm_signal = pyqtSignal()
     scene_dropped_signal = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
@@ -76,6 +77,13 @@ class View(QWidget):
         self.action_open_folder = QAction("Open Folder", self)
         self.action_open_folder.triggered.connect(self.open_folder_signal.emit)
         self.menu_file.addAction(self.action_open_folder)
+
+        self.menu_file.addSeparator()
+
+        self.action_export_sel = QAction("Export sel", self)
+        self.action_export_sel.triggered.connect(self.export_sel_signal.emit)
+        self.action_export_sel.setEnabled(False)
+        self.menu_file.addAction(self.action_export_sel)
         
         self.menu_edit = QMenu("Edit", self.menubar)
         self.menubar.addMenu(self.menu_edit)

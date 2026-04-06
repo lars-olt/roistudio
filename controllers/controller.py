@@ -53,6 +53,7 @@ class Controller(QObject):
     def _connect_view_signals(self):
         self._view.set_sam_path_signal.connect(self.set_sam_path)
         self._view.open_folder_signal.connect(self.open_iof_folder)
+        self._view.export_sel_signal.connect(self.export_sel)
         self._view.scene_dropped_signal.connect(self.load_scene_by_id)
         self._view.run_algorithm_signal.connect(self.run_algorithm)  # drag + drop
         self._view.scene_double_clicked_signal.connect(self.load_scene_by_id)  # double-click
@@ -109,6 +110,94 @@ class Controller(QObject):
             self._view.show_status_message(f"SAM model path set: {sam_path}")
 
     # ------------------------------------------------------------------
+    # SEL Export
+    # ------------------------------------------------------------------
+
+    def export_sel(self):
+        """Export the current (possibly user-edited) ROIs as a .sel file."""
+        if not self._current_rois_data:
+            self._view.show_status_message("No ROIs to export.")
+            return
+
+        load_result = self._model.sparc_load_result
+        if load_result is None:
+            self._view.show_status_message("No scene loaded — cannot export SEL.")
+            return
+
+        from PyQt5.QtWidgets import QFileDialog
+        scene_id = load_result.get('id', 'scene')
+        output_path, _ = QFileDialog.getSaveFileName(
+            self._view,
+            "Export SEL File",
+            f"{scene_id}.sel",
+            "SEL Files (*.sel);;All Files (*)",
+        )
+        if not output_path:
+            return  # user cancelled
+
+        try:
+            import numpy as np
+            from sparc.utils.sel_writer import export_sel as _write_sel, filenames_from_load_result
+
+            instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+            n_rois = len(self._current_rois_data)
+
+            # Build right_rois and left_rois from the live ROI data list.
+            # These are already in cropped-image space for ZCAM; we shift them
+            # back to full-sensor coordinates here (same logic as result.export_sel).
+            right_rois = np.array(
+                [roi_data['right_rect'] for roi_data in self._current_rois_data],
+                dtype=np.int32,
+            )
+            left_rois = np.array(
+                [roi_data.get('left_rect', roi_data['right_rect'])
+                 for roi_data in self._current_rois_data],
+                dtype=np.int32,
+            )
+
+            # ZCAM images are cropped before processing; add the crop offsets back
+            # so the sel file references full-sensor pixel coordinates.
+            if instrument in {'ZCAM', 'MCZ'}:
+                try:
+                    from asdf_settings import rapidlooks
+                    crop = rapidlooks.CROP_SETTINGS["crop"]
+                    col_off, row_off = int(crop[0]), int(crop[2])
+                    raw_band = next(iter(load_result["base_bands"].values()))
+                    full_H, full_W = raw_band.shape
+                except Exception:
+                    col_off, row_off = 0, 0
+                    full_H, full_W = load_result['rgb_img'].shape[:2]
+            else:
+                col_off, row_off = 0, 0
+                full_H, full_W = load_result['rgb_img'].shape[:2]
+
+            if col_off or row_off:
+                right_rois = right_rois.copy()
+                right_rois[:, 0] += col_off
+                right_rois[:, 1] += row_off
+                left_rois = left_rois.copy()
+                left_rois[:, 0] += col_off
+                left_rois[:, 1] += row_off
+
+            left_names, right_names = filenames_from_load_result(load_result, n_rois)
+
+            _write_sel(
+                output_path=output_path,
+                final_rois=right_rois,
+                final_left_rois=left_rois,
+                image_shape=(full_H, full_W),
+                left_filenames=left_names,
+                right_filenames=right_names,
+                instrument=instrument,
+            )
+
+            self._view.show_status_message(f"Exported {n_rois} ROI(s) to {output_path}")
+
+        except Exception as e:
+            self._view.show_status_message(f"Export failed: {e}")
+            import traceback; traceback.print_exc()
+
+    # ------------------------------------------------------------------
     # Scene scanning / loading
     # ------------------------------------------------------------------
 
@@ -146,6 +235,7 @@ class Controller(QObject):
         self._current_colors    = []
         self.color_stack        = []
         self.next_color_index   = 0
+        self._view.action_export_sel.setEnabled(False)
 
         self._view.select_scene(self._current_scene_id)
 
@@ -230,6 +320,7 @@ class Controller(QObject):
             self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
             self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
 
+            self._view.action_export_sel.setEnabled(True)
             self._view.stop_loading()
             self._view.show_status_message(f"SPARC complete: {len(result.final_rois)} ROIs found")
 
@@ -309,6 +400,7 @@ class Controller(QObject):
 
             self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
             self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            self._view.action_export_sel.setEnabled(True)
             self._view.show_status_message("ROI created")
 
         except Exception as e:
@@ -322,6 +414,7 @@ class Controller(QObject):
             self._current_rois_data.pop(roi_index)
             self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
             self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            self._view.action_export_sel.setEnabled(bool(self._current_rois_data))
             self._view.show_status_message(f"ROI {roi_index + 1} deleted")
         except Exception as e:
             self._view.show_status_message(f"Error deleting ROI: {str(e)}")
