@@ -38,16 +38,13 @@ class Controller(QObject):
         self._connect_controller_signals()
 
     def _init_color_palette(self):
-        hex_colors = [
-            "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#00FFFF", "#FF00FF",
-            "#FFA500", "#800080", "#008000", "#000080", "#800000", "#008080"
-        ]
-        try:
-            from marslab.compat import mertools
-            if hasattr(mertools, 'MERSPECT_M20_COLOR_MAPPINGS'):
-                hex_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
-        except ImportError:
-            pass
+        from marslab.compat import mertools
+        from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
+        if hasattr(mertools, 'MERSPECT_M20_COLOR_MAPPINGS'):
+            all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
+            instrument = self._model.instrument if hasattr(self, '_model') else 'ZCAM'
+            first_id = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
+            hex_colors = all_colors[first_id - 1:]
         self.color_palette = [hex_to_rgb(c) for c in hex_colors]
 
     def _connect_view_signals(self):
