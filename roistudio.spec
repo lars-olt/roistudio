@@ -111,6 +111,7 @@ hidden_imports = [
     "sparc.utils.geometry",
     "sparc.utils.io",
     "sparc.utils.pancam_helpers",
+    "sparc.utils.sel_writer",
     "sparc.utils.threading",
     "sparc.visualization",
     "sparc.visualization.plotting",
@@ -136,6 +137,9 @@ datas += [
     ("graphics", "graphics"),
     ("config.yml", "."),
 ]
+
+# SPARC package data - blank .sel templates required by sel_writer at runtime
+datas += collect_data_files("sparc")
 
 # Package data files
 for pkg in ("matplotlib", "PyQt5", "cv2", "sklearn"):
