@@ -15,10 +15,11 @@ class SparcController(QObject):
         super().__init__()
         self._sparc_thread = None
 
-    def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument, params=None):
+    def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument,
+                    params=None, load_result=None):
         from workers.sparc_runner import SparcRunThread
         self._sparc_thread = SparcRunThread(
-            sam_path, folder_path, seq_id, obs_ix, instrument, params
+            sam_path, folder_path, seq_id, obs_ix, instrument, params, load_result
         )
         self._sparc_thread.status_update.connect(self.status_update.emit)
         self._sparc_thread.sparc_complete.connect(self.complete.emit)

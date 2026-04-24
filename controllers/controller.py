@@ -281,7 +281,9 @@ class Controller(QObject):
 
         self._view.show_status_message("Starting SPARC pipeline...")
         self.sparc_controller.start_sparc(
-            sam_path, folder_path, seq_id, obs_ix, instrument, params
+            sam_path, folder_path, seq_id, obs_ix, instrument,
+            params      = params,
+            load_result = self._model.sparc_load_result,
         )
 
     def _get_instrument_config(self):

@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QThread, pyqtSignal
-from sparc.core.functional import run_sparc
+from sparc.core.functional import run_sparc, run_sparc_from_load_result
 from sparc.core.config import (
     SparcConfig, LoadConfig, SegmentConfig, PreprocessConfig,
     ROIConfig, SpectralConfig, PerformanceConfig,
@@ -14,7 +14,8 @@ class SparcRunThread(QThread):
     sparc_complete = pyqtSignal(object)
     sparc_error    = pyqtSignal(str)
 
-    def __init__(self, sam_path, folder_path, seq_id, obs_ix, instrument, params=None):
+    def __init__(self, sam_path, folder_path, seq_id, obs_ix, instrument,
+                 params=None, load_result=None):
         super().__init__()
         self.sam_path    = sam_path
         self.folder_path = folder_path
@@ -22,14 +23,13 @@ class SparcRunThread(QThread):
         self.obs_ix      = obs_ix
         self.instrument  = instrument
         self.params      = params or {}
+        self.load_result = load_result  # pre-loaded by GUI; skips load_step if provided
 
     def run(self):
         try:
-            self.status_update.emit("Loading scene...")
-
-            seg    = self.params.get('segment', {})
-            roi    = self.params.get('roi', {})
-            spec   = self.params.get('spectral', {})
+            seg  = self.params.get('segment', {})
+            roi  = self.params.get('roi', {})
+            spec = self.params.get('spectral', {})
 
             config = SparcConfig(
                 load=LoadConfig(
@@ -66,11 +66,16 @@ class SparcRunThread(QThread):
             )
 
             self.status_update.emit("Running SPARC pipeline...")
-            result = run_sparc(
-                iof_path      = self.folder_path,
-                sam_model_path= self.sam_path,
-                config        = config,
-            )
+
+            if self.load_result is not None:
+                result = run_sparc_from_load_result(self.load_result, config)
+            else:
+                self.status_update.emit("Loading scene...")
+                result = run_sparc(
+                    iof_path       = self.folder_path,
+                    sam_model_path = self.sam_path,
+                    config         = config,
+                )
 
             self.sparc_complete.emit(result)
 
