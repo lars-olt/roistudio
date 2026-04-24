@@ -15,10 +15,10 @@ class SparcController(QObject):
         super().__init__()
         self._sparc_thread = None
 
-    def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument, max_components=9):
+    def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument, params=None):
         from workers.sparc_runner import SparcRunThread
         self._sparc_thread = SparcRunThread(
-            sam_path, folder_path, seq_id, obs_ix, instrument, max_components
+            sam_path, folder_path, seq_id, obs_ix, instrument, params
         )
         self._sparc_thread.status_update.connect(self.status_update.emit)
         self._sparc_thread.sparc_complete.connect(self.complete.emit)
@@ -65,7 +65,6 @@ class SparcController(QObject):
         left_cube  = load_result['left_cube']
         right_cube = load_result['right_cube']
 
-        # Slice both raw cubes once; index into them by band name.
         left_spec,  left_std  = self._slice_cube(left_cube,  left_rect)
         right_spec, right_std = self._slice_cube(right_cube, right_rect)
 

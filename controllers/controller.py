@@ -43,8 +43,11 @@ class Controller(QObject):
         if hasattr(mertools, 'MERSPECT_M20_COLOR_MAPPINGS'):
             all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
             instrument = self._model.instrument if hasattr(self, '_model') else 'ZCAM'
-            first_id = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
-            hex_colors = all_colors[first_id - 1:]
+            first_id   = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
+            # first_id is 1-based for ZCAM (first_id=4 → skip first 3).
+            # For PCAM first_id=0, so we take the full palette.
+            start = max(0, first_id - 1)
+            hex_colors = all_colors[start:]
         self.color_palette = [hex_to_rgb(c) for c in hex_colors]
 
     def _connect_view_signals(self):
@@ -52,8 +55,8 @@ class Controller(QObject):
         self._view.open_folder_signal.connect(self.open_iof_folder)
         self._view.export_sel_signal.connect(self.export_sel)
         self._view.scene_dropped_signal.connect(self.load_scene_by_id)
-        self._view.run_algorithm_signal.connect(self.run_algorithm)  # drag + drop
-        self._view.scene_double_clicked_signal.connect(self.load_scene_by_id)  # double-click
+        self._view.run_algorithm_signal.connect(self.run_algorithm)
+        self._view.scene_double_clicked_signal.connect(self.load_scene_by_id)
         self._view.pixel_hover_callback = self.on_pixel_hover
 
         self._view.panel_image_editing.roi_changed.connect(self.on_roi_changed)
@@ -106,7 +109,6 @@ class Controller(QObject):
             self.save_config()
             self._view.show_status_message(f"SAM model path set: {sam_path}")
 
-
     # ------------------------------------------------------------------
     # SEL Export
     # ------------------------------------------------------------------
@@ -131,18 +133,14 @@ class Controller(QObject):
             "SEL Files (*.sel);;All Files (*)",
         )
         if not output_path:
-            return  # user cancelled
+            return
 
         try:
-            import numpy as np
             from sparc.utils.sel_writer import export_sel as _write_sel, filenames_from_load_result
 
             instrument = load_result.get('instrument', 'ZCAM').strip().upper()
-            n_rois = len(self._current_rois_data)
+            n_rois     = len(self._current_rois_data)
 
-            # Build right_rois and left_rois from the live ROI data list.
-            # Coordinates are in cropped-image space and are written as-is —
-            # the consuming tool applies the crop offset itself when reading.
             right_rois = np.array(
                 [roi_data['right_rect'] for roi_data in self._current_rois_data],
                 dtype=np.int32,
@@ -153,44 +151,37 @@ class Controller(QObject):
                 dtype=np.int32,
             )
 
-            # ZCAM ROIs are in cropped space; shift back to full-sensor
-            # coordinates before writing. full_H/W come from the raw band.
             if instrument in {'ZCAM', 'MCZ'}:
                 try:
                     from asdf_settings import rapidlooks
-                    crop = rapidlooks.CROP_SETTINGS["crop"]
-                    col_off, row_off = int(crop[0]), int(crop[2])
-                    raw_band = next(iter(load_result["base_bands"].values()))
+                    crop       = rapidlooks.CROP_SETTINGS["crop"]
+                    col_off    = int(crop[0])
+                    row_off    = int(crop[2])
+                    raw_band   = next(iter(load_result["base_bands"].values()))
                     cropped_H, cropped_W = raw_band.shape
-                    # The band is already cropped; reconstruct full sensor size
-                    # by adding the margins back: crop = (left, right, top, bottom).
                     full_H = cropped_H + crop[2] + crop[3]
                     full_W = cropped_W + crop[0] + crop[1]
                 except Exception:
                     col_off, row_off = 0, 0
-                    full_H, full_W = load_result['rgb_img'].shape[:2]
+                    full_H, full_W   = load_result['rgb_img'].shape[:2]
             else:
                 col_off, row_off = 0, 0
-                full_H, full_W = load_result['rgb_img'].shape[:2]
+                full_H, full_W   = load_result['rgb_img'].shape[:2]
 
             if col_off or row_off:
-                right_rois = right_rois.copy()
-                right_rois[:, 0] += col_off
-                right_rois[:, 1] += row_off
-                left_rois = left_rois.copy()
-                left_rois[:, 0] += col_off
-                left_rois[:, 1] += row_off
+                right_rois = right_rois.copy(); right_rois[:, 0] += col_off; right_rois[:, 1] += row_off
+                left_rois  = left_rois.copy();  left_rois[:, 0]  += col_off; left_rois[:, 1]  += row_off
 
             left_names, right_names = filenames_from_load_result(load_result, n_rois)
 
             _write_sel(
-                output_path=output_path,
-                final_rois=right_rois,
-                final_left_rois=left_rois,
-                image_shape=(full_H, full_W),
-                left_filenames=left_names,
-                right_filenames=right_names,
-                instrument=instrument,
+                output_path     = output_path,
+                final_rois      = right_rois,
+                final_left_rois = left_rois,
+                image_shape     = (full_H, full_W),
+                left_filenames  = left_names,
+                right_filenames = right_names,
+                instrument      = instrument,
             )
 
             self._view.show_status_message(f"Exported {n_rois} ROI(s) to {output_path}")
@@ -286,12 +277,11 @@ class Controller(QObject):
             return
 
         folder_path, seq_id, obs_ix, instrument = scene_info
-        params         = self._view.panel_parameter_selection.get_parameters()
-        max_components = params['spectral']['max_components']
+        params = self._view.panel_parameter_selection.get_parameters()
 
         self._view.show_status_message("Starting SPARC pipeline...")
         self.sparc_controller.start_sparc(
-            sam_path, folder_path, seq_id, obs_ix, instrument, max_components
+            sam_path, folder_path, seq_id, obs_ix, instrument, params
         )
 
     def _get_instrument_config(self):
@@ -369,13 +359,11 @@ class Controller(QObject):
             if self._has_dual_cubes():
                 homography = load_result.get('homography_matrix')
                 if camera == 'left':
-                    # rect is in left-camera space; derive right rect via forward homography.
                     left_rect  = tuple(rect)
                     right_rect = self._left_rect_to_right(left_rect, homography)
                     if right_rect is None:
                         right_rect = left_rect
                 else:
-                    # rect is in right-camera space (right canvas or single mode).
                     right_rect = tuple(rect)
                     left_rect  = right_rect_to_left_inscribed(right_rect, homography) if homography is not None else right_rect
                     if left_rect is None:
@@ -469,15 +457,10 @@ class Controller(QObject):
 
     @staticmethod
     def _left_rect_to_right(left_rect, homography_matrix):
-        """
-        Transform a left-camera rect into right-camera space via forward homography.
-        Returns the axis-aligned bounding box — no inscription needed since
-        right is the reference frame.
-        """
+        """Transform a left-camera rect into right-camera space via forward homography."""
         if homography_matrix is None:
             return left_rect
         import cv2
-        import numpy as np
         x, y, w, h = left_rect
         corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], dtype=np.float32)
         rc = cv2.perspectiveTransform(corners.reshape(-1, 1, 2), homography_matrix).reshape(-1, 2)
@@ -487,7 +470,7 @@ class Controller(QObject):
 
     @staticmethod
     def _apply_rect_delta(left_rect, old_right_rect, new_right_rect):
-        """Propagate the translation and scale of a right-rect move onto the left rect."""
+        """Propagate translation and scale of a right-rect move onto the left rect."""
         ox, oy, ow, oh = old_right_rect
         nx, ny, nw, nh = new_right_rect
         lx, ly, lw, lh = left_rect

@@ -1,57 +1,75 @@
 from PyQt5.QtCore import QThread, pyqtSignal
 from sparc.core.functional import run_sparc
 from sparc.core.config import (
-    SparcConfig, LoadConfig, SegmentConfig, SpectralConfig,
-    SegmentationBackend, ROIBackend
+    SparcConfig, LoadConfig, SegmentConfig, PreprocessConfig,
+    ROIConfig, SpectralConfig, PerformanceConfig,
+    SegmentationBackend, ROIBackend,
 )
 
 
 class SparcRunThread(QThread):
     """Background thread for running SPARC pipeline."""
 
-    status_update = pyqtSignal(str)
+    status_update  = pyqtSignal(str)
     sparc_complete = pyqtSignal(object)
-    sparc_error = pyqtSignal(str)
+    sparc_error    = pyqtSignal(str)
 
-    def __init__(self, sam_path, folder_path, seq_id, obs_ix, instrument,
-                 max_components=9):
+    def __init__(self, sam_path, folder_path, seq_id, obs_ix, instrument, params=None):
         super().__init__()
-        self.sam_path       = sam_path
-        self.folder_path    = folder_path
-        self.seq_id         = seq_id
-        self.obs_ix         = obs_ix
-        self.instrument     = instrument
-        self.max_components = max_components
+        self.sam_path    = sam_path
+        self.folder_path = folder_path
+        self.seq_id      = seq_id
+        self.obs_ix      = obs_ix
+        self.instrument  = instrument
+        self.params      = params or {}
 
     def run(self):
-        """Executes SPARC pipeline."""
         try:
             self.status_update.emit("Loading scene...")
 
+            seg    = self.params.get('segment', {})
+            roi    = self.params.get('roi', {})
+            spec   = self.params.get('spectral', {})
+
             config = SparcConfig(
                 load=LoadConfig(
-                    iof_path=self.folder_path,
-                    instrument=self.instrument,
-                    seq_id=self.seq_id,
-                    obs_ix=self.obs_ix,
-                    do_apply_pixmaps=True,
-                    ignore_bayers=False,
+                    iof_path         = self.folder_path,
+                    instrument       = self.instrument,
+                    seq_id           = self.seq_id,
+                    obs_ix           = self.obs_ix,
+                    do_apply_pixmaps = True,
+                    ignore_bayers    = False,
                 ),
                 segment=SegmentConfig(
-                    sam_model_path=self.sam_path,
-                    backend=SegmentationBackend.GPU,
+                    sam_model_path      = self.sam_path,
+                    backend             = SegmentationBackend.GPU,
+                    preserve_background = seg.get('preserve_background', False),
+                    points_per_side     = seg.get('points_per_side', 32),
+                    pred_iou_thresh     = seg.get('pred_iou_thresh', 0.88),
+                ),
+                roi=ROIConfig(
+                    backend                 = ROIBackend.THREADED,
+                    edge_offset             = roi.get('edge_offset', 10),
+                    allowed_variance        = roi.get('allowed_variance', 1.0),
+                    area_threshold          = roi.get('area_threshold', 50),
+                    albedo_ratio_threshold  = roi.get('albedo_ratio_threshold', 0.80),
+                    min_cluster_area        = roi.get('min_cluster_area', 500),
+                    min_clean_area          = roi.get('min_clean_area', 4000),
+                    morph_opening_threshold = roi.get('morph_opening_threshold', 1000),
+                    max_subclusters         = roi.get('max_subclusters', 10),
                 ),
                 spectral=SpectralConfig(
-                    max_components=self.max_components,
+                    contamination  = spec.get('contamination', 0.1),
+                    freq_threshold = spec.get('freq_threshold', 0.7),
+                    max_components = spec.get('max_components', 9),
                 ),
             )
-            config.roi.backend = ROIBackend.THREADED
 
             self.status_update.emit("Running SPARC pipeline...")
             result = run_sparc(
-                iof_path=self.folder_path,
-                sam_model_path=self.sam_path,
-                config=config,
+                iof_path      = self.folder_path,
+                sam_model_path= self.sam_path,
+                config        = config,
             )
 
             self.sparc_complete.emit(result)
