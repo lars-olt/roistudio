@@ -64,6 +64,7 @@ class Controller(QObject):
         self._view.panel_image_editing.roi_created.connect(self.on_roi_created)
 
         self._view.panel_image_editing.split_screen_toggled.connect(self.on_split_screen_toggled)
+        self._view.panel_image_editing.rgb_bands_changed.connect(self.on_rgb_bands_changed)
 
     def _connect_controller_signals(self):
         self.scene_controller.scan_started.connect(self._view.start_loading)
@@ -242,12 +243,30 @@ class Controller(QObject):
                 load_result['homography_matrix']
             )
 
-        if self._is_split_screen and 'left_rgb_img' in load_result and 'right_rgb_img' in load_result:
-            left_pixmap  = numpy_to_pixmap(load_result['left_rgb_img'])
-            right_pixmap = numpy_to_pixmap(load_result['right_rgb_img'])
-            self._view.panel_image_editing.canvas_container.set_camera_images(left_pixmap, right_pixmap)
-        else:
-            self._view.panel_image_editing.set_image(numpy_to_pixmap(load_result['rgb_img']))
+        # Populate RGB dropdowns with all available bands for this scene.
+        band_names = list(load_result.get('base_bands', {}).keys())
+        if band_names:
+            instrument   = load_result.get('instrument', 'ZCAM')
+            right_bands  = [b for b in band_names if b.startswith('R')]
+            left_bands   = [b for b in band_names if b.startswith('L')]
+            right_bands  = right_bands or band_names
+            left_bands   = left_bands  or band_names
+
+            if instrument == 'ZCAM':
+                r_r, g_r, b_r = 'R0R', 'R0G', 'R0B'
+                r_l, g_l, b_l = 'L0R', 'L0G', 'L0B'
+            else:
+                r_r, g_r, b_r = 'R2', 'R1', 'R1'
+                r_l, g_l, b_l = 'L2', 'L5', 'L6'
+
+            self._view.panel_image_editing.set_band_names(
+                right_bands, left_bands,
+                r_r, g_r, b_r,
+                r_l, g_l, b_l,
+            )
+
+        # Render images from the current (just-set) band selection.
+        self._render_current_images()
 
         self._view.panel_image_editing.set_rois([])
         self._view.panel_spectral_view.clear_roi_spectra()
@@ -528,15 +547,120 @@ class Controller(QObject):
         load_result = self._model.sparc_load_result
 
         if load_result is not None:
-            if is_split and 'left_rgb_img' in load_result and 'right_rgb_img' in load_result:
-                left_pixmap  = numpy_to_pixmap(load_result['left_rgb_img'])
-                right_pixmap = numpy_to_pixmap(load_result['right_rgb_img'])
-                self._view.panel_image_editing.canvas_container.set_camera_images(left_pixmap, right_pixmap)
-            elif 'rgb_img' in load_result:
-                self._view.panel_image_editing.set_image(numpy_to_pixmap(load_result['rgb_img']))
+            self._render_current_images()
 
             if self._current_rois_data:
                 self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
 
         mode = "split-screen" if is_split else "single"
         self._view.show_status_message(f"Switched to {mode} mode")
+    # ------------------------------------------------------------------
+    # RGB band selection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False):
+        """
+        Stretch three band arrays into a uint8 RGB pixmap.
+        use_dcs=True:  decorrelation stretch (Gillespie et al. 1986).
+        use_dcs=False: independent per-channel enhance_color stretch.
+        """
+        if use_dcs:
+            H, W = r_arr.shape
+            invalid = (
+                ~np.isfinite(r_arr) |
+                ~np.isfinite(g_arr) |
+                ~np.isfinite(b_arr)
+            )
+            r = np.where(invalid, 0.0, r_arr).astype(np.float32)
+            g = np.where(invalid, 0.0, g_arr).astype(np.float32)
+            b = np.where(invalid, 0.0, b_arr).astype(np.float32)
+            vecs  = np.stack([r, g, b], axis=-1).reshape(-1, 3)
+            valid = vecs[~invalid.ravel()]
+            if valid.shape[0] < 4:
+                return numpy_to_pixmap(np.zeros((H, W, 3), dtype=np.uint8))
+            cov              = np.cov(valid.T).astype(np.float32)
+            eigenvals, eigenvecs = np.linalg.eig(cov)
+            stretch          = np.diag(1.0 / np.sqrt(np.abs(eigenvals)))
+            means            = valid.mean(axis=0)
+            T                = (eigenvecs @ stretch @ eigenvecs.T).astype(np.float32)
+            offset           = means - means @ T
+            dcs              = (vecs - means) @ T + means + offset
+            dcs              = dcs.reshape(H, W, 3)
+            result           = np.zeros((H, W, 3), dtype=np.float32)
+            valid_mask       = ~invalid
+            for c in range(3):
+                ch = dcs[:, :, c]
+                v  = ch[valid_mask]
+                if v.size == 0:
+                    continue
+                lo, hi = np.percentile(v, [0.5, 99.5])
+                result[:, :, c] = np.clip(
+                    (ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0
+                )
+            result[invalid] = 0.0
+            return numpy_to_pixmap(np.ascontiguousarray(result * 255, dtype=np.uint8))
+        else:
+            from marslab.imgops.imgutils import enhance_color
+            rgb    = np.stack([r_arr, g_arr, b_arr], axis=-1).astype(float)
+            result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
+            filled = np.ascontiguousarray(np.ma.filled(result, 0) * 255, dtype=np.uint8)
+            return numpy_to_pixmap(filled)
+
+    def _make_right_pixmap(self, r_band, g_band, b_band, base_bands, use_dcs=False):
+        if not all(b in base_bands for b in (r_band, g_band, b_band)):
+            return None
+        return self._bands_to_pixmap(
+            base_bands[r_band], base_bands[g_band], base_bands[b_band], use_dcs
+        )
+
+    def _render_current_images(self):
+        """
+        Single source of truth for canvas image state.
+        In single mode: renders right overlay selection.
+        In split mode: renders right and left overlays independently.
+        """
+        load_result = self._model.sparc_load_result
+        if load_result is None:
+            return
+
+        base_bands = load_result.get('base_bands', {})
+
+        if self._is_split_screen:
+            r_r, g_r, b_r, dcs_r = self._view.panel_image_editing.get_selected_bands('right')
+            r_l, g_l, b_l, dcs_l = self._view.panel_image_editing.get_selected_bands('left')
+
+            right_pixmap = (self._make_right_pixmap(r_r, g_r, b_r, base_bands, dcs_r)
+                            if r_r and g_r and b_r else None)
+            left_pixmap  = (self._make_right_pixmap(r_l, g_l, b_l, base_bands, dcs_l)
+                            if r_l and g_l and b_l else None)
+
+            # Fall back to prebuilt images if a selection is empty
+            if right_pixmap is None:
+                right_pixmap = numpy_to_pixmap(
+                    load_result.get('right_rgb_img', load_result['rgb_img'])
+                )
+            if left_pixmap is None:
+                left_pixmap = numpy_to_pixmap(
+                    load_result.get('left_rgb_img', load_result['rgb_img'])
+                )
+
+            self._view.panel_image_editing.canvas_container.set_camera_images(
+                left_pixmap, right_pixmap
+            )
+        else:
+            r, g, b, dcs = self._view.panel_image_editing.get_selected_bands('single')
+            if not (r and g and b):
+                self._view.panel_image_editing.set_image(
+                    numpy_to_pixmap(load_result['rgb_img'])
+                )
+                return
+            pixmap = self._make_right_pixmap(r, g, b, base_bands, dcs)
+            if pixmap is not None:
+                self._view.panel_image_editing.set_image(pixmap)
+
+    def on_rgb_bands_changed(self, r, g, b, use_dcs, camera):
+        self._render_current_images()
+
+    def on_dcs_toggled(self, checked):
+        self._render_current_images()
