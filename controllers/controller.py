@@ -11,14 +11,13 @@ from utils.paths import _get_config_path
 
 
 class Controller(QObject):
-    """Main controller coordinating all application logic."""
+    """Coordinates all application logic between model and view."""
 
     def __init__(self, model, view):
         super().__init__()
-        self._model   = model
-        self._view    = view
+        self._model            = model
+        self._view             = view
         self._current_scene_id = None
-
         self._current_rois_data = []
         self._current_colors    = []
         self._is_split_screen   = False
@@ -40,15 +39,11 @@ class Controller(QObject):
     def _init_color_palette(self):
         from marslab.compat import mertools
         from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
-        if hasattr(mertools, 'MERSPECT_M20_COLOR_MAPPINGS'):
-            all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
-            instrument = self._model.instrument if hasattr(self, '_model') else 'ZCAM'
-            first_id   = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
-            # first_id is 1-based for ZCAM (first_id=4 → skip first 3).
-            # For PCAM first_id=0, so we take the full palette.
-            start = max(0, first_id - 1)
-            hex_colors = all_colors[start:]
-        self.color_palette = [hex_to_rgb(c) for c in hex_colors]
+        all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
+        instrument = self._model.instrument
+        first_id   = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
+        # first_id is 1-based for ZCAM (skip 3), 0 for PCAM (take all)
+        self.color_palette = [hex_to_rgb(c) for c in all_colors[max(0, first_id - 1):]]
 
     def _connect_view_signals(self):
         self._view.set_sam_path_signal.connect(self.set_sam_path)
@@ -59,30 +54,31 @@ class Controller(QObject):
         self._view.scene_double_clicked_signal.connect(self.load_scene_by_id)
         self._view.pixel_hover_callback = self.on_pixel_hover
 
-        self._view.panel_image_editing.roi_changed.connect(self.on_roi_changed)
-        self._view.panel_image_editing.roi_deleted.connect(self.on_roi_deleted)
-        self._view.panel_image_editing.roi_created.connect(self.on_roi_created)
-
-        self._view.panel_image_editing.split_screen_toggled.connect(self.on_split_screen_toggled)
-        self._view.panel_image_editing.rgb_bands_changed.connect(self.on_rgb_bands_changed)
+        panel = self._view.panel_image_editing
+        panel.roi_changed.connect(self.on_roi_changed)
+        panel.roi_deleted.connect(self.on_roi_deleted)
+        panel.roi_created.connect(self.on_roi_created)
+        panel.split_screen_toggled.connect(self.on_split_screen_toggled)
+        panel.rgb_bands_changed.connect(self.on_rgb_bands_changed)
 
     def _connect_controller_signals(self):
-        self.scene_controller.scan_started.connect(self._view.start_loading)
-        self.scene_controller.scan_stopped.connect(self._view.stop_loading)
-        self.scene_controller.scene_found.connect(self._on_scene_found)
-        self.scene_controller.scan_complete.connect(self._on_scan_complete)
-        self.scene_controller.scan_error.connect(self._on_scan_error)
+        sc = self.scene_controller
+        sc.scan_started.connect(self._view.start_loading)
+        sc.scan_stopped.connect(self._view.stop_loading)
+        sc.scene_found.connect(self._on_scene_found)
+        sc.scan_complete.connect(self._on_scan_complete)
+        sc.scan_error.connect(self._on_scan_error)
+        sc.load_started.connect(self._view.start_loading)
+        sc.load_stopped.connect(self._view.stop_loading)
+        sc.load_complete.connect(self._on_scene_load_complete)
+        sc.load_error.connect(self._on_scene_load_error)
 
-        self.scene_controller.load_started.connect(self._view.start_loading)
-        self.scene_controller.load_stopped.connect(self._view.stop_loading)
-        self.scene_controller.load_complete.connect(self._on_scene_load_complete)
-        self.scene_controller.load_error.connect(self._on_scene_load_error)
-
-        self.sparc_controller.started.connect(self._view.start_loading)
-        self.sparc_controller.stopped.connect(self._view.stop_loading)
-        self.sparc_controller.status_update.connect(self._view.show_status_message)
-        self.sparc_controller.complete.connect(self._on_sparc_complete)
-        self.sparc_controller.error.connect(self._on_sparc_error)
+        sp = self.sparc_controller
+        sp.started.connect(self._view.start_loading)
+        sp.stopped.connect(self._view.stop_loading)
+        sp.status_update.connect(self._view.show_status_message)
+        sp.complete.connect(self._on_sparc_complete)
+        sp.error.connect(self._on_sparc_error)
 
     # ------------------------------------------------------------------
     # Config
@@ -102,36 +98,33 @@ class Controller(QObject):
 
     def set_sam_path(self):
         from PyQt5.QtWidgets import QFileDialog
-        sam_path, _ = QFileDialog.getOpenFileName(
+        path, _ = QFileDialog.getOpenFileName(
             self._view, "Select SAM Model File", "", "Model Files (*.pth);;All Files (*)"
         )
-        if sam_path:
-            self.config['sam_model_path'] = sam_path
+        if path:
+            self.config['sam_model_path'] = path
             self.save_config()
-            self._view.show_status_message(f"SAM model path set: {sam_path}")
+            self._view.show_status_message(f"SAM model path set: {path}")
 
     # ------------------------------------------------------------------
-    # SEL Export
+    # SEL export
     # ------------------------------------------------------------------
 
     def export_sel(self):
-        """Export the current (possibly user-edited) ROIs as a .sel file."""
         if not self._current_rois_data:
             self._view.show_status_message("No ROIs to export.")
             return
 
         load_result = self._model.sparc_load_result
         if load_result is None:
-            self._view.show_status_message("No scene loaded — cannot export SEL.")
+            self._view.show_status_message("No scene loaded - cannot export SEL.")
             return
 
         from PyQt5.QtWidgets import QFileDialog
         scene_id = load_result.get('id', 'scene')
         output_path, _ = QFileDialog.getSaveFileName(
-            self._view,
-            "Export SEL File",
-            f"{scene_id}.sel",
-            "SEL Files (*.sel);;All Files (*)",
+            self._view, "Export SEL File",
+            f"{scene_id}.sel", "SEL Files (*.sel);;All Files (*)",
         )
         if not output_path:
             return
@@ -142,39 +135,32 @@ class Controller(QObject):
             instrument = load_result.get('instrument', 'ZCAM').strip().upper()
             n_rois     = len(self._current_rois_data)
 
-            right_rois = np.array(
-                [roi_data['right_rect'] for roi_data in self._current_rois_data],
-                dtype=np.int32,
-            )
-            left_rois = np.array(
-                [roi_data.get('left_rect', roi_data['right_rect'])
-                 for roi_data in self._current_rois_data],
-                dtype=np.int32,
-            )
+            right_rois = np.array([r['right_rect'] for r in self._current_rois_data], dtype=np.int32)
+            left_rois  = np.array([r.get('left_rect', r['right_rect'])
+                                   for r in self._current_rois_data], dtype=np.int32)
 
             if instrument in {'ZCAM', 'MCZ'}:
-                try:
-                    from asdf_settings import rapidlooks
-                    crop       = rapidlooks.CROP_SETTINGS["crop"]
-                    col_off    = int(crop[0])
-                    row_off    = int(crop[2])
-                    raw_band   = next(iter(load_result["base_bands"].values()))
-                    cropped_H, cropped_W = raw_band.shape
-                    full_H = cropped_H + crop[2] + crop[3]
-                    full_W = cropped_W + crop[0] + crop[1]
-                except Exception:
-                    col_off, row_off = 0, 0
-                    full_H, full_W   = load_result['rgb_img'].shape[:2]
+                from asdf_settings import rapidlooks
+                crop     = rapidlooks.CROP_SETTINGS["crop"]
+                col_off  = int(crop[0])
+                row_off  = int(crop[2])
+                raw_band = next(iter(load_result["base_bands"].values()))
+                ch, cw   = raw_band.shape
+                full_H   = ch + crop[2] + crop[3]
+                full_W   = cw + crop[0] + crop[1]
             else:
                 col_off, row_off = 0, 0
                 full_H, full_W   = load_result['rgb_img'].shape[:2]
 
             if col_off or row_off:
-                right_rois = right_rois.copy(); right_rois[:, 0] += col_off; right_rois[:, 1] += row_off
-                left_rois  = left_rois.copy();  left_rois[:, 0]  += col_off; left_rois[:, 1]  += row_off
+                right_rois = right_rois.copy()
+                right_rois[:, 0] += col_off
+                right_rois[:, 1] += row_off
+                left_rois = left_rois.copy()
+                left_rois[:, 0] += col_off
+                left_rois[:, 1] += row_off
 
             left_names, right_names = filenames_from_load_result(load_result, n_rois)
-
             _write_sel(
                 output_path     = output_path,
                 final_rois      = right_rois,
@@ -184,7 +170,6 @@ class Controller(QObject):
                 right_filenames = right_names,
                 instrument      = instrument,
             )
-
             self._view.show_status_message(f"Exported {n_rois} ROI(s) to {output_path}")
 
         except Exception as e:
@@ -216,9 +201,8 @@ class Controller(QObject):
         self._view.show_status_message(f"Scan error: {error_msg}")
 
     def load_scene_by_id(self, scene_id):
-        scene_info = self.scene_controller.get_scene_info(scene_id)
-        if not scene_info:
-            self._view.show_status_message(f"Error: Scene {scene_id} not found in cache")
+        if not self.scene_controller.get_scene_info(scene_id):
+            self._view.show_status_message(f"Error: scene {scene_id} not found in cache")
             return
         self._view.show_status_message(f"Loading scene: {scene_id}")
         self._current_scene_id = self.scene_controller.start_load(scene_id)
@@ -230,12 +214,11 @@ class Controller(QObject):
         self.color_stack        = []
         self.next_color_index   = 0
         self._view.action_export_sel.setEnabled(False)
-
         self._view.select_scene(self._current_scene_id)
 
         if 'rgb_img' not in load_result:
             self._view.stop_loading()
-            self._view.show_status_message("Error: No RGB image in load result")
+            self._view.show_status_message("Error: no RGB image in load result")
             return
 
         if 'homography_matrix' in load_result:
@@ -243,31 +226,26 @@ class Controller(QObject):
                 load_result['homography_matrix']
             )
 
-        # Populate RGB dropdowns with all available bands for this scene.
-        band_names = list(load_result.get('base_bands', {}).keys())
+        # populate per-camera band selectors
+        base_bands  = load_result.get('base_bands', {})
+        band_names  = list(base_bands.keys())
         if band_names:
-            instrument   = load_result.get('instrument', 'ZCAM')
-            right_bands  = [b for b in band_names if b.startswith('R')]
-            left_bands   = [b for b in band_names if b.startswith('L')]
-            right_bands  = right_bands or band_names
-            left_bands   = left_bands  or band_names
-
+            instrument  = load_result.get('instrument', 'ZCAM')
+            right_bands = [b for b in band_names if b.startswith('R')] or band_names
+            left_bands  = [b for b in band_names if b.startswith('L')] or band_names
             if instrument == 'ZCAM':
                 r_r, g_r, b_r = 'R0R', 'R0G', 'R0B'
                 r_l, g_l, b_l = 'L0R', 'L0G', 'L0B'
             else:
                 r_r, g_r, b_r = 'R2', 'R1', 'R1'
                 r_l, g_l, b_l = 'L2', 'L5', 'L6'
-
             self._view.panel_image_editing.set_band_names(
                 right_bands, left_bands,
                 r_r, g_r, b_r,
                 r_l, g_l, b_l,
             )
 
-        # Render images from the current (just-set) band selection.
         self._render_current_images()
-
         self._view.panel_image_editing.set_rois([])
         self._view.panel_spectral_view.clear_roi_spectra()
         self._view.panel_spectral_view.clear_plot()
@@ -292,7 +270,7 @@ class Controller(QObject):
             return
         scene_info = self.scene_controller.get_scene_info(self._current_scene_id)
         if not scene_info:
-            self._view.show_status_message("Error: Scene info not found.")
+            self._view.show_status_message("Error: scene info not found.")
             return
 
         folder_path, seq_id, obs_ix, instrument = scene_info
@@ -332,14 +310,13 @@ class Controller(QObject):
 
             self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
             self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
-
             self._view.action_export_sel.setEnabled(True)
             self._view.stop_loading()
             self._view.show_status_message(f"SPARC complete: {len(result.final_rois)} ROIs found")
 
         except Exception as e:
             self._view.stop_loading()
-            self._view.show_status_message(f"Error visualizing results: {str(e)}")
+            self._view.show_status_message(f"Error visualizing results: {e}")
             import traceback; traceback.print_exc()
 
     def _on_sparc_error(self, error_msg):
@@ -381,21 +358,16 @@ class Controller(QObject):
                 homography = load_result.get('homography_matrix')
                 if camera == 'left':
                     left_rect  = tuple(rect)
-                    right_rect = self._left_rect_to_right(left_rect, homography)
-                    if right_rect is None:
-                        right_rect = left_rect
+                    right_rect = self._left_rect_to_right(left_rect, homography) or left_rect
                 else:
                     right_rect = tuple(rect)
-                    left_rect  = right_rect_to_left_inscribed(right_rect, homography) if homography is not None else right_rect
-                    if left_rect is None:
-                        left_rect = right_rect
-
+                    left_rect  = (right_rect_to_left_inscribed(right_rect, homography)
+                                  if homography is not None else right_rect) or right_rect
                 spec_data = self.sparc_controller.update_roi_spectrum_dual(
                     load_result, left_rect, right_rect, instrument_config
                 )
             else:
-                right_rect = tuple(rect)
-                left_rect  = right_rect
+                right_rect = left_rect = tuple(rect)
                 spec_data  = self.sparc_controller.update_roi_spectrum(
                     load_result['cube'], rect, instrument_config
                 )
@@ -408,14 +380,13 @@ class Controller(QObject):
                 **spec_data,
             })
             self._current_colors.append(color)
-
             self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
             self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
             self._view.action_export_sel.setEnabled(True)
             self._view.show_status_message("ROI created")
 
         except Exception as e:
-            self._view.show_status_message(f"Error creating ROI: {str(e)}")
+            self._view.show_status_message(f"Error creating ROI: {e}")
 
     def on_roi_deleted(self, roi_index):
         if not (0 <= roi_index < len(self._current_rois_data)):
@@ -428,7 +399,7 @@ class Controller(QObject):
             self._view.action_export_sel.setEnabled(bool(self._current_rois_data))
             self._view.show_status_message(f"ROI {roi_index + 1} deleted")
         except Exception as e:
-            self._view.show_status_message(f"Error deleting ROI: {str(e)}")
+            self._view.show_status_message(f"Error deleting ROI: {e}")
 
     def on_roi_changed(self, roi_index, new_rect, camera):
         if self._model.sparc_load_result is None or roi_index >= len(self._current_rois_data):
@@ -445,19 +416,17 @@ class Controller(QObject):
                 elif camera == 'left':
                     left_rect  = tuple(new_rect)
                     right_rect = roi_data['right_rect']
-                else:  # single — move both together
+                else:
                     right_rect = tuple(new_rect)
                     left_rect  = self._apply_rect_delta(
                         roi_data.get('left_rect', roi_data['roi']),
                         roi_data['roi'], new_rect
                     )
-
                 spec_data = self.sparc_controller.update_roi_spectrum_dual(
                     load_result, left_rect, right_rect, instrument_config
                 )
             else:
-                right_rect = tuple(new_rect)
-                left_rect  = right_rect
+                right_rect = left_rect = tuple(new_rect)
                 spec_data  = self.sparc_controller.update_roi_spectrum(
                     load_result['cube'], new_rect, instrument_config
                 )
@@ -474,32 +443,27 @@ class Controller(QObject):
             )
 
         except Exception as e:
-            self._view.show_status_message(f"Error updating ROI: {str(e)}")
+            self._view.show_status_message(f"Error updating ROI: {e}")
 
     @staticmethod
     def _left_rect_to_right(left_rect, homography_matrix):
-        """Transform a left-camera rect into right-camera space via forward homography."""
         if homography_matrix is None:
             return left_rect
         import cv2
         x, y, w, h = left_rect
         corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], dtype=np.float32)
         rc = cv2.perspectiveTransform(corners.reshape(-1, 1, 2), homography_matrix).reshape(-1, 2)
-        rx = float(rc[:, 0].min());  ry = float(rc[:, 1].min())
-        rw = float(rc[:, 0].max()) - rx;  rh = float(rc[:, 1].max()) - ry
-        return (rx, ry, rw, rh)
+        rx, ry = float(rc[:, 0].min()), float(rc[:, 1].min())
+        return (rx, ry, float(rc[:, 0].max()) - rx, float(rc[:, 1].max()) - ry)
 
     @staticmethod
     def _apply_rect_delta(left_rect, old_right_rect, new_right_rect):
-        """Propagate translation and scale of a right-rect move onto the left rect."""
         ox, oy, ow, oh = old_right_rect
         nx, ny, nw, nh = new_right_rect
         lx, ly, lw, lh = left_rect
-        dx = nx - ox
-        dy = ny - oy
-        sx = nw / ow if ow > 0 else 1.0
-        sy = nh / oh if oh > 0 else 1.0
-        return (lx + dx, ly + dy, lw * sx, lh * sy)
+        return (lx + nx - ox, ly + ny - oy,
+                lw * (nw / ow if ow > 0 else 1.0),
+                lh * (nh / oh if oh > 0 else 1.0))
 
     # ------------------------------------------------------------------
     # Hover preview
@@ -522,14 +486,14 @@ class Controller(QObject):
                 return
 
             instrument_config = self._get_instrument_config()
-            all_wavelengths   = np.array(instrument_config.get('wavelengths', []))
-            instrument        = instrument_config.get('instrument', 'ZCAM')
-            n_rgb             = 3 if instrument == 'ZCAM' else 0
+            all_wls    = np.array(instrument_config.get('wavelengths', []))
+            instrument = instrument_config.get('instrument', 'ZCAM')
+            n_rgb      = 3 if instrument == 'ZCAM' else 0
 
-            bayer_spectrum = full_spectrum[:n_rgb]
             nb_spectrum    = full_spectrum[n_rgb:]
-            bayer_wls      = all_wavelengths[:n_rgb]
-            nb_wls         = all_wavelengths[n_rgb:n_rgb + len(nb_spectrum)]
+            nb_wls         = all_wls[n_rgb:n_rgb + len(nb_spectrum)]
+            bayer_spectrum = full_spectrum[:n_rgb]
+            bayer_wls      = all_wls[:n_rgb]
 
             sort_ix = np.argsort(nb_wls)
             self._view.panel_spectral_view.plot_preview_spectrum_separate(
@@ -544,70 +508,66 @@ class Controller(QObject):
 
     def on_split_screen_toggled(self, is_split):
         self._is_split_screen = is_split
-        load_result = self._model.sparc_load_result
-
-        if load_result is not None:
+        if self._model.sparc_load_result is not None:
             self._render_current_images()
-
             if self._current_rois_data:
-                self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
+                self._view.panel_image_editing.set_rois(
+                    self._current_rois_data, self._current_colors
+                )
+        self._view.show_status_message(
+            f"Switched to {'split-screen' if is_split else 'single'} mode"
+        )
 
-        mode = "split-screen" if is_split else "single"
-        self._view.show_status_message(f"Switched to {mode} mode")
     # ------------------------------------------------------------------
-    # RGB band selection
+    # RGB band rendering
     # ------------------------------------------------------------------
 
     @staticmethod
     def _bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False):
         """
-        Stretch three band arrays into a uint8 RGB pixmap.
-        use_dcs=True:  decorrelation stretch (Gillespie et al. 1986).
-        use_dcs=False: independent per-channel enhance_color stretch.
+        Stretch three band arrays to uint8 RGB.
+        DCS off: enhance_color (same as the default pipeline image).
+        DCS on:  decorrelation stretch (Gillespie et al. 1986) with
+                 per-channel 0.5–99.5 percentile clip.
         """
         if use_dcs:
-            H, W = r_arr.shape
-            invalid = (
-                ~np.isfinite(r_arr) |
-                ~np.isfinite(g_arr) |
-                ~np.isfinite(b_arr)
-            )
+            H, W    = r_arr.shape
+            invalid = ~np.isfinite(r_arr) | ~np.isfinite(g_arr) | ~np.isfinite(b_arr)
             r = np.where(invalid, 0.0, r_arr).astype(np.float32)
             g = np.where(invalid, 0.0, g_arr).astype(np.float32)
             b = np.where(invalid, 0.0, b_arr).astype(np.float32)
+
             vecs  = np.stack([r, g, b], axis=-1).reshape(-1, 3)
             valid = vecs[~invalid.ravel()]
             if valid.shape[0] < 4:
                 return numpy_to_pixmap(np.zeros((H, W, 3), dtype=np.uint8))
-            cov              = np.cov(valid.T).astype(np.float32)
-            eigenvals, eigenvecs = np.linalg.eig(cov)
-            stretch          = np.diag(1.0 / np.sqrt(np.abs(eigenvals)))
-            means            = valid.mean(axis=0)
-            T                = (eigenvecs @ stretch @ eigenvecs.T).astype(np.float32)
-            offset           = means - means @ T
-            dcs              = (vecs - means) @ T + means + offset
-            dcs              = dcs.reshape(H, W, 3)
-            result           = np.zeros((H, W, 3), dtype=np.float32)
-            valid_mask       = ~invalid
+
+            cov          = np.cov(valid.T).astype(np.float32)
+            eigvals, V   = np.linalg.eig(cov)
+            T            = (V @ np.diag(1.0 / np.sqrt(np.abs(eigvals))) @ V.T).astype(np.float32)
+            means        = valid.mean(axis=0)
+            dcs          = ((vecs - means) @ T + means + (means - means @ T)).reshape(H, W, 3)
+
+            result       = np.zeros((H, W, 3), dtype=np.float32)
+            valid_2d     = ~invalid
             for c in range(3):
-                ch = dcs[:, :, c]
-                v  = ch[valid_mask]
+                ch       = dcs[:, :, c]
+                v        = ch[valid_2d]
                 if v.size == 0:
                     continue
-                lo, hi = np.percentile(v, [0.5, 99.5])
-                result[:, :, c] = np.clip(
-                    (ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0
-                )
+                lo, hi   = np.percentile(v, [0.5, 99.5])
+                result[:, :, c] = np.clip((ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0)
             result[invalid] = 0.0
             return numpy_to_pixmap(np.ascontiguousarray(result * 255, dtype=np.uint8))
         else:
             from marslab.imgops.imgutils import enhance_color
             rgb    = np.stack([r_arr, g_arr, b_arr], axis=-1).astype(float)
             result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
-            filled = np.ascontiguousarray(np.ma.filled(result, 0) * 255, dtype=np.uint8)
-            return numpy_to_pixmap(filled)
+            return numpy_to_pixmap(
+                np.ascontiguousarray(np.ma.filled(result, 0) * 255, dtype=np.uint8)
+            )
 
-    def _make_right_pixmap(self, r_band, g_band, b_band, base_bands, use_dcs=False):
+    def _make_pixmap(self, r_band, g_band, b_band, base_bands, use_dcs=False):
         if not all(b in base_bands for b in (r_band, g_band, b_band)):
             return None
         return self._bands_to_pixmap(
@@ -616,51 +576,40 @@ class Controller(QObject):
 
     def _render_current_images(self):
         """
-        Single source of truth for canvas image state.
-        In single mode: renders right overlay selection.
-        In split mode: renders right and left overlays independently.
+        Canonical image render - reads current overlay selections and pushes
+        pixmaps to the canvas. Called on scene load, band change, and split toggle.
         """
         load_result = self._model.sparc_load_result
         if load_result is None:
             return
 
         base_bands = load_result.get('base_bands', {})
+        panel      = self._view.panel_image_editing
 
         if self._is_split_screen:
-            r_r, g_r, b_r, dcs_r = self._view.panel_image_editing.get_selected_bands('right')
-            r_l, g_l, b_l, dcs_l = self._view.panel_image_editing.get_selected_bands('left')
+            r_r, g_r, b_r, dcs_r = panel.get_selected_bands('right')
+            r_l, g_l, b_l, dcs_l = panel.get_selected_bands('left')
 
-            right_pixmap = (self._make_right_pixmap(r_r, g_r, b_r, base_bands, dcs_r)
+            right_pixmap = (self._make_pixmap(r_r, g_r, b_r, base_bands, dcs_r)
                             if r_r and g_r and b_r else None)
-            left_pixmap  = (self._make_right_pixmap(r_l, g_l, b_l, base_bands, dcs_l)
+            left_pixmap  = (self._make_pixmap(r_l, g_l, b_l, base_bands, dcs_l)
                             if r_l and g_l and b_l else None)
 
-            # Fall back to prebuilt images if a selection is empty
-            if right_pixmap is None:
-                right_pixmap = numpy_to_pixmap(
-                    load_result.get('right_rgb_img', load_result['rgb_img'])
-                )
-            if left_pixmap is None:
-                left_pixmap = numpy_to_pixmap(
-                    load_result.get('left_rgb_img', load_result['rgb_img'])
-                )
-
-            self._view.panel_image_editing.canvas_container.set_camera_images(
-                left_pixmap, right_pixmap
+            right_pixmap = right_pixmap or numpy_to_pixmap(
+                load_result.get('right_rgb_img', load_result['rgb_img'])
             )
+            left_pixmap  = left_pixmap  or numpy_to_pixmap(
+                load_result.get('left_rgb_img', load_result['rgb_img'])
+            )
+            panel.canvas_container.set_camera_images(left_pixmap, right_pixmap)
         else:
-            r, g, b, dcs = self._view.panel_image_editing.get_selected_bands('single')
-            if not (r and g and b):
-                self._view.panel_image_editing.set_image(
-                    numpy_to_pixmap(load_result['rgb_img'])
-                )
-                return
-            pixmap = self._make_right_pixmap(r, g, b, base_bands, dcs)
-            if pixmap is not None:
-                self._view.panel_image_editing.set_image(pixmap)
+            r, g, b, dcs = panel.get_selected_bands('single')
+            if r and g and b:
+                pixmap = self._make_pixmap(r, g, b, base_bands, dcs)
+                if pixmap:
+                    panel.set_image(pixmap)
+            else:
+                panel.set_image(numpy_to_pixmap(load_result['rgb_img']))
 
     def on_rgb_bands_changed(self, r, g, b, use_dcs, camera):
-        self._render_current_images()
-
-    def on_dcs_toggled(self, checked):
         self._render_current_images()

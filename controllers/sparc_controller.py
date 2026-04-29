@@ -3,7 +3,7 @@ import numpy as np
 
 
 class SparcController(QObject):
-    """Handles SPARC pipeline execution."""
+    """Handles SPARC pipeline execution and spectrum computation."""
 
     started       = pyqtSignal()
     stopped       = pyqtSignal()
@@ -35,39 +35,27 @@ class SparcController(QObject):
     def _slice_cube(cube, rect):
         """Mean spectrum and std over a (x, y, w, h) rect."""
         x, y, w, h = (max(0, int(v)) for v in rect)
-        h_c, w_c = cube.shape[1], cube.shape[2]
-        x = min(x, w_c - 1);  w = max(1, min(w, w_c - x))
-        y = min(y, h_c - 1);  h = max(1, min(h, h_c - y))
+        h_c, w_c   = cube.shape[1], cube.shape[2]
+        x = min(x, w_c - 1); w = max(1, min(w, w_c - x))
+        y = min(y, h_c - 1); h = max(1, min(h, h_c - y))
         crop = cube[:, y:y+h, x:x+w]
         if np.ma.is_masked(crop):
-            flat     = crop.reshape(crop.shape[0], -1)
-            spectrum = np.ma.mean(flat, axis=1).filled(np.nan)
-            std      = np.ma.std(flat,  axis=1).filled(np.nan)
-        else:
-            spectrum = np.nanmean(crop, axis=(1, 2))
-            std      = np.nanstd(crop,  axis=(1, 2))
-        return spectrum, std
+            flat = crop.reshape(crop.shape[0], -1)
+            return np.ma.mean(flat, axis=1).filled(np.nan), np.ma.std(flat, axis=1).filled(np.nan)
+        return np.nanmean(crop, axis=(1, 2)), np.nanstd(crop, axis=(1, 2))
 
     def compute_dual_spectrum(self, load_result, left_rect, right_rect):
         """
-        Compute the merged spectrum from separate left- and right-camera rects.
-
-        Driven by merged_band_recipe from load_result, which maps every merged-cube
-        band to its named source band(s) in left_cube and right_cube. This is
-        instrument-agnostic: ZCAM shared bands are positional; PCAM stereo pairs
-        are scattered - but the recipe always tells us exactly which band index
-        to read from which raw cube.
-
-        left_rect and right_rect are in their respective camera's pixel space.
+        Compute the merged spectrum using the band recipe from load_result.
+        Stereo bands are averaged; left/right-only bands come from their camera.
+        Rects are in each camera's own pixel space.
         """
         recipe     = load_result['merged_band_recipe']
         left_keys  = load_result['left_band_keys']
         right_keys = load_result['right_band_keys']
-        left_cube  = load_result['left_cube']
-        right_cube = load_result['right_cube']
 
-        left_spec,  left_std  = self._slice_cube(left_cube,  left_rect)
-        right_spec, right_std = self._slice_cube(right_cube, right_rect)
+        left_spec,  left_std  = self._slice_cube(load_result['left_cube'],  left_rect)
+        right_spec, right_std = self._slice_cube(load_result['right_cube'], right_rect)
 
         left_idx  = {name: i for i, name in enumerate(left_keys)}
         right_idx = {name: i for i, name in enumerate(right_keys)}
@@ -77,21 +65,55 @@ class SparcController(QObject):
 
         for i, (source, _name, l_key, r_key) in enumerate(recipe):
             if source == 'stereo':
-                ls = left_spec[left_idx[l_key]];   lstd = left_std[left_idx[l_key]]
-                rs = right_spec[right_idx[r_key]];  rstd = right_std[right_idx[r_key]]
+                ls, lstd = left_spec[left_idx[l_key]],   left_std[left_idx[l_key]]
+                rs, rstd = right_spec[right_idx[r_key]], right_std[right_idx[r_key]]
                 spectrum[i] = (ls + rs) / 2
                 std[i]      = np.sqrt((lstd**2 + rstd**2) / 2)
             elif source == 'left_only':
                 spectrum[i] = left_spec[left_idx[l_key]]
                 std[i]      = left_std[left_idx[l_key]]
-            else:  # right_only
+            else:
                 spectrum[i] = right_spec[right_idx[r_key]]
                 std[i]      = right_std[right_idx[r_key]]
 
         return spectrum, std
 
+    @staticmethod
+    def _split_spectrum(spectrum, std, instrument_config):
+        """
+        Split into non-Bayer (plotted as a line) and Bayer (plotted as dots)
+        bands, each wavelength-sorted.
+        """
+        instrument = instrument_config.get('instrument', 'ZCAM')
+        n_rgb      = 3 if instrument == 'ZCAM' else 0
+        wls        = np.array(instrument_config.get('wavelengths', []))[:len(spectrum)]
+
+        spectrum = np.array(spectrum)
+        std      = np.array(std)
+
+        def _sort(arr, wl):
+            if len(wl) == 0:
+                return [], [], []
+            ix = np.argsort(wl)
+            return wl[ix].tolist(), arr[ix].tolist(), std[np.argsort(wls[:n_rgb] if arr is spectrum[:n_rgb] else wls[n_rgb:])].tolist()
+
+        nb_ix  = np.argsort(wls[n_rgb:])
+        nb_wls = wls[n_rgb:][nb_ix].tolist()
+        nb_spec = spectrum[n_rgb:][nb_ix].tolist()
+        nb_std  = std[n_rgb:][nb_ix].tolist()
+
+        if n_rgb > 0:
+            b_ix   = np.argsort(wls[:n_rgb])
+            b_wls  = wls[:n_rgb][b_ix].tolist()
+            b_spec = spectrum[:n_rgb][b_ix].tolist()
+            b_std  = std[:n_rgb][b_ix].tolist()
+        else:
+            b_wls = b_spec = b_std = []
+
+        return nb_wls, nb_spec, nb_std, b_wls, b_spec, b_std
+
     def update_roi_spectrum_dual(self, load_result, left_rect, right_rect, instrument_config):
-        """Recompute ROI display data after either rect has moved."""
+        """Recompute ROI display data after a rect has moved."""
         spectrum, std = self.compute_dual_spectrum(load_result, left_rect, right_rect)
         nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
             spectrum, std, instrument_config
@@ -105,39 +127,23 @@ class SparcController(QObject):
             'bayer_wavelengths': bwls,
         }
 
-    @staticmethod
-    def _split_spectrum(spectrum, std, instrument_config):
-        """Split into non-Bayer (line) and Bayer (dots) bands, each wavelength-sorted."""
-        instrument      = instrument_config.get('instrument', 'ZCAM')
-        n_rgb           = 3 if instrument == 'ZCAM' else 0
-        all_wavelengths = np.array(instrument_config.get('wavelengths', []))
-
-        spectrum = np.array(spectrum)
-        std      = np.array(std)
-        n        = len(spectrum)
-        wls      = all_wavelengths[:n]
-
-        bayer_wls_raw  = wls[:n_rgb];      nb_wls_raw  = wls[n_rgb:]
-        bayer_spec_raw = spectrum[:n_rgb]; nb_spec_raw = spectrum[n_rgb:]
-        bayer_std_raw  = std[:n_rgb];      nb_std_raw  = std[n_rgb:]
-
-        if len(nb_wls_raw) > 0:
-            ix          = np.argsort(nb_wls_raw)
-            nb_wls      = nb_wls_raw[ix].tolist()
-            nb_spectrum = nb_spec_raw[ix].tolist()
-            nb_std      = nb_std_raw[ix].tolist()
-        else:
-            nb_wls, nb_spectrum, nb_std = [], [], []
-
-        if len(bayer_wls_raw) > 0:
-            ix             = np.argsort(bayer_wls_raw)
-            bayer_wls      = bayer_wls_raw[ix].tolist()
-            bayer_spectrum = bayer_spec_raw[ix].tolist()
-            bayer_std      = bayer_std_raw[ix].tolist()
-        else:
-            bayer_wls, bayer_spectrum, bayer_std = [], [], []
-
-        return nb_wls, nb_spectrum, nb_std, bayer_wls, bayer_spectrum, bayer_std
+    def update_roi_spectrum(self, cube, rect, instrument_config):
+        """Single-cube fallback for manual ROI creation."""
+        spectrum, std = self._slice_cube(cube, rect)
+        x, y, w, h    = (max(0, int(v)) for v in rect)
+        nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
+            spectrum, std, instrument_config
+        )
+        return {
+            'roi':               (x, y, w, h),
+            'right_rect':        (x, y, w, h),
+            'spectrum':          nb_spec,
+            'std':               nb_std,
+            'wavelengths':       nb_wls,
+            'bayer_spectrum':    bspec,
+            'bayer_std':         bstd,
+            'bayer_wavelengths': bwls,
+        }
 
     def extract_roi_data(self, result, instrument_config):
         """Build the ROI data list from a SparcResult."""
@@ -149,7 +155,6 @@ class SparcController(QObject):
             x, y, w, h = right_rect
             mask = np.zeros(result.segments.shape, dtype=bool)
             mask[y:y+h, x:x+w] = True
-
             nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
                 spectrum, std, instrument_config
             )
@@ -167,21 +172,3 @@ class SparcController(QObject):
                 'mineral':           f'ROI_{i+1}',
             })
         return rois
-
-    def update_roi_spectrum(self, cube, rect, instrument_config):
-        """Single-cube fallback for manual ROI creation."""
-        spectrum, std = self._slice_cube(cube, rect)
-        x, y, w, h = (max(0, int(v)) for v in rect)
-        nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
-            spectrum, std, instrument_config
-        )
-        return {
-            'roi':               (x, y, w, h),
-            'right_rect':        (x, y, w, h),
-            'spectrum':          nb_spec,
-            'std':               nb_std,
-            'wavelengths':       nb_wls,
-            'bayer_spectrum':    bspec,
-            'bayer_std':         bstd,
-            'bayer_wavelengths': bwls,
-        }

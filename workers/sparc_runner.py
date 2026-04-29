@@ -1,14 +1,14 @@
 from PyQt5.QtCore import QThread, pyqtSignal
 from sparc.core.functional import run_sparc, run_sparc_from_load_result
 from sparc.core.config import (
-    SparcConfig, LoadConfig, SegmentConfig, PreprocessConfig,
-    ROIConfig, SpectralConfig, PerformanceConfig,
+    SparcConfig, LoadConfig, SegmentConfig,
+    ROIConfig, SpectralConfig,
     SegmentationBackend, ROIBackend,
 )
 
 
 class SparcRunThread(QThread):
-    """Background thread for running SPARC pipeline."""
+    """Runs the SPARC pipeline in a background thread."""
 
     status_update  = pyqtSignal(str)
     sparc_complete = pyqtSignal(object)
@@ -23,7 +23,8 @@ class SparcRunThread(QThread):
         self.obs_ix      = obs_ix
         self.instrument  = instrument
         self.params      = params or {}
-        self.load_result = load_result  # pre-loaded by GUI; skips load_step if provided
+        # pre-loaded by the GUI - skips load_step if provided
+        self.load_result = load_result
 
     def run(self):
         try:
