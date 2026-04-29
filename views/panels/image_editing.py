@@ -277,6 +277,7 @@ class ImageEditingPanel(QWidget):
 
         self._sync_overlay_visibility()
         self.update_cursor()
+        QTimer.singleShot(0, self._reposition_overlays)
 
     # ------------------------------------------------------------------
     # Overlay helpers
