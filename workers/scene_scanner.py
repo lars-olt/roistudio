@@ -2,32 +2,59 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from pathlib import Path
 import re
 import numpy as np
+import pandas as pd
 from PyQt5.QtGui import QImage, QPixmap
 
 
-# Pancam filename pattern (from pancam_helpers.py)
 _PCAM_FILENAME_RE = re.compile(
-    r'^\d'
-    r'P'
-    r'\d{9}'
-    r'[A-Z]{3}'
-    r'[A-Z0-9]{4}'
-    r'[A-Z]\d{4}'
-    r'[LR]\d'
-    r'[A-Z0-9]'
-    r'.+$',
-    re.IGNORECASE,
+    r'^\d P \d{9} [A-Z]{3} [A-Z0-9]{4} [A-Z]\d{4} [LR]\d [A-Z0-9].+$',
+    re.IGNORECASE | re.VERBOSE,
 )
 
 
-def detect_instrument(folder_path):
+def _make_zcam_bandset_fallback(parent_dir, seq_id=None):
     """
-    Detects instrument type from filenames in folder.
+    Build a ZcamBandSet bypassing rapid's cluster_observations.
+    On Windows, asdf computes the stem column from the directory path rather
+    than the file stem, so all files in a scene share one stem and compete as
+    siblings. rate_cal_offset keeps only the single best-scoring file, dropping
+    everything else. This fallback deduplicates per filter directly - one file
+    per filter, chosen by the same cal_offset score - and hands the result
+    straight to ZcamBandSet.
+    """
+    from asdf.scan import scan_zcam_files, rate_cal_offset
+    from asdf.zcam_bandset import ZcamBandSet
+    from functools import reduce
+    from operator import mul
 
-    Returns 'PCAM' if Pancam filenames are found, 'ZCAM' otherwise.
-    Pancam files match the MER naming convention (1P<SCLK>...).
-    ZCAM files are assumed if no Pancam match is found.
-    """
+    all_obs = scan_zcam_files(parent_dir)
+    if seq_id:
+        all_obs = all_obs[
+            all_obs['SEQ_ID'].str.lower().str.contains(str(seq_id).lower())
+        ]
+
+    # drop off-size subframes (focus/context frames) - keep only the
+    # drop off-size subframes (focus/context frames) - keep only files
+    # with the largest frame size
+    frame_areas = all_obs['SUBFRAME'].map(lambda s: reduce(mul, s[2:]))
+    all_obs     = all_obs[frame_areas == frame_areas.max()]
+
+    keep_rows = []
+    for _filt, group in all_obs.groupby('FILTER'):
+        if len(group) == 1:
+            keep_rows.append(group.iloc[0])
+        else:
+            scores = rate_cal_offset(group)
+            keep_rows.append(group.loc[scores[scores].index[0]])
+
+    deduped = pd.DataFrame(keep_rows).reset_index(drop=True)
+    bs = ZcamBandSet(deduped)
+    bs.format_metadata()
+    return bs
+
+
+def detect_instrument(folder_path):
+    """Return 'PCAM' if Pancam filenames are found in the folder, 'ZCAM' otherwise."""
     folder = Path(folder_path)
     for f in folder.rglob('*'):
         if f.suffix.upper() in ('.IMG', '.IMQ'):
@@ -41,10 +68,10 @@ class SceneScanThread(QThread):
     Background thread for scanning IOF files and generating thumbnails.
     Auto-detects instrument (ZCAM or PCAM) from filename patterns.
     """
-    # scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument
-    scene_found = pyqtSignal(str, object, str, str, object, int, str)
+
+    scene_found   = pyqtSignal(str, object, str, str, object, int, str)
     scan_complete = pyqtSignal(int)
-    scan_error = pyqtSignal(str)
+    scan_error    = pyqtSignal(str)
 
     def __init__(self, folder_path):
         super().__init__()
@@ -60,12 +87,11 @@ class SceneScanThread(QThread):
                     try:
                         rgb_img, metadata = self._load_pcam_thumbnail(path, seq_id, obs_ix)
                         if rgb_img is not None:
-                            pixmap = self._numpy_to_pixmap(rgb_img)
-                            sol = metadata.get('sol', '?')
-                            sequence = metadata.get('sequence', path.name)
-                            filename = f"Sol {sol} | {sequence} | Obs {obs_ix:03d}"
                             self.scene_found.emit(
-                                scene_id, pixmap, filename,
+                                scene_id, self._numpy_to_pixmap(rgb_img),
+                                f"Sol {metadata.get('sol', '?')} | "
+                                f"{metadata.get('sequence', path.name)} | "
+                                f"Obs {obs_ix:03d}",
                                 str(path), seq_id, obs_ix, 'PCAM'
                             )
                     except Exception:
@@ -76,12 +102,11 @@ class SceneScanThread(QThread):
                     try:
                         rgb_img, metadata = self._load_zcam_thumbnail(path, seq_id, obs_ix)
                         if rgb_img is not None:
-                            pixmap = self._numpy_to_pixmap(rgb_img)
-                            sol = metadata.get('sol', '?')
-                            sequence = metadata.get('sequence', path.name)
-                            filename = f"Sol {sol} | {sequence} | Obs {obs_ix:03d}"
                             self.scene_found.emit(
-                                scene_id, pixmap, filename,
+                                scene_id, self._numpy_to_pixmap(rgb_img),
+                                f"Sol {metadata.get('sol', '?')} | "
+                                f"{metadata.get('sequence', path.name)} | "
+                                f"Obs {obs_ix:03d}",
                                 str(path), seq_id, obs_ix, 'ZCAM'
                             )
                     except Exception:
@@ -97,21 +122,13 @@ class SceneScanThread(QThread):
     # ------------------------------------------------------------------
 
     def _find_zcam_scenes(self, folder_path):
-        """Finds all unique ZCAM IOF scenes in folder and subdirectories."""
         from rapid.helpers import get_zcam_bandset
 
-        folder = Path(folder_path)
-        img_files = [f for f in folder.rglob('*.IMG') if f.is_file()]
-
-        scenes = {}
-        checked_dirs = set()
-        parent_dirs = set(f.parent for f in img_files)
+        folder      = Path(folder_path)
+        parent_dirs = {f.parent for f in folder.rglob('*.IMG') if f.is_file()}
+        scenes      = {}
 
         for parent_dir in parent_dirs:
-            if parent_dir in checked_dirs:
-                continue
-            checked_dirs.add(parent_dir)
-
             obs_ix = 0
             while obs_ix < 100:
                 try:
@@ -119,10 +136,16 @@ class SceneScanThread(QThread):
                         parent_dir, seq_id=None,
                         observation_ix=obs_ix, load=False
                     )
+                    if len(bs.metadata) < 3:
+                        bs    = _make_zcam_bandset_fallback(parent_dir)
+                        filts = bs.metadata["BAND"].sort_values()
+                        if len(filts) > 0:
+                            scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, None, obs_ix)
+                        break
+
                     filts = bs.metadata["BAND"].sort_values()
                     if len(filts) > 0:
-                        scene_id = f"{parent_dir.name}_{obs_ix:03d}"
-                        scenes[scene_id] = (parent_dir, None, obs_ix)
+                        scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, None, obs_ix)
                         obs_ix += 1
                     else:
                         break
@@ -132,38 +155,31 @@ class SceneScanThread(QThread):
         return scenes
 
     def _load_zcam_thumbnail(self, path, seq_id, obs_ix):
-        """Loads RGB bayer bands for a ZCAM thumbnail."""
         from rapid.helpers import get_zcam_bandset
         from marslab.imgops.imgutils import crop
         from asdf_settings import rapidlooks
 
         bs = get_zcam_bandset(path, seq_id=seq_id, observation_ix=obs_ix, load=False)
+        if len(bs.metadata) < 3:
+            bs = _make_zcam_bandset_fallback(path, seq_id=seq_id)
 
         metadata = {}
         if hasattr(bs, 'metadata') and bs.metadata is not None:
-            if 'SOL' in bs.metadata.columns:
-                try:
-                    vals = bs.metadata['SOL'].unique()
-                    if len(vals) > 0 and vals[0] is not None:
-                        metadata['sol'] = int(vals[0])
-                except Exception:
-                    pass
-            if 'SEQ_ID' in bs.metadata.columns:
-                try:
-                    vals = bs.metadata['SEQ_ID'].unique()
-                    if len(vals) > 0 and vals[0] is not None:
-                        metadata['sequence'] = str(vals[0])
-                except Exception:
-                    pass
-
+            for field, key in (('SOL', 'sol'), ('SEQ_ID', 'sequence')):
+                if field in bs.metadata.columns:
+                    try:
+                        vals = bs.metadata[field].unique()
+                        if len(vals) > 0 and vals[0] is not None:
+                            metadata[key] = int(vals[0]) if key == 'sol' else str(vals[0])
+                    except Exception:
+                        pass
         metadata.setdefault('sol', '?')
         metadata.setdefault('sequence', seq_id or path.name)
 
-        if 'BAND' not in bs.metadata:
+        if 'BAND' not in bs.metadata.columns:
             return None, None
 
         available = bs.metadata['BAND'].tolist()
-
         for candidate in (['R1', 'G1', 'B1'], ['R0R', 'R0G', 'R0B'], ['L0R', 'L0G', 'L0B']):
             if all(b in available for b in candidate):
                 rgb_bands = candidate
@@ -180,42 +196,31 @@ class SceneScanThread(QThread):
         g = crop(bs.get_band(rgb_bands[1]), crop_settings)
         b = crop(bs.get_band(rgb_bands[2]), crop_settings)
 
-        rgb_img = self._stretch_rgb(np.stack([r, g, b], axis=-1))
-        return rgb_img, metadata
+        return self._stretch_rgb(np.stack([r, g, b], axis=-1)), metadata
 
     # ------------------------------------------------------------------
     # PCAM
     # ------------------------------------------------------------------
 
     def _find_pcam_scenes(self, folder_path):
-        """Finds all unique Pancam IOF scenes in folder and subdirectories."""
-        from sparc.utils.pancam_helpers import scan_pcam_files, get_pcam_bandset
+        from sparc.utils.pancam_helpers import scan_pcam_files
 
-        folder = Path(folder_path)
-        img_files = [f for f in folder.rglob('*') if f.suffix.upper() in ('.IMG', '.IMQ')]
-
-        scenes = {}
-        checked_dirs = set()
-        parent_dirs = set(f.parent for f in img_files)
+        folder      = Path(folder_path)
+        parent_dirs = {f.parent for f in folder.rglob('*')
+                       if f.suffix.upper() in ('.IMG', '.IMQ')}
+        scenes      = {}
 
         for parent_dir in parent_dirs:
-            if parent_dir in checked_dirs:
-                continue
-            checked_dirs.add(parent_dir)
-
             try:
                 products = scan_pcam_files(parent_dir)
-                clusters = {k: v for k, v in products.groupby('SEQ_ID')}
-                for obs_ix, (seq_id, _) in enumerate(clusters.items()):
-                    scene_id = f"{parent_dir.name}_{obs_ix:03d}"
-                    scenes[scene_id] = (parent_dir, seq_id, obs_ix)
+                for obs_ix, (seq_id, _) in enumerate(products.groupby('SEQ_ID')):
+                    scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, seq_id, obs_ix)
             except Exception:
                 continue
 
         return scenes
 
     def _load_pcam_thumbnail(self, path, seq_id, obs_ix):
-        """Loads L2/L5/L6 bands for a Pancam thumbnail."""
         from sparc.utils.pancam_helpers import get_pcam_bandset
         import pdr
 
@@ -223,66 +228,52 @@ class SceneScanThread(QThread):
 
         metadata = {}
         if hasattr(bs, 'metadata') and bs.metadata is not None:
-            if 'SOL' in bs.metadata.columns:
-                try:
-                    vals = bs.metadata['SOL'].unique()
-                    if len(vals) > 0 and vals[0] is not None:
-                        metadata['sol'] = int(vals[0])
-                except Exception:
-                    pass
-            if 'SEQ_ID' in bs.metadata.columns:
-                try:
-                    vals = bs.metadata['SEQ_ID'].unique()
-                    if len(vals) > 0 and vals[0] is not None:
-                        metadata['sequence'] = str(vals[0])
-                except Exception:
-                    pass
-
+            for field, key in (('SOL', 'sol'), ('SEQ_ID', 'sequence')):
+                if field in bs.metadata.columns:
+                    try:
+                        vals = bs.metadata[field].unique()
+                        if len(vals) > 0 and vals[0] is not None:
+                            metadata[key] = int(vals[0]) if key == 'sol' else str(vals[0])
+                    except Exception:
+                        pass
         metadata.setdefault('sol', '?')
         metadata.setdefault('sequence', seq_id or path.name)
 
-        if 'BAND' not in bs.metadata:
+        if 'BAND' not in bs.metadata.columns:
             return None, None
 
-        available = bs.metadata['BAND'].tolist()
         rgb_bands = ['L2', 'L5', 'L6']
-        if not all(b in available for b in rgb_bands):
+        if not all(b in bs.metadata['BAND'].tolist() for b in rgb_bands):
             return None, None
 
         bs.load(rgb_bands)
 
-        # Convert DN -> IOF using PDS label scale/offset, same as _load_pcam_cube
         bands = {}
         for _, row in bs.metadata[bs.metadata['BAND'].isin(rgb_bands)].iterrows():
-            band = row['BAND']
-            label = pdr.Data(row['PATH']).metadata
+            band   = row['BAND']
+            label  = pdr.Data(row['PATH']).metadata
             scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
             offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
-            dn = bs.get_band(band).copy().astype(np.float32)
-            dn = np.where((dn == 0) | (dn == 4095), np.nan, dn)
+            dn     = bs.get_band(band).copy().astype(np.float32)
+            dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
             bands[band] = dn * scale + offset
 
-        r = np.nan_to_num(bands['L2'], nan=0.0)
-        g = np.nan_to_num(bands['L5'], nan=0.0)
-        b = np.nan_to_num(bands['L6'], nan=0.0)
-
-        rgb_img = self._stretch_rgb(np.stack([r, g, b], axis=-1))
-        return rgb_img, metadata
+        rgb = np.stack([np.nan_to_num(bands[b], nan=0.0) for b in rgb_bands], axis=-1)
+        return self._stretch_rgb(rgb), metadata
 
     # ------------------------------------------------------------------
-    # Shared utilities
+    # Utilities
     # ------------------------------------------------------------------
 
     def _stretch_rgb(self, rgb):
-        """Percentile stretch to uint8."""
-        rgb = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
-        lo, hi = np.percentile(rgb[rgb > 0], [1, 98]) if np.any(rgb > 0) else (0, 1)
-        rgb = np.clip((rgb - lo) / (hi - lo) if hi > lo else rgb, 0, 1)
+        rgb     = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
+        lo, hi  = (np.percentile(rgb[rgb > 0], [1, 98])
+                   if np.any(rgb > 0) else (0, 1))
+        rgb     = np.clip((rgb - lo) / (hi - lo) if hi > lo else rgb, 0, 1)
         return (rgb * 255).astype(np.uint8)
 
     def _numpy_to_pixmap(self, img_array):
-        """Converts uint8 HxWx3 numpy array to QPixmap."""
         img_array = np.ascontiguousarray(img_array)
-        h, w = img_array.shape[:2]
-        q_image = QImage(img_array.data, w, h, 3 * w, QImage.Format_RGB888)
+        h, w      = img_array.shape[:2]
+        q_image   = QImage(img_array.data, w, h, 3 * w, QImage.Format_RGB888)
         return QPixmap.fromImage(q_image.copy())
