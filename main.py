@@ -5,7 +5,21 @@ def _bootstrap_torch():
     except Exception as e:
         print(f"Warning: torch import failed: {e!r}")
 
+
+def _bootstrap_pipeline():
+    """Pre-import heavy pipeline modules to avoid cold-start lag on first scene scan."""
+    try:
+        import rapid.helpers
+        import asdf.scan
+        import asdf.zcam_bandset
+        import asdf_settings.rapidlooks
+        import marslab.imgops.imgutils
+    except Exception as e:
+        print(f"Warning: pipeline pre-import failed: {e!r}")
+
+
 _bootstrap_torch()
+_bootstrap_pipeline()
 
 import sys
 from PyQt5.QtCore import Qt
