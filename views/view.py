@@ -7,6 +7,10 @@ from colors import Colors
 from utils.scale import Scale, scaled, scaled_font
 
 
+_DEFAULT_WINDOW_WIDTH  = 1600
+_DEFAULT_WINDOW_HEIGHT = 900
+
+
 class View(QWidget):
     """Main application view."""
 
@@ -28,7 +32,7 @@ class View(QWidget):
 
     def init_ui(self):
         self.setWindowTitle('ROIStudio')
-        self.resize(1600, 900)
+        self.resize(_DEFAULT_WINDOW_WIDTH, _DEFAULT_WINDOW_HEIGHT)
 
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -149,13 +153,15 @@ class View(QWidget):
 
         self.left_splitter.addWidget(self.panel_image_selection)
         self.left_splitter.addWidget(self.panel_spectral_view)
+        self.left_splitter.setSizes([int(_DEFAULT_WINDOW_HEIGHT * 0.55), int(_DEFAULT_WINDOW_HEIGHT * 0.45)])
 
         self.right_splitter.addWidget(self.panel_image_editing)
         self.right_splitter.addWidget(self.panel_parameter_selection)
+        self.right_splitter.setSizes([int(_DEFAULT_WINDOW_HEIGHT * 0.7), int(_DEFAULT_WINDOW_HEIGHT * 0.3)])
 
         self.main_splitter.addWidget(self.left_splitter)
         self.main_splitter.addWidget(self.right_splitter)
-        self.main_splitter.setSizes([int(1600 * 0.35), int(1600 * 0.65)])
+        self.main_splitter.setSizes([int(_DEFAULT_WINDOW_WIDTH * 0.35), int(_DEFAULT_WINDOW_WIDTH * 0.65)])
 
         self.layout.addWidget(self.main_splitter)
         self.layout.addWidget(self.panel_status)
