@@ -58,6 +58,7 @@ class CanvasContainer(QWidget):
         # Momentum
         self._velocity          = QPointF(0, 0)
         self._delta_history     = []          # rolling window of recent deltas
+        self._pan_is_mouse      = False
         self._momentum_timer    = QTimer(self)
         self._momentum_timer.setInterval(1000 // _MOMENTUM_HZ)
         self._momentum_timer.timeout.connect(self._momentum_tick)
@@ -349,7 +350,9 @@ class CanvasContainer(QWidget):
         if self.is_panning:
             self.is_panning = False
             self.setCursor(Qt.OpenHandCursor if self.space_pressed else self.tool_cursor)
-            self._launch_momentum()
+            if not self._pan_is_mouse:
+                self._launch_momentum()
+            self._pan_is_mouse = False
             return
 
         if self.interaction_mode == self.MODE_CREATE:
@@ -374,7 +377,8 @@ class CanvasContainer(QWidget):
 
         if (event.button() == Qt.MiddleButton
                 or (event.button() == Qt.LeftButton and self.space_pressed)):
-            self.is_panning = True
+            self.is_panning    = True
+            self._pan_is_mouse = True
             self._delta_history.clear()
             self.setCursor(Qt.ClosedHandCursor)
             return
