@@ -53,6 +53,7 @@ class Controller(QObject):
         self._view.run_algorithm_signal.connect(self.run_algorithm)
         self._view.scene_double_clicked_signal.connect(self.load_scene_by_id)
         self._view.pixel_hover_callback = self.on_pixel_hover
+        self._view.apply_preset_signal.connect(self.apply_preset)
 
         panel = self._view.panel_image_editing
         panel.roi_changed.connect(self.on_roi_changed)
@@ -215,6 +216,7 @@ class Controller(QObject):
         self.next_color_index   = 0
         self._view.action_export_sel.setEnabled(False)
         self._view.select_scene(self._current_scene_id)
+        self._view.enable_presets(True)
 
         if 'rgb_img' not in load_result:
             self._view.stop_loading()
@@ -255,6 +257,7 @@ class Controller(QObject):
     def _on_scene_load_error(self, error_msg):
         self._view.stop_loading()
         self._view.show_status_message(f"Error loading scene: {error_msg}")
+        self._view.enable_presets(False)
 
     # ------------------------------------------------------------------
     # SPARC
@@ -512,6 +515,22 @@ class Controller(QObject):
             )
         except Exception:
             pass
+    
+    # ------------------------------------------------------------------
+    # Stretch presets
+    # ------------------------------------------------------------------
+    
+    def apply_preset(self, preset: dict):
+        load_result = self._model.sparc_load_result
+        if load_result is None:
+            return
+        camera = preset['camera']
+        # In single mode, right-camera presets target the single canvas
+        if not self._is_split_screen and camera == 'right':
+            camera = 'single'
+        self._view.panel_image_editing.apply_preset(
+            camera, preset['r'], preset['g'], preset['b'], preset['dcs']
+        )
 
     # ------------------------------------------------------------------
     # Split screen

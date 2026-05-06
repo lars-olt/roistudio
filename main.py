@@ -63,6 +63,9 @@ if __name__ == '__main__':
     palette.setColor(QPalette.BrightText,      Qt.red)
     palette.setColor(QPalette.Link,            QColor(Colors.ACCENT))
     palette.setColor(QPalette.Highlight,       QColor(Colors.ACCENT))
+    palette.setColor(QPalette.Disabled, QPalette.Text,        QColor(Colors.TEXT_DISABLED))
+    palette.setColor(QPalette.Disabled, QPalette.ButtonText,  QColor(Colors.TEXT_DISABLED))
+    palette.setColor(QPalette.Disabled, QPalette.WindowText,  QColor(Colors.TEXT_DISABLED))
     palette.setColor(QPalette.HighlightedText, Qt.white)
     app.setPalette(palette)
 

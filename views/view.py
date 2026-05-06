@@ -10,6 +10,15 @@ from utils.scale import Scale, scaled, scaled_font
 _DEFAULT_WINDOW_WIDTH  = 1600
 _DEFAULT_WINDOW_HEIGHT = 900
 
+# Each preset targets a specific camera and band combination.
+# Add new ZCAM presets here, or define a _PCAM_PRESETS list for Pancam support.
+_ZCAM_PRESETS = [
+    {'label': 'Right RGB',    'camera': 'right', 'r': 'R0R', 'g': 'R0G', 'b': 'R0B', 'dcs': False},
+    {'label': 'Left RGB',     'camera': 'left',  'r': 'L0R', 'g': 'L0G', 'b': 'L0B', 'dcs': False},
+    {'label': 'R6 R3 R1 DCS', 'camera': 'right', 'r': 'R6',  'g': 'R3',  'b': 'R1',  'dcs': True},
+    {'label': 'L2 L5 L6 DCS', 'camera': 'left',  'r': 'L2',  'g': 'L5',  'b': 'L6',  'dcs': True},
+]
+
 
 class View(QWidget):
     """Main application view."""
@@ -21,12 +30,14 @@ class View(QWidget):
     run_algorithm_signal        = pyqtSignal()
     scene_dropped_signal        = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
+    apply_preset_signal         = pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
         self.selected_scene_id    = None
         self.scene_thumbnails     = {}
         self.pixel_hover_callback = None
+        self._preset_actions      = []
         self.init_ui()
         Scale.changed.connect(self._apply_scale)
 
@@ -74,6 +85,9 @@ class View(QWidget):
             QMenu::item:selected {{
                 background-color: {Colors.ACCENT};
             }}
+            QMenu::item:disabled {{
+                color: {Colors.TEXT_DISABLED};
+            }}
         """
 
     def _create_menu_bar(self):
@@ -105,6 +119,15 @@ class View(QWidget):
         self.menubar.addMenu(self.menu_edit)
         self.menubar.addMenu(self.menu_window)
 
+        self.menu_edit.addSeparator()
+        self.menu_edit.addSection("Scale")
+        for preset in _ZCAM_PRESETS:
+            action = QAction(preset['label'], self)
+            action.triggered.connect(lambda checked, p=preset: self.apply_preset_signal.emit(p))
+            action.setEnabled(False)
+            self.menu_edit.addAction(action)
+            self._preset_actions.append((action, preset))
+
     def _create_panels(self):
         self.panel_image_selection    = ImageSelectionPanel()
         self.panel_image_editing      = ImageEditingPanel()
@@ -125,6 +148,7 @@ class View(QWidget):
         self.panel_image_editing.scene_dropped_signal.connect(self.scene_dropped_signal.emit)
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
+        self.panel_image_editing.split_screen_toggled.connect(self._on_split_screen_toggled)
 
     def _splitter_stylesheet(self):
         return f"""
@@ -182,9 +206,26 @@ class View(QWidget):
         if tool_name == "selection":
             self.panel_spectral_view.hide_preview()
 
+    def _on_split_screen_toggled(self, is_split):
+        """Enable/disable left-camera presets based on split mode."""
+        for action, preset in self._preset_actions:
+            if preset['camera'] == 'left':
+                action.setEnabled(is_split and self._scene_loaded())
+
+    def _scene_loaded(self):
+        return any(action.isEnabled() for action, p in self._preset_actions
+                   if p['camera'] == 'right')
+
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    def enable_presets(self, enabled: bool):
+        """Call once a scene is loaded so presets become available."""
+        is_split = self.panel_image_editing._is_split
+        for action, preset in self._preset_actions:
+            camera = preset['camera']
+            action.setEnabled(enabled and (camera == 'right' or (camera == 'left' and is_split)))
 
     def start_loading(self):
         self.panel_image_editing.start_loading()

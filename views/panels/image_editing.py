@@ -1,6 +1,6 @@
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QCheckBox
-from PyQt5.QtGui import QColor, QPainter, QCursor, QPixmap
+from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap
 
 from colors import Colors
 from utils.paths import _resource_path
@@ -40,7 +40,8 @@ def _checkbox_style():
 class BandSelectorOverlay(QWidget):
     """
     Floating R/G/B + DCS band selector parented to a CanvasContainer.
-    Sits centred at the bottom of the canvas.
+    Sits centred at the bottom of the canvas. Draws a 1px accent border
+    along the bottom edge when this canvas is focused.
     """
 
     changed = pyqtSignal()
@@ -48,6 +49,7 @@ class BandSelectorOverlay(QWidget):
     def __init__(self, parent: CanvasContainer):
         super().__init__(parent)
         self.setFocusPolicy(Qt.NoFocus)
+        self._focused = False
 
         self._row = QHBoxLayout()
         self.setLayout(self._row)
@@ -76,6 +78,11 @@ class BandSelectorOverlay(QWidget):
         self._apply_scale()
         Scale.changed.connect(self._apply_scale)
         self.adjustSize()
+
+    def set_focused(self, focused: bool):
+        if focused != self._focused:
+            self._focused = focused
+            self.update()
 
     def _apply_scale(self):
         self._row.setContentsMargins(scaled(6), scaled(3), scaled(6), scaled(3))
@@ -115,6 +122,17 @@ class BandSelectorOverlay(QWidget):
         self.adjustSize()
         self._reposition()
 
+    def apply_preset(self, r: str, g: str, b: str, dcs: bool):
+        """Apply a color scale preset, blocking signals until all three bands are set."""
+        for combo, val in ((self.combo_r, r), (self.combo_g, g), (self.combo_b, b)):
+            combo.blockSignals(True)
+            combo.setCurrentText(val)
+            combo.blockSignals(False)
+        self.chk_dcs.blockSignals(True)
+        self.chk_dcs.setChecked(dcs)
+        self.chk_dcs.blockSignals(False)
+        self.changed.emit()
+
     def get_selection(self):
         return (self.combo_r.currentText(), self.combo_g.currentText(),
                 self.combo_b.currentText(), self.chk_dcs.isChecked())
@@ -131,6 +149,11 @@ class BandSelectorOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), _OVERLAY_BG)
+        if self._focused:
+            pen = QPen(QColor(Colors.ACCENT), 1)
+            painter.setPen(pen)
+            y = self.height() - 1
+            painter.drawLine(0, y, self.width(), y)
         painter.end()
 
 
@@ -145,11 +168,13 @@ class ImageEditingPanel(QWidget):
     roi_deleted          = pyqtSignal(int)
     roi_created          = pyqtSignal(tuple, str)
     split_screen_toggled = pyqtSignal(bool)
+    canvas_focus_changed = pyqtSignal(str)   # 'single' | 'left' | 'right'
 
     def __init__(self):
         super().__init__()
-        self.current_tool = 'selection'
-        self._is_split    = False
+        self.current_tool  = 'selection'
+        self._is_split     = False
+        self._focused_camera = 'single'
         self._build_ui()
         self.canvas_container.installEventFilter(self)
         Scale.changed.connect(self._apply_scale)
@@ -236,10 +261,38 @@ class ImageEditingPanel(QWidget):
                                 (self._overlay_left,   'left')):
             overlay.changed.connect(lambda c=camera, o=overlay: self._on_overlay_changed(o, c))
 
+        # Wire canvas clicks to focus tracking
+        self.canvas_container.canvas_single.mousePressEvent = \
+            self._make_focus_handler('single', self.canvas_container.canvas_single.mousePressEvent)
+        self.canvas_container.canvas_left.mousePressEvent = \
+            self._make_focus_handler('left', self.canvas_container.canvas_left.mousePressEvent)
+        self.canvas_container.canvas_right.mousePressEvent = \
+            self._make_focus_handler('right', self.canvas_container.canvas_right.mousePressEvent)
+
         self._sync_overlay_visibility()
+        self._sync_focus()
         self._apply_scale()
         self.update_cursor()
         QTimer.singleShot(0, self._reposition_overlays)
+
+    def _make_focus_handler(self, camera, original_handler):
+        def handler(event):
+            self._set_focused_camera(camera)
+            original_handler(event)
+        return handler
+
+    def _set_focused_camera(self, camera: str):
+        if camera == self._focused_camera:
+            return
+        self._focused_camera = camera
+        self._sync_focus()
+        self.canvas_focus_changed.emit(camera)
+
+    def _sync_focus(self):
+        """Update overlay focus borders to match the active camera."""
+        self._overlay_single.set_focused(not self._is_split)
+        self._overlay_left.set_focused(self._is_split and self._focused_camera == 'left')
+        self._overlay_right.set_focused(self._is_split and self._focused_camera == 'right')
 
     def _apply_scale(self):
         tb = self.top_bar.layout()
@@ -292,6 +345,17 @@ class ImageEditingPanel(QWidget):
                 'right':  self._overlay_right,
                 'left':   self._overlay_left}[camera].get_selection()
 
+    def apply_preset(self, camera: str, r: str, g: str, b: str, dcs: bool):
+        """Apply a color scale preset to the given camera's overlay."""
+        overlay = {'single': self._overlay_single,
+                   'right':  self._overlay_right,
+                   'left':   self._overlay_left}[camera]
+        overlay.apply_preset(r, g, b, dcs)
+
+    @property
+    def focused_camera(self) -> str:
+        return 'single' if not self._is_split else self._focused_camera
+
     # ------------------------------------------------------------------
     # Tools
     # ------------------------------------------------------------------
@@ -324,6 +388,8 @@ class ImageEditingPanel(QWidget):
         self.btn_split_screen.set_selected(self._is_split)
         self.canvas_container.set_split_mode(self._is_split)
         self._sync_overlay_visibility()
+        self._focused_camera = 'right' if self._is_split else 'single'
+        self._sync_focus()
         self.split_screen_toggled.emit(self._is_split)
         QTimer.singleShot(0, self._reposition_overlays)
 
