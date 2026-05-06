@@ -46,13 +46,17 @@ class SparcController(QObject):
 
     def compute_dual_spectrum(self, load_result, left_rect, right_rect):
         """
-        Compute the merged spectrum using the band recipe from load_result.
-        Stereo bands are averaged; left/right-only bands come from their camera.
-        Rects are in each camera's own pixel space.
+        Compute merged and per-camera spectra from the band recipe.
+
+        Returns:
+            merged:  (spectrum, std) - stereo bands averaged, shape (n_bands,)
+            left:    (spectrum, std, wavelengths) - all left-camera bands incl. stereo
+            right:   (spectrum, std, wavelengths) - all right-camera bands incl. stereo
         """
         recipe     = load_result['merged_band_recipe']
         left_keys  = load_result['left_band_keys']
         right_keys = load_result['right_band_keys']
+        wl_lookup  = load_result['bandset'].metadata.set_index('BAND')['WAVELENGTH'].to_dict()
 
         left_spec,  left_std  = self._slice_cube(load_result['left_cube'],  left_rect)
         right_spec, right_std = self._slice_cube(load_result['right_cube'], right_rect)
@@ -60,31 +64,50 @@ class SparcController(QObject):
         left_idx  = {name: i for i, name in enumerate(left_keys)}
         right_idx = {name: i for i, name in enumerate(right_keys)}
 
-        spectrum = np.empty(len(recipe))
-        std      = np.empty(len(recipe))
+        merged_spec = np.empty(len(recipe))
+        merged_std  = np.empty(len(recipe))
+
+        left_bands  = []   # (wavelength, value, std)
+        right_bands = []
 
         for i, (source, _name, l_key, r_key) in enumerate(recipe):
             if source == 'stereo':
                 ls, lstd = left_spec[left_idx[l_key]],   left_std[left_idx[l_key]]
                 rs, rstd = right_spec[right_idx[r_key]], right_std[right_idx[r_key]]
-                spectrum[i] = (ls + rs) / 2
-                std[i]      = np.sqrt((lstd**2 + rstd**2) / 2)
+                merged_spec[i] = (ls + rs) / 2
+                merged_std[i]  = np.sqrt((lstd**2 + rstd**2) / 2)
+                left_bands.append( (wl_lookup[l_key], ls, lstd))
+                right_bands.append((wl_lookup[r_key], rs, rstd))
             elif source == 'left_only':
-                spectrum[i] = left_spec[left_idx[l_key]]
-                std[i]      = left_std[left_idx[l_key]]
+                merged_spec[i] = left_spec[left_idx[l_key]]
+                merged_std[i]  = left_std[left_idx[l_key]]
+                left_bands.append((wl_lookup[l_key],
+                                   left_spec[left_idx[l_key]],
+                                   left_std[left_idx[l_key]]))
             else:
-                spectrum[i] = right_spec[right_idx[r_key]]
-                std[i]      = right_std[right_idx[r_key]]
-        
-        from sparc.preprocessing.calibration import extract_incidence_angle
-        bandset  = load_result.get('bandset')
-        meta     = getattr(bandset, '_sparc_label', None) or bandset.metadata
-        angle    = extract_incidence_angle(meta)
-        cos_theta = np.cos(np.radians(angle))
-        spectrum  = spectrum / cos_theta
-        std       = std / cos_theta
+                merged_spec[i] = right_spec[right_idx[r_key]]
+                merged_std[i]  = right_std[right_idx[r_key]]
+                right_bands.append((wl_lookup[r_key],
+                                    right_spec[right_idx[r_key]],
+                                    right_std[right_idx[r_key]]))
 
-        return spectrum, std
+        def _sorted_camera_bands(bands):
+            if not bands:
+                return [], [], []
+            bands.sort(key=lambda t: t[0])
+            wls  = [t[0] for t in bands]
+            spec = [t[1] for t in bands]
+            std  = [t[2] for t in bands]
+            return wls, spec, std
+
+        l_wls, l_spec, l_std = _sorted_camera_bands(left_bands)
+        r_wls, r_spec, r_std = _sorted_camera_bands(right_bands)
+
+        return (
+            (merged_spec, merged_std),
+            (l_spec, l_std, l_wls),
+            (r_spec, r_std, r_wls),
+        )
 
     @staticmethod
     def _split_spectrum(spectrum, std, instrument_config):
@@ -99,14 +122,8 @@ class SparcController(QObject):
         spectrum = np.array(spectrum)
         std      = np.array(std)
 
-        def _sort(arr, wl):
-            if len(wl) == 0:
-                return [], [], []
-            ix = np.argsort(wl)
-            return wl[ix].tolist(), arr[ix].tolist(), std[np.argsort(wls[:n_rgb] if arr is spectrum[:n_rgb] else wls[n_rgb:])].tolist()
-
-        nb_ix  = np.argsort(wls[n_rgb:])
-        nb_wls = wls[n_rgb:][nb_ix].tolist()
+        nb_ix   = np.argsort(wls[n_rgb:])
+        nb_wls  = wls[n_rgb:][nb_ix].tolist()
         nb_spec = spectrum[n_rgb:][nb_ix].tolist()
         nb_std  = std[n_rgb:][nb_ix].tolist()
 
@@ -122,17 +139,25 @@ class SparcController(QObject):
 
     def update_roi_spectrum_dual(self, load_result, left_rect, right_rect, instrument_config):
         """Recompute ROI display data after a rect has moved."""
-        spectrum, std = self.compute_dual_spectrum(load_result, left_rect, right_rect)
+        (merged_spec, merged_std), (l_spec, l_std, l_wls), (r_spec, r_std, r_wls) = \
+            self.compute_dual_spectrum(load_result, left_rect, right_rect)
+
         nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
-            spectrum, std, instrument_config
+            merged_spec, merged_std, instrument_config
         )
         return {
-            'spectrum':          nb_spec,
-            'std':               nb_std,
-            'wavelengths':       nb_wls,
-            'bayer_spectrum':    bspec,
-            'bayer_std':         bstd,
-            'bayer_wavelengths': bwls,
+            'spectrum':            nb_spec,
+            'std':                 nb_std,
+            'wavelengths':         nb_wls,
+            'bayer_spectrum':      bspec,
+            'bayer_std':           bstd,
+            'bayer_wavelengths':   bwls,
+            'left_spectrum':       l_spec,
+            'left_std':            l_std,
+            'left_wavelengths':    l_wls,
+            'right_spectrum':      r_spec,
+            'right_std':           r_std,
+            'right_wavelengths':   r_wls,
         }
 
     def update_roi_spectrum(self, cube, rect, instrument_config):
@@ -151,6 +176,12 @@ class SparcController(QObject):
             'bayer_spectrum':    bspec,
             'bayer_std':         bstd,
             'bayer_wavelengths': bwls,
+            'left_spectrum':     [],
+            'left_std':          [],
+            'left_wavelengths':  [],
+            'right_spectrum':    [],
+            'right_std':         [],
+            'right_wavelengths': [],
         }
 
     def extract_roi_data(self, result, instrument_config):
@@ -177,6 +208,13 @@ class SparcController(QObject):
                 'bayer_spectrum':    bspec,
                 'bayer_std':         bstd,
                 'bayer_wavelengths': bwls,
+                # per-camera fields populated after recompute in _on_sparc_complete
+                'left_spectrum':     [],
+                'left_std':          [],
+                'left_wavelengths':  [],
+                'right_spectrum':    [],
+                'right_std':         [],
+                'right_wavelengths': [],
                 'mineral':           f'ROI_{i+1}',
             })
         return rois

@@ -13,7 +13,8 @@ class ParameterSelectionPanel(QFrame):
     Mimics Adobe Premiere Pro properties panel style.
     """
 
-    view_settings_changed = pyqtSignal(float, float)  # y_min, y_max
+    view_settings_changed  = pyqtSignal(float, float)   # y_min, y_max
+    merge_spectra_changed  = pyqtSignal(bool)
 
     def __init__(self):
         super().__init__()
@@ -87,11 +88,18 @@ class ParameterSelectionPanel(QFrame):
         self.spin_y_min.valueChanged.connect(self._emit_view_settings)
         self.spin_y_max.valueChanged.connect(self._emit_view_settings)
 
+        self.chk_merge_spectra = QCheckBox()
+        self.chk_merge_spectra.setChecked(True)
+        self.chk_merge_spectra.toggled.connect(self.merge_spectra_changed.emit)
+
         view_form = QFormLayout()
         self._add_row(view_form, "Y-Axis Min", self.spin_y_min,
                       "Minimum value for the spectral plot Y-axis (Reflectance).")
         self._add_row(view_form, "Y-Axis Max", self.spin_y_max,
                       "Maximum value for the spectral plot Y-axis (Reflectance).")
+        self._add_row(view_form, "Merge camera spectra", self.chk_merge_spectra,
+                      "When enabled, stereo bands are averaged into a single spectrum. "
+                      "When disabled, left and right camera bands are plotted separately.")
         self.view_section.add_widget(self._wrap_layout(view_form))
         self.content_layout.addWidget(self.view_section)
 
