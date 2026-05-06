@@ -68,10 +68,13 @@ class SpectralViewPanel(QWidget):
                      linestyle='--', linewidth=0.5)
 
     def _fit_layout(self):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            self.figure.tight_layout(pad=1.5)
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                self.figure.tight_layout(pad=1.5)
+        except Exception:
+            pass
         self.canvas.draw_idle()
 
     def resizeEvent(self, event):

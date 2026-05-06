@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QFormLayout, QLabel, QDoubleSpinBox, QSpinBox,
                              QCheckBox)
@@ -6,6 +6,15 @@ from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
 from colors import Colors
 from utils.scale import Scale, scaled, scaled_font
 from ..widgets import CollapsibleSection
+
+
+class _WheelFilter(QObject):
+    """Intercepts wheel events on spinboxes so they scroll the panel instead."""
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel:
+            event.ignore()
+            return True
+        return False
 
 
 class ParameterSelectionPanel(QFrame):
@@ -16,6 +25,7 @@ class ParameterSelectionPanel(QFrame):
 
     def __init__(self):
         super().__init__()
+        self._wheel_filter = _WheelFilter(self)
         self._build_ui()
         Scale.changed.connect(self._apply_scale)
 
@@ -189,14 +199,20 @@ class ParameterSelectionPanel(QFrame):
     # Helpers
     # ------------------------------------------------------------------
 
+    _wheel_filter = _WheelFilter()
+
     def _dbl(self, lo, hi, default, step):
         sb = QDoubleSpinBox()
         sb.setRange(lo, hi); sb.setValue(default); sb.setSingleStep(step)
+        sb.setFocusPolicy(Qt.StrongFocus)
+        sb.installEventFilter(self._wheel_filter)
         return sb
 
     def _int(self, lo, hi, default):
         sb = QSpinBox()
         sb.setRange(lo, hi); sb.setValue(default)
+        sb.setFocusPolicy(Qt.StrongFocus)
+        sb.installEventFilter(self._wheel_filter)
         return sb
 
     def _chk(self, checked=False):
