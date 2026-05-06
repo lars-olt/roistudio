@@ -1,57 +1,58 @@
 from PyQt5.QtCore import QRect, Qt, pyqtSignal
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction,
                              QSplitter, QHBoxLayout, QFrame)
 
 from .panels import SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel, StatusPanel, ParameterSelectionPanel
 from colors import Colors
+from utils.scale import Scale, scaled, scaled_font
 
 
 class View(QWidget):
     """Main application view."""
-    
-    load_cube_signal = pyqtSignal()
-    set_sam_path_signal = pyqtSignal()
-    open_folder_signal = pyqtSignal()
-    export_sel_signal = pyqtSignal()
-    run_algorithm_signal = pyqtSignal()
-    scene_dropped_signal = pyqtSignal(str)
+
+    load_cube_signal            = pyqtSignal()
+    set_sam_path_signal         = pyqtSignal()
+    open_folder_signal          = pyqtSignal()
+    export_sel_signal           = pyqtSignal()
+    run_algorithm_signal        = pyqtSignal()
+    scene_dropped_signal        = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
-    
+
     def __init__(self):
         super().__init__()
-        self.selected_scene_id = None
-        self.scene_thumbnails = {}
+        self.selected_scene_id    = None
+        self.scene_thumbnails     = {}
         self.pixel_hover_callback = None
         self.init_ui()
-    
+        Scale.changed.connect(self._apply_scale)
+
     def init_ui(self):
-        """Creates all visual components."""
         self.setWindowTitle('ROIStudio')
         self.resize(1600, 900)
-        
+
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.setLayout(self.layout)
-        
+
         self._create_menu_bar()
         self._create_panels()
         self._setup_splitters()
-    
-    def _create_menu_bar(self):
-        """Creates menu bar with loading indicator."""
-        self.menubar = QMenuBar()
-        self.menubar.setGeometry(QRect(0, 0, 1600, 25))
-        self.menubar.setStyleSheet(f"""
+
+    def _menu_stylesheet(self):
+        fs = scaled_font(9)
+        return f"""
             QMenuBar {{
                 background-color: {Colors.PANEL_ACCENT};
                 color: {Colors.TEXT_PRIMARY};
                 border-bottom: 1px solid {Colors.PANEL_ACCENT};
-                padding: 2px;
+                padding: {scaled(2)}px;
+                font-size: {fs}pt;
             }}
             QMenuBar::item {{
-                padding: 4px 12px;
+                padding: {scaled(4)}px {scaled(12)}px;
                 background: transparent;
+                font-size: {fs}pt;
             }}
             QMenuBar::item:selected {{
                 background-color: {Colors.SUBTLE_PANEL_ACCENT};
@@ -60,20 +61,30 @@ class View(QWidget):
                 background-color: {Colors.PANEL_BACKGROUND};
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid {Colors.PANEL_ACCENT};
+                font-size: {fs}pt;
+            }}
+            QMenu::item {{
+                padding: {scaled(4)}px {scaled(20)}px;
+                font-size: {fs}pt;
             }}
             QMenu::item:selected {{
                 background-color: {Colors.ACCENT};
             }}
-        """)
+        """
+
+    def _create_menu_bar(self):
+        self.menubar = QMenuBar()
+        self.menubar.setGeometry(QRect(0, 0, 1600, scaled(25)))
+        self.menubar.setStyleSheet(self._menu_stylesheet())
         self.layout.setMenuBar(self.menubar)
-        
+
         self.menu_file = QMenu("File", self.menubar)
         self.menubar.addMenu(self.menu_file)
-        
+
         self.action_set_sam_path = QAction("Set SAM Path", self)
         self.action_set_sam_path.triggered.connect(self.set_sam_path_signal.emit)
         self.menu_file.addAction(self.action_set_sam_path)
-        
+
         self.action_open_folder = QAction("Open Folder", self)
         self.action_open_folder.triggered.connect(self.open_folder_signal.emit)
         self.menu_file.addAction(self.action_open_folder)
@@ -84,42 +95,35 @@ class View(QWidget):
         self.action_export_sel.triggered.connect(self.export_sel_signal.emit)
         self.action_export_sel.setEnabled(False)
         self.menu_file.addAction(self.action_export_sel)
-        
-        self.menu_edit = QMenu("Edit", self.menubar)
-        self.menubar.addMenu(self.menu_edit)
-        
+
+        self.menu_edit   = QMenu("Edit",   self.menubar)
         self.menu_window = QMenu("Window", self.menubar)
+        self.menubar.addMenu(self.menu_edit)
         self.menubar.addMenu(self.menu_window)
-    
+
     def _create_panels(self):
-        """Creates all panel widgets."""
-        self.panel_image_selection = ImageSelectionPanel()
-        self.panel_image_editing = ImageEditingPanel()
-        self.panel_spectral_view = SpectralViewPanel()
-        self.panel_status = StatusPanel()
+        self.panel_image_selection    = ImageSelectionPanel()
+        self.panel_image_editing      = ImageEditingPanel()
+        self.panel_spectral_view      = SpectralViewPanel()
+        self.panel_status             = StatusPanel()
         self.panel_parameter_selection = ParameterSelectionPanel()
-        
-        # connect internal signals
-        self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)  # drag + drop
-        self.panel_image_selection.scene_double_clicked.connect(self.scene_double_clicked_signal.emit)  # double-click
-        
-        # connect spectral view (graph)
+
+        self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)
+        self.panel_image_selection.scene_double_clicked.connect(self.scene_double_clicked_signal.emit)
+
         self.panel_parameter_selection.view_settings_changed.connect(
             self.panel_spectral_view.set_y_range
         )
-        
         self.panel_parameter_selection.merge_spectra_changed.connect(
             self.panel_spectral_view.set_merge_spectra
         )
-        
+
         self.panel_image_editing.scene_dropped_signal.connect(self.scene_dropped_signal.emit)
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
-    
 
-    def _setup_splitters(self):
-        """Sets up splitter layout."""
-        splitter_style = f"""
+    def _splitter_stylesheet(self):
+        return f"""
             QSplitter::handle {{
                 background-color: {Colors.PANEL_ACCENT};
             }}
@@ -128,61 +132,68 @@ class View(QWidget):
             }}
         """
 
+    def _setup_splitters(self):
+        style = self._splitter_stylesheet()
+
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_splitter.setHandleWidth(1)
-        self.main_splitter.setStyleSheet(splitter_style)
-        
+        self.main_splitter.setStyleSheet(style)
+
         self.left_splitter = QSplitter(Qt.Vertical)
         self.left_splitter.setHandleWidth(1)
-        self.left_splitter.setStyleSheet(splitter_style)
+        self.left_splitter.setStyleSheet(style)
 
         self.right_splitter = QSplitter(Qt.Vertical)
         self.right_splitter.setHandleWidth(1)
-        self.right_splitter.setStyleSheet(splitter_style)
-        
+        self.right_splitter.setStyleSheet(style)
+
         self.left_splitter.addWidget(self.panel_image_selection)
         self.left_splitter.addWidget(self.panel_spectral_view)
-        
+
         self.right_splitter.addWidget(self.panel_image_editing)
         self.right_splitter.addWidget(self.panel_parameter_selection)
-        
+
         self.main_splitter.addWidget(self.left_splitter)
         self.main_splitter.addWidget(self.right_splitter)
-        
-        total_width = 1600
-        self.main_splitter.setSizes([int(total_width * 0.35), int(total_width * 0.65)])
-        
+        self.main_splitter.setSizes([int(1600 * 0.35), int(1600 * 0.65)])
+
         self.layout.addWidget(self.main_splitter)
         self.layout.addWidget(self.panel_status)
-    
+
+    def _apply_scale(self):
+        self.menubar.setStyleSheet(self._menu_stylesheet())
+        self.menubar.setGeometry(QRect(0, 0, self.width(), scaled(25)))
+
+    # ------------------------------------------------------------------
+    # Internal slots
+    # ------------------------------------------------------------------
+
     def _on_pixel_hover(self, x, y):
-        """Forwards pixel hover to callback."""
         if self.pixel_hover_callback:
             self.pixel_hover_callback(x, y)
-    
+
     def _on_tool_changed(self, tool_name):
-        """Handles tool change events."""
         if tool_name == "selection":
             self.panel_spectral_view.hide_preview()
-            
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
     def start_loading(self):
         self.panel_image_editing.start_loading()
 
     def stop_loading(self):
         self.panel_image_editing.stop_loading()
-    
+
     def show_status_message(self, message):
-        """Displays message in status panel."""
         self.panel_status.show_status_message(message)
-    
+
     def add_scene_thumbnail(self, scene_id, pixmap, filename):
-        """Adds thumbnail to selection panel."""
         self.panel_image_selection.add_thumbnail(scene_id, pixmap, filename)
-    
+
     def clear_thumbnails(self):
-        """Clears all thumbnails."""
         self.panel_image_selection.clear_thumbnails()
-    
+
     def select_scene(self, scene_id):
-        """Selects scene in thumbnail grid."""
         self.panel_image_selection.select_scene(scene_id)

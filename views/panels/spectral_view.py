@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication
 import matplotlib
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -6,6 +7,12 @@ from matplotlib.figure import Figure
 import numpy as np
 
 from colors import Colors
+from utils.scale import Scale, scaled_font
+
+
+def _dpr():
+    screen = QApplication.primaryScreen()
+    return screen.devicePixelRatio() if screen else 1.0
 
 
 class SpectralViewPanel(QWidget):
@@ -18,6 +25,7 @@ class SpectralViewPanel(QWidget):
         self.y_max = 0.4
         self.merge_spectra = True
         self.init_ui()
+        Scale.changed.connect(self._apply_scale)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -25,7 +33,9 @@ class SpectralViewPanel(QWidget):
         layout.setSpacing(0)
         self.setLayout(layout)
 
-        self.figure = Figure(figsize=(8, 4), facecolor=Colors.PANEL_BACKGROUND)
+        dpr = _dpr()
+        self.figure = Figure(figsize=(8 / dpr, 4 / dpr), dpi=100,
+                             facecolor=Colors.PANEL_BACKGROUND)
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setStyleSheet(f"background-color: {Colors.PANEL_BACKGROUND};")
 
@@ -34,23 +44,47 @@ class SpectralViewPanel(QWidget):
 
         layout.addWidget(self.canvas)
 
+        # Defer the first tight_layout until after the widget has its real
+        # size from the layout pass — avoids the clipped-on-load issue.
+        QTimer.singleShot(0, self._fit_layout)
+
     def setup_plot_style(self):
         self.ax.set_facecolor(Colors.DEFAULT_FEATURE)
         self.figure.patch.set_facecolor(Colors.PANEL_BACKGROUND)
 
-        self.ax.set_xlabel('Wavelength (nm)', color=Colors.TEXT_PRIMARY, fontsize=10)
-        self.ax.set_ylabel('R* = IOF/cos(θ)', color=Colors.TEXT_PRIMARY, fontsize=10)
+        self.ax.set_xlabel('Wavelength (nm)', color=Colors.TEXT_PRIMARY,
+                           fontsize=scaled_font(10))
+        self.ax.set_ylabel('R* = IOF/cos(θ)',  color=Colors.TEXT_PRIMARY,
+                           fontsize=scaled_font(10))
 
         self.ax.set_ylim(self.y_min, self.y_max)
+        self.ax.tick_params(colors=Colors.TEXT_PRIMARY, labelsize=scaled_font(9))
 
-        self.ax.tick_params(colors=Colors.TEXT_PRIMARY, labelsize=9)
         for spine in self.ax.spines.values():
             spine.set_edgecolor(Colors.PANEL_ACCENT)
             spine.set_linewidth(1)
 
-        self.ax.grid(True, alpha=0.2, color=Colors.TEXT_SECONDARY, linestyle='--', linewidth=0.5)
+        self.ax.grid(True, alpha=0.2, color=Colors.TEXT_SECONDARY,
+                     linestyle='--', linewidth=0.5)
 
-        self.figure.tight_layout()
+    def _fit_layout(self):
+        """Fit labels inside the current canvas size and redraw."""
+        self.figure.tight_layout(pad=1.5)
+        self.canvas.draw_idle()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_layout()
+
+    def _apply_scale(self):
+        self.ax.clear()
+        self.setup_plot_style()
+        if self.roi_spectra_data is not None:
+            roi_data_list, color_list = self.roi_spectra_data
+            for i, roi_data in enumerate(roi_data_list):
+                color = color_list[i] if i < len(color_list) else (255, 255, 255)
+                self._plot_roi(self.ax, roi_data, tuple(c / 255.0 for c in color))
+        self._fit_layout()
 
     def set_y_range(self, y_min, y_max):
         self.y_min = y_min
@@ -78,7 +112,6 @@ class SpectralViewPanel(QWidget):
         else:
             self._plot_split(ax, roi_data, color)
 
-        # Bayer dots - same in both modes
         if roi_data.get('bayer_wavelengths'):
             bwls, bspec, bstd = self._sort_spectrum(
                 roi_data['bayer_wavelengths'],
@@ -97,12 +130,11 @@ class SpectralViewPanel(QWidget):
             roi_data['std'],
         )
         ax.errorbar(wls, spec, yerr=std,
-                    color=color, linewidth=2,
+                    color=color, linewidth=1,
                     marker='o', markersize=4,
                     capsize=3, capthick=1, elinewidth=1)
 
     def _plot_split(self, ax, roi_data, color):
-        # Left and right camera segments - same color, disconnected
         for wl_key, spec_key, std_key in (
             ('left_wavelengths',  'left_spectrum',  'left_std'),
             ('right_wavelengths', 'right_spectrum', 'right_std'),
@@ -114,7 +146,7 @@ class SpectralViewPanel(QWidget):
                 continue
             wls, spec, std = self._sort_spectrum(wls, spec, std)
             ax.errorbar(wls, spec, yerr=std,
-                        color=color, linewidth=2,
+                        color=color, linewidth=1,
                         marker='o', markersize=4,
                         capsize=3, capthick=1, elinewidth=1)
 
@@ -122,14 +154,13 @@ class SpectralViewPanel(QWidget):
         self.roi_spectra_data = (roi_data_list, color_list)
         self.ax.clear()
         self.setup_plot_style()
-
         for i, roi_data in enumerate(roi_data_list):
             color = color_list[i] if i < len(color_list) else (255, 255, 255)
             self._plot_roi(self.ax, roi_data, tuple(c / 255.0 for c in color))
+        self._fit_layout()
 
-        self.canvas.draw()
-
-    def plot_preview_spectrum_separate(self, wavelengths, reflectances, bayer_wls, bayer_reflectances):
+    def plot_preview_spectrum_separate(self, wavelengths, reflectances,
+                                       bayer_wls, bayer_reflectances):
         self.ax.clear()
         self.setup_plot_style()
 
@@ -151,7 +182,7 @@ class SpectralViewPanel(QWidget):
                          color='white', linestyle='', alpha=0.3,
                          marker='o', markersize=3, zorder=100)
 
-        self.canvas.draw()
+        self._fit_layout()
 
     def hide_preview(self):
         if self.roi_spectra_data is not None:
@@ -166,4 +197,4 @@ class SpectralViewPanel(QWidget):
     def clear_plot(self):
         self.ax.clear()
         self.setup_plot_style()
-        self.canvas.draw()
+        self._fit_layout()

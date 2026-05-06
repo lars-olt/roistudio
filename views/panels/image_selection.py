@@ -1,275 +1,193 @@
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget, 
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QGridLayout, QLabel)
-from PyQt5.QtGui import QPixmap
 
 from colors import Colors
+from utils.scale import Scale, physical, scaled, scaled_font
 from ..widgets import ClickableLabel
 
 
+_THUMB_BASE = 250   # reference thumbnail size in logical pixels
+_SPACING    = 10    # gap between thumbnails in reference pixels
+
+
 class ImageSelectionPanel(QFrame):
-    """Panel for scene thumbnail selection."""
-    
-    resized = pyqtSignal()
+    """Scrollable grid of scene thumbnails."""
+
     scene_double_clicked = pyqtSignal(str)
-    
+
     def __init__(self):
         super().__init__()
-        self.scene_thumbnails = {}
-        self.thumbnail_pixmaps = {}
+        self.scene_thumbnails    = {}
+        self.thumbnail_pixmaps   = {}
         self.thumbnail_filenames = {}
-        self.selected_scene_id = None
-        self.init_ui()
-    
-    def init_ui(self):
-        """Creates image selection panel."""
+        self.selected_scene_id   = None
+
+        self._rebuild_timer = QTimer(self)
+        self._rebuild_timer.setSingleShot(True)
+        self._rebuild_timer.setInterval(0)
+        self._rebuild_timer.timeout.connect(self._rebuild_grid)
+
+        self._build_ui()
+        Scale.changed.connect(self._on_scale_changed)
+
+    def _build_ui(self):
         self.setStyleSheet(f"background-color: {Colors.PANEL_BACKGROUND};")
-        
+
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.setLayout(layout)
-        
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        # RESTORED: Legacy scroll bar styling
-        scroll_area.setStyleSheet(f"""
-            QScrollArea {{
-                background-color: {Colors.PANEL_BACKGROUND};
-                border: none;
-            }}
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        layout.addWidget(self.scroll_area)
+
+        scroll_widget = QWidget()
+        self.thumbnail_layout = QGridLayout()
+        self.thumbnail_layout.setAlignment(Qt.AlignTop)
+        scroll_widget.setLayout(self.thumbnail_layout)
+        self.scroll_area.setWidget(scroll_widget)
+
+        self._apply_scroll_style()
+
+    def _apply_scroll_style(self):
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{ background-color: {Colors.PANEL_BACKGROUND}; border: none; }}
             QScrollBar:vertical {{
                 background-color: {Colors.DEFAULT_FEATURE};
-                width: 12px;
-                margin: 0;
+                width: {scaled(12)}px; margin: 0;
             }}
             QScrollBar::handle:vertical {{
                 background-color: {Colors.SUBTLE_PANEL_ACCENT};
-                min-height: 20px;
-                border-radius: 6px;
-                margin: 2px;
+                min-height: {scaled(20)}px;
+                border-radius: {scaled(6)}px; margin: {scaled(2)}px;
             }}
-            QScrollBar::handle:vertical:hover {{
-                background-color: {Colors.PANEL_ACCENT};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar:horizontal {{
-                background-color: {Colors.DEFAULT_FEATURE};
-                height: 12px;
-                margin: 0;
-            }}
-            QScrollBar::handle:horizontal {{
-                background-color: {Colors.SUBTLE_PANEL_ACCENT};
-                min-width: 20px;
-                border-radius: 6px;
-                margin: 2px;
-            }}
-            QScrollBar::handle:horizontal:hover {{
-                background-color: {Colors.PANEL_ACCENT};
-            }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-                width: 0px;
-            }}
+            QScrollBar::handle:vertical:hover {{ background-color: {Colors.PANEL_ACCENT}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
         """)
-        
-        scroll_widget = QWidget()
-        self.thumbnail_layout = QGridLayout()
-        self.thumbnail_layout.setSpacing(10)
-        self.thumbnail_layout.setContentsMargins(10, 10, 10, 10)
-        scroll_widget.setLayout(self.thumbnail_layout)
-        
-        scroll_area.setWidget(scroll_widget)
-        layout.addWidget(scroll_area)
-        
-        self.resized.connect(self.update_thumbnail_sizes)
-    
+
+    def _on_scale_changed(self):
+        self._apply_scroll_style()
+        self._rebuild_grid()
+
     def resizeEvent(self, event):
-        """Emits signal when panel resized."""
         super().resizeEvent(event)
-        self.resized.emit()
-    
-    def add_thumbnail(self, scene_id, pixmap, filename):
-        """Adds thumbnail to grid."""
-        self.thumbnail_pixmaps[scene_id] = pixmap
-        self.thumbnail_filenames[scene_id] = filename
-        
-        thumb_size = self.calculate_thumbnail_size()
-        cols = self.calculate_column_count()
-        label_height = 45
-        
-        thumb_widget = QWidget()
-        thumb_widget.setProperty("scene_id", scene_id)
-        thumb_widget.setFixedSize(thumb_size, thumb_size + label_height + 5)
-        thumb_layout = QVBoxLayout()
-        thumb_layout.setContentsMargins(0, 0, 0, 0)
-        thumb_layout.setSpacing(5)
-        thumb_widget.setLayout(thumb_layout)
-        
+        self._rebuild_grid()
+
+    # ------------------------------------------------------------------
+    # Layout geometry
+    # ------------------------------------------------------------------
+
+    def _layout_params(self):
+        """Return (cols, thumb_px, h_margin, spacing_px)."""
+        thumb     = physical(_THUMB_BASE)
+        spacing   = scaled(_SPACING)
+        sb_w      = self.scroll_area.verticalScrollBar().width()
+        available = max(thumb, self.width() - sb_w)
+        cols      = max(1, (available + spacing) // (thumb + spacing))
+        h_margin  = max(scaled(4), (available - cols * thumb - (cols - 1) * spacing) // 2)
+        return cols, thumb, h_margin, spacing
+
+    # ------------------------------------------------------------------
+    # Widget construction
+    # ------------------------------------------------------------------
+
+    def _thumb_style(self, selected=False):
+        border = Colors.ACCENT if selected else Colors.PANEL_ACCENT
+        return f"QLabel {{ background-color: {Colors.DEFAULT_FEATURE}; border: 1px solid {border}; }}"
+
+    def _name_style(self):
+        return f"QLabel {{ color: {Colors.TEXT_PRIMARY}; font-size: {scaled_font(9)}pt; }}"
+
+    def _build_thumb_widget(self, scene_id, pixmap, filename, thumb_size):
+        label_h = scaled(40)
+
+        container = QWidget()
+        container.setFixedSize(thumb_size, thumb_size + label_h + scaled(4))
+
+        v = QVBoxLayout()
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(scaled(4))
+        container.setLayout(v)
+
         thumb_label = ClickableLabel()
-        scaled_pixmap = pixmap.scaled(
-            thumb_size, thumb_size,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
-        thumb_label.setPixmap(scaled_pixmap)
+        scaled_pix  = pixmap.scaled(thumb_size, thumb_size,
+                                    Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        thumb_label.setPixmap(scaled_pix)
         thumb_label.setFixedSize(thumb_size, thumb_size)
         thumb_label.setAlignment(Qt.AlignCenter)
-        thumb_label.setStyleSheet(f"""
-            QLabel {{
-                background-color: {Colors.DEFAULT_FEATURE};
-                border: 2px solid {Colors.PANEL_ACCENT};
-            }}
-        """)
+        thumb_label.setStyleSheet(self._thumb_style(selected=(scene_id == self.selected_scene_id)))
         thumb_label.clicked.connect(lambda sid=scene_id: self.select_scene(sid))
         thumb_label.double_clicked.connect(lambda sid=scene_id: self.scene_double_clicked.emit(sid))
-        thumb_label.set_scene_data(scene_id, scaled_pixmap)
-        thumb_layout.addWidget(thumb_label)
-        
+        thumb_label.set_scene_data(scene_id, scaled_pix)
+        v.addWidget(thumb_label)
+
         name_label = QLabel(filename)
         name_label.setAlignment(Qt.AlignCenter)
         name_label.setWordWrap(True)
         name_label.setFixedWidth(thumb_size)
-        name_label.setMaximumHeight(label_height)
-        name_label.setSizePolicy(name_label.sizePolicy().Fixed,
-                                 name_label.sizePolicy().Minimum)
-        name_label.setStyleSheet(f"""
-            QLabel {{
-                color: {Colors.TEXT_PRIMARY};
-                font-size: 8pt;
-            }}
-        """)
-        thumb_layout.addWidget(name_label)
-        
-        self.scene_thumbnails[scene_id] = thumb_label
-        
-        num_items = len(self.scene_thumbnails)
-        col = (num_items - 1) % cols
-        row = (num_items - 1) // cols
-        self.thumbnail_layout.addWidget(thumb_widget, row, col, Qt.AlignTop)
-    
-    def calculate_thumbnail_size(self):
-        """Calculates thumbnail size based on width."""
-        available_width = self.width() - 40
-        cols = self.calculate_column_count()
-        spacing = 10 * (cols + 1)
-        thumb_size = (available_width - spacing) // cols
-        return max(180, min(400, thumb_size))
-    
-    def calculate_column_count(self):
-        """Calculates number of columns."""
-        available_width = self.width() - 40
-        if available_width < 180:
-            return 1
-        elif available_width < 400:
-            return 1
-        else:
-            return 2
-    
-    def update_thumbnail_sizes(self):
-        """Updates all thumbnail sizes on resize."""
-        if not hasattr(self, 'thumbnail_pixmaps') or not self.thumbnail_pixmaps:
+        name_label.setMaximumHeight(label_h)
+        name_label.setStyleSheet(self._name_style())
+        v.addWidget(name_label)
+
+        return container, thumb_label
+
+    # ------------------------------------------------------------------
+    # Grid management
+    # ------------------------------------------------------------------
+
+    def add_thumbnail(self, scene_id, pixmap, filename):
+        self.thumbnail_pixmaps[scene_id]   = pixmap
+        self.thumbnail_filenames[scene_id] = filename
+        self._rebuild_timer.start()
+
+    def _rebuild_grid(self):
+        if not self.thumbnail_pixmaps:
             return
-        
-        thumb_size = self.calculate_thumbnail_size()
-        cols = self.calculate_column_count()
-        label_height = 45
-        
-        selected_scene = self.selected_scene_id
-        
+
+        cols, thumb_size, h_margin, spacing = self._layout_params()
+
         for i in reversed(range(self.thumbnail_layout.count())):
             item = self.thumbnail_layout.itemAt(i)
             if item and item.widget():
                 item.widget().setParent(None)
-        
+
         self.scene_thumbnails.clear()
-        
-        for idx, scene_id in enumerate(self.thumbnail_pixmaps.keys()):
-            pixmap = self.thumbnail_pixmaps[scene_id]
-            filename = self.thumbnail_filenames[scene_id]
-            
-            thumb_widget = QWidget()
-            thumb_widget.setProperty("scene_id", scene_id)
-            thumb_widget.setFixedSize(thumb_size, thumb_size + label_height + 5)
-            thumb_layout = QVBoxLayout()
-            thumb_layout.setContentsMargins(0, 0, 0, 0)
-            thumb_layout.setSpacing(5)
-            thumb_widget.setLayout(thumb_layout)
-            
-            thumb_label = ClickableLabel()
-            scaled_pixmap = pixmap.scaled(
-                thumb_size, thumb_size,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+        self.thumbnail_layout.setSpacing(spacing)
+        self.thumbnail_layout.setContentsMargins(h_margin, scaled(10), h_margin, scaled(10))
+
+        for idx, scene_id in enumerate(self.thumbnail_pixmaps):
+            widget, label = self._build_thumb_widget(
+                scene_id,
+                self.thumbnail_pixmaps[scene_id],
+                self.thumbnail_filenames[scene_id],
+                thumb_size,
             )
-            thumb_label.setPixmap(scaled_pixmap)
-            thumb_label.setFixedSize(thumb_size, thumb_size)
-            thumb_label.setAlignment(Qt.AlignCenter)
-            thumb_label.setStyleSheet(f"""
-                QLabel {{
-                    background-color: {Colors.DEFAULT_FEATURE};
-                    border: 2px solid {Colors.PANEL_ACCENT};
-                }}
-            """)
-            thumb_label.clicked.connect(lambda sid=scene_id: self.select_scene(sid))
-            thumb_label.double_clicked.connect(lambda sid=scene_id: self.scene_double_clicked.emit(sid))
-            thumb_label.set_scene_data(scene_id, scaled_pixmap)
-            thumb_layout.addWidget(thumb_label)
-            
-            name_label = QLabel(filename)
-            name_label.setAlignment(Qt.AlignCenter)
-            name_label.setWordWrap(True)
-            name_label.setFixedWidth(thumb_size)
-            name_label.setMaximumHeight(label_height)
-            name_label.setSizePolicy(name_label.sizePolicy().Fixed,
-                                     name_label.sizePolicy().Minimum)
-            name_label.setStyleSheet(f"""
-                QLabel {{
-                    color: {Colors.TEXT_PRIMARY};
-                    font-size: 8pt;
-                }}
-            """)
-            thumb_layout.addWidget(name_label)
-            
-            self.scene_thumbnails[scene_id] = thumb_label
-            
-            col = idx % cols
-            row = idx // cols
-            self.thumbnail_layout.addWidget(thumb_widget, row, col, Qt.AlignTop)
-        
-        if selected_scene:
-            self.select_scene(selected_scene)
-    
+            self.scene_thumbnails[scene_id] = label
+            self.thumbnail_layout.addWidget(widget, idx // cols, idx % cols, Qt.AlignTop)
+
+        if self.selected_scene_id:
+            self.select_scene(self.selected_scene_id)
+
+    # ------------------------------------------------------------------
+    # Selection
+    # ------------------------------------------------------------------
+
     def select_scene(self, scene_id):
-        """Selects and highlights scene."""
         for sid, label in self.scene_thumbnails.items():
-            if sid == scene_id:
-                label.setStyleSheet(f"""
-                    QLabel {{
-                        background-color: {Colors.DEFAULT_FEATURE};
-                        border: 2px solid {Colors.ACCENT};
-                    }}
-                """)
-            else:
-                label.setStyleSheet(f"""
-                    QLabel {{
-                        background-color: {Colors.DEFAULT_FEATURE};
-                        border: 2px solid {Colors.PANEL_ACCENT};
-                    }}
-                """)
-        
+            label.setStyleSheet(self._thumb_style(selected=(sid == scene_id)))
         self.selected_scene_id = scene_id
-    
+
     def get_selected_scene(self):
-        """Returns currently selected scene ID."""
         return self.selected_scene_id
-    
+
     def clear_thumbnails(self):
-        """Clears all thumbnails."""
         for i in reversed(range(self.thumbnail_layout.count())):
-            self.thumbnail_layout.itemAt(i).widget().setParent(None)
-        
+            item = self.thumbnail_layout.itemAt(i)
+            if item and item.widget():
+                item.widget().setParent(None)
         self.scene_thumbnails.clear()
         self.thumbnail_pixmaps.clear()
         self.thumbnail_filenames.clear()

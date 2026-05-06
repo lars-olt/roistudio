@@ -39,7 +39,7 @@ class CanvasContainer(QWidget):
     MODE_RESIZE_BR = 5
     MODE_CREATE    = 6
 
-    HANDLE_SIZE = 8
+    HANDLE_SIZE = 4
 
     def __init__(self):
         super().__init__()
@@ -160,7 +160,7 @@ class CanvasContainer(QWidget):
                           if i < len(self.roi_colors) else QColor(Colors.ACCENT))
 
             if i == self.selected_roi_index and self.interaction_tool == "selection":
-                pen = QPen(QColor("#FFFFFF"), 2 / self.zoom_level)
+                pen = QPen(QColor("#FFFFFF"), 1 / self.zoom_level)
                 pen.setStyle(Qt.DashLine)
                 fill = QColor(base_color); fill.setAlpha(80)
                 painter.setPen(pen); painter.setBrush(fill)
@@ -175,19 +175,20 @@ class CanvasContainer(QWidget):
                                             handle_sz, handle_sz))
             else:
                 fill = QColor(base_color); fill.setAlpha(60)
-                painter.setPen(QPen(base_color, 2 / self.zoom_level))
+                painter.setPen(QPen(base_color, 1 / self.zoom_level))
                 painter.setBrush(fill)
                 painter.drawRect(rect)
 
     def _draw_zoom_indicator(self, painter):
         from PyQt5.QtGui import QFont, QFontMetrics
-        font = QFont("Arial", 11)
+        from utils.scale import scaled, scaled_font
+        font = QFont("Arial", scaled_font(8))
         painter.setFont(font)
         metrics  = QFontMetrics(font)
         max_w    = metrics.horizontalAdvance("10.00x")
         text_h   = metrics.height()
-        margin   = 8
-        padding  = 10
+        margin   = scaled(8)
+        padding  = scaled(10)
         box_w    = max_w + 2 * margin
         box_h    = text_h + 2 * margin
         x = self.width()  - box_w - padding
