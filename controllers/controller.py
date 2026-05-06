@@ -304,6 +304,17 @@ class Controller(QObject):
             self._current_rois_data = self.sparc_controller.extract_roi_data(
                 result, instrument_config
             )
+
+            # Recompute all spectra from the inscribed rects so the initial display
+            # matches what clicking produces - no jumping spectra.
+            load_result = self._model.sparc_load_result
+            if self._has_dual_cubes():
+                for i, roi in enumerate(self._current_rois_data):
+                    spec_data = self.sparc_controller.update_roi_spectrum_dual(
+                        load_result, roi['left_rect'], roi['right_rect'], instrument_config
+                    )
+                    self._current_rois_data[i] = {**roi, **spec_data}
+
             self.color_stack      = []
             self.next_color_index = 0
             self._current_colors  = [self._get_next_color() for _ in self._current_rois_data]

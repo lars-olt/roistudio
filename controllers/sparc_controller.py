@@ -75,6 +75,14 @@ class SparcController(QObject):
             else:
                 spectrum[i] = right_spec[right_idx[r_key]]
                 std[i]      = right_std[right_idx[r_key]]
+        
+        from sparc.preprocessing.calibration import extract_incidence_angle
+        bandset  = load_result.get('bandset')
+        meta     = getattr(bandset, '_sparc_label', None) or bandset.metadata
+        angle    = extract_incidence_angle(meta)
+        cos_theta = np.cos(np.radians(angle))
+        spectrum  = spectrum / cos_theta
+        std       = std / cos_theta
 
         return spectrum, std
 
