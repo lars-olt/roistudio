@@ -415,3 +415,6 @@ class ImageEditingPanel(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reposition_overlays()
+    
+    def fit_focused_canvas(self):
+        self.canvas_container.fit_focused_canvas(self.focused_camera)

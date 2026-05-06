@@ -179,25 +179,46 @@ class CanvasContainer(QWidget):
                 painter.setPen(QPen(base_color, 1 / self.zoom_level))
                 painter.setBrush(fill)
                 painter.drawRect(rect)
+    
+    def fit_to_panel(self):
+        if self.canvas.image is None:
+            return
+        self.zoom_level = min(self.width() / self.canvas.width(),
+                            self.height() / self.canvas.height())
+        self.pan_offset = QPointF(0, 0)
+        self.update()
+
+    def mouseDoubleClickEvent(self, event):
+        if self._zoom_indicator_rect().contains(event.pos()):
+            self.fit_to_panel()
+    
+    def _zoom_indicator_rect(self):
+        from utils.scale import scaled, scaled_font
+        from PyQt5.QtGui import QFont, QFontMetrics
+        font    = QFont("Arial", scaled_font(8))
+        metrics = QFontMetrics(font)
+        max_w   = metrics.horizontalAdvance("10.00x")
+        text_h  = metrics.height()
+        margin  = scaled(8)
+        padding = scaled(10)
+        box_w   = max_w + 2 * margin
+        box_h   = text_h + 2 * margin
+        return QRect(self.width()  - box_w - padding,
+                    self.height() - box_h - padding,
+                    box_w, box_h)
 
     def _draw_zoom_indicator(self, painter):
         from PyQt5.QtGui import QFont, QFontMetrics
         from utils.scale import scaled, scaled_font
-        font = QFont("Arial", scaled_font(8))
+        font    = QFont("Arial", scaled_font(8))
         painter.setFont(font)
-        metrics  = QFontMetrics(font)
-        max_w    = metrics.horizontalAdvance("10.00x")
-        text_h   = metrics.height()
-        margin   = scaled(8)
-        padding  = scaled(10)
-        box_w    = max_w + 2 * margin
-        box_h    = text_h + 2 * margin
-        x = self.width()  - box_w - padding
-        y = self.height() - box_h - padding
-        painter.fillRect(x, y, box_w, box_h, QColor(40, 40, 40, 180))
+        metrics = QFontMetrics(font)
+        margin  = scaled(8)
+        r       = self._zoom_indicator_rect()
+        painter.fillRect(r, QColor(40, 40, 40, 180))
         painter.setPen(QColor(255, 255, 255))
-        painter.drawText(x + margin, y + margin + metrics.ascent(),
-                         f"{self.zoom_level:.2f}x")
+        painter.drawText(r.x() + margin, r.y() + margin + metrics.ascent(),
+                        f"{self.zoom_level:.2f}x")
 
     # ------------------------------------------------------------------
     # Coordinate helpers
@@ -682,6 +703,12 @@ class DualCanvasContainer(QWidget):
         if self.is_split_mode:
             return (self.canvas_left, self.canvas_right)
         return (self.canvas_single,)
+    
+    def fit_focused_canvas(self, focused_camera: str):
+        canvas = {'single': self.canvas_single,
+                'left':   self.canvas_left,
+                'right':  self.canvas_right}[focused_camera]
+        canvas.fit_to_panel()
 
     @property
     def canvas(self):

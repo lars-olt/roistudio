@@ -114,18 +114,22 @@ class View(QWidget):
         self.action_export_sel.setEnabled(False)
         self.menu_file.addAction(self.action_export_sel)
 
-        self.menu_edit   = QMenu("Edit",   self.menubar)
+        self.menu_view   = QMenu("View",   self.menubar)
         self.menu_window = QMenu("Window", self.menubar)
-        self.menubar.addMenu(self.menu_edit)
+        self.menubar.addMenu(self.menu_view)
         self.menubar.addMenu(self.menu_window)
 
-        self.menu_edit.addSeparator()
-        self.menu_edit.addSection("Scale")
+        self.action_fit_image = QAction("Fit Image", self)
+        self.action_fit_image.setEnabled(False)
+        self.menu_view.addAction(self.action_fit_image)
+
+        # self.menu_view.addSeparator()
+        self.menu_view.addSection("Scale")
         for preset in _ZCAM_PRESETS:
             action = QAction(preset['label'], self)
             action.triggered.connect(lambda checked, p=preset: self.apply_preset_signal.emit(p))
             action.setEnabled(False)
-            self.menu_edit.addAction(action)
+            self.menu_view.addAction(action)
             self._preset_actions.append((action, preset))
 
     def _create_panels(self):
@@ -149,6 +153,7 @@ class View(QWidget):
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
         self.panel_image_editing.split_screen_toggled.connect(self._on_split_screen_toggled)
+        self.action_fit_image.triggered.connect(self.panel_image_editing.fit_focused_canvas)
 
     def _splitter_stylesheet(self):
         return f"""
@@ -221,7 +226,7 @@ class View(QWidget):
     # ------------------------------------------------------------------
 
     def enable_presets(self, enabled: bool):
-        """Call once a scene is loaded so presets become available."""
+        self.action_fit_image.setEnabled(enabled)
         is_split = self.panel_image_editing._is_split
         for action, preset in self._preset_actions:
             camera = preset['camera']
