@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QGridLayout, QLabel)
 
@@ -22,12 +22,7 @@ class ImageSelectionPanel(QFrame):
         self.thumbnail_pixmaps   = {}
         self.thumbnail_filenames = {}
         self.selected_scene_id   = None
-
-        self._rebuild_timer = QTimer(self)
-        self._rebuild_timer.setSingleShot(True)
-        self._rebuild_timer.setInterval(0)
-        self._rebuild_timer.timeout.connect(self._rebuild_grid)
-
+        self._current_cols       = 0
         self._build_ui()
         Scale.changed.connect(self._on_scale_changed)
 
@@ -46,7 +41,7 @@ class ImageSelectionPanel(QFrame):
 
         scroll_widget = QWidget()
         self.thumbnail_layout = QGridLayout()
-        self.thumbnail_layout.setAlignment(Qt.AlignTop)
+        self.thumbnail_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         scroll_widget.setLayout(self.thumbnail_layout)
         self.scroll_area.setWidget(scroll_widget)
 
@@ -70,25 +65,33 @@ class ImageSelectionPanel(QFrame):
 
     def _on_scale_changed(self):
         self._apply_scroll_style()
+        self._current_cols = 0
         self._rebuild_grid()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._rebuild_grid()
+        params = self._layout_params()
+        if params is None:
+            return
+        cols, _, _ = params
+        if cols != self._current_cols:
+            self._current_cols = cols
+            self._rebuild_grid()
 
     # ------------------------------------------------------------------
     # Layout geometry
     # ------------------------------------------------------------------
 
     def _layout_params(self):
-        """Return (cols, thumb_px, h_margin, spacing_px)."""
+        """Return (cols, thumb_px, spacing_px), or None if viewport isn't ready."""
         thumb     = physical(_THUMB_BASE)
         spacing   = scaled(_SPACING)
-        sb_w      = self.scroll_area.verticalScrollBar().width()
-        available = max(thumb, self.width() - sb_w)
-        cols      = max(1, (available + spacing) // (thumb + spacing))
-        h_margin  = max(scaled(4), (available - cols * thumb - (cols - 1) * spacing) // 2)
-        return cols, thumb, h_margin, spacing
+        sb_w      = self.scroll_area.verticalScrollBar().sizeHint().width()
+        available = self.scroll_area.viewport().width() - sb_w
+        if available < thumb:
+            return None
+        cols = max(1, (available + spacing) // (thumb + spacing))
+        return cols, thumb, spacing
 
     # ------------------------------------------------------------------
     # Widget construction
@@ -141,13 +144,16 @@ class ImageSelectionPanel(QFrame):
     def add_thumbnail(self, scene_id, pixmap, filename):
         self.thumbnail_pixmaps[scene_id]   = pixmap
         self.thumbnail_filenames[scene_id] = filename
-        self._rebuild_timer.start()
+        self._rebuild_grid()
 
     def _rebuild_grid(self):
         if not self.thumbnail_pixmaps:
             return
-
-        cols, thumb_size, h_margin, spacing = self._layout_params()
+        params = self._layout_params()
+        if params is None:
+            return
+        cols, thumb_size, spacing = params
+        self._current_cols = cols
 
         for i in reversed(range(self.thumbnail_layout.count())):
             item = self.thumbnail_layout.itemAt(i)
@@ -156,7 +162,7 @@ class ImageSelectionPanel(QFrame):
 
         self.scene_thumbnails.clear()
         self.thumbnail_layout.setSpacing(spacing)
-        self.thumbnail_layout.setContentsMargins(h_margin, scaled(10), h_margin, scaled(10))
+        self.thumbnail_layout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(10))
 
         for idx, scene_id in enumerate(self.thumbnail_pixmaps):
             widget, label = self._build_thumb_widget(

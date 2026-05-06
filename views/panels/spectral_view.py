@@ -68,8 +68,10 @@ class SpectralViewPanel(QWidget):
                      linestyle='--', linewidth=0.5)
 
     def _fit_layout(self):
-        """Fit labels inside the current canvas size and redraw."""
-        self.figure.tight_layout(pad=1.5)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            self.figure.tight_layout(pad=1.5)
         self.canvas.draw_idle()
 
     def resizeEvent(self, event):
