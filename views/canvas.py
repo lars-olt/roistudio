@@ -107,10 +107,8 @@ class CanvasContainer(QWidget):
         self.update()
 
     def fit_to_panel(self):
-        if self.canvas.image is None:
-            return
         self.zoom_level = min(self.width()  / self.canvas.width(),
-                              self.height() / self.canvas.height())
+                            self.height() / self.canvas.height())
         self.pan_offset = QPointF(0, 0)
         self.update()
         self._emit_sync()
