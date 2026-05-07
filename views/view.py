@@ -135,6 +135,13 @@ class View(QWidget):
         self.action_fit_canvas = QAction("Fit Canvas", self)
         self.menu_view.addAction(self.action_fit_canvas)
 
+        self.action_sync_views = QAction("Sync Views", self)
+        self.action_sync_views.setCheckable(True)
+        self.action_sync_views.setChecked(False)
+        self.action_sync_views.setEnabled(False)
+        self.action_sync_views.triggered.connect(self._on_sync_views_toggled)
+        self.menu_view.addAction(self.action_sync_views)
+
         self.menu_view.addSection("Scale")
         for preset in _ZCAM_PRESETS:
             action = QAction(preset['label'], self)
@@ -227,7 +234,6 @@ class View(QWidget):
 
         h = _DEFAULT_WINDOW_HEIGHT
         w = _DEFAULT_WINDOW_WIDTH
-        # Scene loading mode: image_selection visible, parameter_selection collapsed.
         self.left_splitter.setSizes([int(h * _LEFT_RATIO), 0, int(h * (1 - _LEFT_RATIO))])
         self.right_splitter.setSizes([h])
         self.main_splitter.setSizes([int(w * _MAIN_RATIO), int(w * (1 - _MAIN_RATIO))])
@@ -268,10 +274,20 @@ class View(QWidget):
             self.panel_spectral_view.hide_preview()
 
     def _on_split_screen_toggled(self, is_split):
-        """Enable/disable left-camera presets based on split mode."""
+        # Sync Views is only available in split mode.
+        if not is_split:
+            self.action_sync_views.setChecked(False)
+            self.action_sync_views.setEnabled(False)
+        else:
+            self.action_sync_views.setEnabled(True)
+
+        # Enable/disable left-camera presets based on split mode.
         for action, preset in self._preset_actions:
             if preset['camera'] == 'left':
                 action.setEnabled(is_split and self._scene_loaded())
+
+    def _on_sync_views_toggled(self, checked: bool):
+        self.panel_image_editing.set_sync_enabled(checked)
 
     def _scene_loaded(self):
         return any(action.isEnabled() for action, p in self._preset_actions

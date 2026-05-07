@@ -1,35 +1,37 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QPoint, QRectF, QRect, QTimer
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QSplitter
-from PyQt5.QtGui import (QPainter, QColor, QKeyEvent, QMouseEvent, QWheelEvent,
-                         QPen, QCursor)
-
-from colors import Colors
+import cv2
 import numpy as np
 
-# ------------------------------------------------------------------
-# Momentum physics
-# ------------------------------------------------------------------
+from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QPoint, QRectF, QRect, QTimer, QEvent
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QSplitter
+from PyQt5.QtGui import (QPainter, QColor, QKeyEvent, QMouseEvent, QWheelEvent,
+                         QPen, QFont, QFontMetrics)
 
-_FRICTION        = 0.88   # velocity multiplier per frame
-_MIN_VELOCITY    = 0.5    # px/frame below which momentum stops
-_MOMENTUM_HZ     = 60     # timer interval in ms
-_VELOCITY_WINDOW = 5      # frames to average for launch velocity
+from colors import Colors
+from utils.scale import scaled, scaled_font
+
+
+_FRICTION        = 0.88
+_MIN_VELOCITY    = 0.5
+_MOMENTUM_HZ     = 60
+_VELOCITY_WINDOW = 5
 
 
 class CanvasContainer(QWidget):
     """
-    Container for canvas with pan, zoom, and interactive ROI editing.
-    Supports mouse pan/zoom, ctrl+scroll zoom, and trackpad two-finger
-    pan (with momentum) and pinch-to-zoom.
+    Pan/zoom canvas with interactive ROI editing.
+    Supports mouse drag, trackpad two-finger pan with momentum, pinch-to-zoom,
+    and ctrl+scroll zoom.
     """
 
     scene_dropped = pyqtSignal(str)
     pixel_hovered = pyqtSignal(int, int)
-
-    roi_changed  = pyqtSignal(int, tuple)
-    roi_selected = pyqtSignal(int)
-    roi_deleted  = pyqtSignal(int)
-    roi_created  = pyqtSignal(tuple)
+    roi_changed   = pyqtSignal(int, tuple)
+    roi_selected  = pyqtSignal(int)
+    roi_deleted   = pyqtSignal(int)
+    roi_created   = pyqtSignal(tuple)
+    # Emits (zoom, image_cx, image_cy) — viewport center captured at interaction
+    # time so sync handlers always receive a stable snapshot.
+    sync_changed  = pyqtSignal(float, float, float)
 
     MODE_NONE      = 0
     MODE_MOVE      = 1
@@ -47,42 +49,34 @@ class CanvasContainer(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
         self.grabGesture(Qt.PinchGesture)
+        self.setAcceptDrops(True)
 
-        # Navigation
-        self.zoom_level  = 1.0
-        self.pan_offset  = QPointF(0, 0)
-        self.is_panning  = False
+        self.zoom_level    = 1.0
+        self.pan_offset    = QPointF(0, 0)
+        self.is_panning    = False
+        self._pan_is_mouse = False
         self.last_mouse_pos  = QPoint()
         self.space_pressed   = False
+        self.tool_cursor     = Qt.ArrowCursor
 
-        # Momentum
-        self._velocity          = QPointF(0, 0)
-        self._delta_history     = []          # rolling window of recent deltas
-        self._pan_is_mouse      = False
-        self._momentum_timer    = QTimer(self)
+        self._velocity      = QPointF(0, 0)
+        self._delta_history = []
+        self._momentum_timer = QTimer(self)
         self._momentum_timer.setInterval(1000 // _MOMENTUM_HZ)
         self._momentum_timer.timeout.connect(self._momentum_tick)
 
-        # Cursor
-        self.tool_cursor = Qt.ArrowCursor
-
-        # ROI state
-        self.rois              = []
-        self.roi_colors        = []
+        self.rois               = []
+        self.roi_colors         = []
         self.selected_roi_index = -1
-
-        # Interaction
-        self.interaction_mode  = self.MODE_NONE
-        self.interaction_tool  = "selection"
+        self.interaction_mode      = self.MODE_NONE
+        self.interaction_tool      = "selection"
         self.creation_start_pos    = None
         self.current_creation_rect = None
+        self.hover_preview_enabled = False
 
         self.canvas = ImageCanvas()
         self.canvas.setMouseTracking(True)
         self.canvas.scene_dropped.connect(self.scene_dropped.emit)
-
-        self.setAcceptDrops(True)
-        self.hover_preview_enabled = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,6 +106,47 @@ class CanvasContainer(QWidget):
         self.current_creation_rect = None
         self.update()
 
+    def fit_to_panel(self):
+        if self.canvas.image is None:
+            return
+        self.zoom_level = min(self.width()  / self.canvas.width(),
+                              self.height() / self.canvas.height())
+        self.pan_offset = QPointF(0, 0)
+        self.update()
+        self._emit_sync()
+
+    # ------------------------------------------------------------------
+    # Coordinate math
+    # ------------------------------------------------------------------
+
+    def _canvas_origin(self):
+        """Top-left of the image in unscaled widget coordinates."""
+        return ((self.width()  / self.zoom_level - self.canvas.width())  / 2,
+                (self.height() / self.zoom_level - self.canvas.height()) / 2)
+
+    def _get_image_coords(self, widget_pos):
+        ox, oy = self._canvas_origin()
+        return ((widget_pos.x() - self.pan_offset.x()) / self.zoom_level - ox,
+                (widget_pos.y() - self.pan_offset.y()) / self.zoom_level - oy)
+
+    def _viewport_center_image(self):
+        """Image-space coordinate at the center of the viewport."""
+        ox, oy = self._canvas_origin()
+        return ((self.width()  / 2 - self.pan_offset.x()) / self.zoom_level - ox,
+                (self.height() / 2 - self.pan_offset.y()) / self.zoom_level - oy)
+
+    def _pan_to_image_point(self, ix: float, iy: float):
+        """Set pan offset so image point (ix, iy) is centered in the viewport."""
+        ox, oy = self._canvas_origin()
+        self.pan_offset = QPointF(
+            self.width()  / 2 - (ox + ix) * self.zoom_level,
+            self.height() / 2 - (oy + iy) * self.zoom_level,
+        )
+
+    def _emit_sync(self):
+        cx, cy = self._viewport_center_image()
+        self.sync_changed.emit(self.zoom_level, cx, cy)
+
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
@@ -120,24 +155,20 @@ class CanvasContainer(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-
         painter.fillRect(self.rect(), QColor(Colors.APP_BACKGROUND))
 
         painter.save()
         painter.translate(self.pan_offset)
         painter.scale(self.zoom_level, self.zoom_level)
 
-        canvas_x = (self.width()  / self.zoom_level - self.canvas.width())  / 2
-        canvas_y = (self.height() / self.zoom_level - self.canvas.height()) / 2
-
-        painter.fillRect(int(canvas_x), int(canvas_y),
+        ox, oy = self._canvas_origin()
+        painter.fillRect(int(ox), int(oy),
                          self.canvas.width(), self.canvas.height(),
                          QColor(255, 255, 255))
-
         if self.canvas.image is not None:
-            painter.drawPixmap(int(canvas_x), int(canvas_y), self.canvas.image)
+            painter.drawPixmap(int(ox), int(oy), self.canvas.image)
 
-        painter.translate(canvas_x, canvas_y)
+        painter.translate(ox, oy)
         self._draw_rois(painter)
 
         if self.interaction_mode == self.MODE_CREATE and self.current_creation_rect:
@@ -152,21 +183,16 @@ class CanvasContainer(QWidget):
 
     def _draw_rois(self, painter):
         handle_sz = self.HANDLE_SIZE / self.zoom_level
-
         for i, rect_tuple in enumerate(self.rois):
-            x, y, w, h = rect_tuple
-            rect = QRectF(x, y, w, h)
-
+            rect       = QRectF(*rect_tuple)
             base_color = (QColor(*self.roi_colors[i])
                           if i < len(self.roi_colors) else QColor(Colors.ACCENT))
-
             if i == self.selected_roi_index and self.interaction_tool == "selection":
                 pen = QPen(QColor("#FFFFFF"), 1 / self.zoom_level)
                 pen.setStyle(Qt.DashLine)
                 fill = QColor(base_color); fill.setAlpha(80)
                 painter.setPen(pen); painter.setBrush(fill)
                 painter.drawRect(rect)
-
                 painter.setPen(QPen(QColor("black"), 1 / self.zoom_level))
                 painter.setBrush(QColor("white"))
                 for pt in (rect.topLeft(), rect.topRight(),
@@ -179,77 +205,44 @@ class CanvasContainer(QWidget):
                 painter.setPen(QPen(base_color, 1 / self.zoom_level))
                 painter.setBrush(fill)
                 painter.drawRect(rect)
-    
-    def fit_to_panel(self):
-        if self.canvas.image is None:
-            return
-        self.zoom_level = min(self.width() / self.canvas.width(),
-                            self.height() / self.canvas.height())
-        self.pan_offset = QPointF(0, 0)
-        self.update()
 
-    def mouseDoubleClickEvent(self, event):
-        if self._zoom_indicator_rect().contains(event.pos()):
-            self.fit_to_panel()
-    
-    def _zoom_indicator_rect(self):
-        from utils.scale import scaled, scaled_font
-        from PyQt5.QtGui import QFont, QFontMetrics
+    def _zoom_indicator_rect(self) -> QRect:
         font    = QFont("Arial", scaled_font(8))
         metrics = QFontMetrics(font)
-        max_w   = metrics.horizontalAdvance("10.00x")
-        text_h  = metrics.height()
         margin  = scaled(8)
-        padding = scaled(10)
-        box_w   = max_w + 2 * margin
-        box_h   = text_h + 2 * margin
-        return QRect(self.width()  - box_w - padding,
-                    self.height() - box_h - padding,
-                    box_w, box_h)
+        box_w   = metrics.horizontalAdvance("10.00x") + 2 * margin
+        box_h   = metrics.height() + 2 * margin
+        return QRect(self.width()  - box_w - scaled(10),
+                     self.height() - box_h - scaled(10),
+                     box_w, box_h)
 
     def _draw_zoom_indicator(self, painter):
-        from PyQt5.QtGui import QFont, QFontMetrics
-        from utils.scale import scaled, scaled_font
         font    = QFont("Arial", scaled_font(8))
-        painter.setFont(font)
         metrics = QFontMetrics(font)
-        margin  = scaled(8)
         r       = self._zoom_indicator_rect()
+        painter.setFont(font)
         painter.fillRect(r, QColor(40, 40, 40, 180))
         painter.setPen(QColor(255, 255, 255))
-        painter.drawText(r.x() + margin, r.y() + margin + metrics.ascent(),
-                        f"{self.zoom_level:.2f}x")
+        painter.drawText(r.x() + scaled(8), r.y() + scaled(8) + metrics.ascent(),
+                         f"{self.zoom_level:.2f}x")
 
     # ------------------------------------------------------------------
-    # Coordinate helpers
+    # Hit testing
     # ------------------------------------------------------------------
-
-    def _get_image_coords(self, widget_pos):
-        cvx = (self.pan_offset.x()
-               + (self.width()  / self.zoom_level - self.canvas.width())  / 2 * self.zoom_level)
-        cvy = (self.pan_offset.y()
-               + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level)
-        return ((widget_pos.x() - cvx) / self.zoom_level,
-                (widget_pos.y() - cvy) / self.zoom_level)
 
     def _hit_test(self, img_x, img_y):
         if self.interaction_tool != "selection":
             return -1, self.MODE_NONE
 
         handle_sz = self.HANDLE_SIZE / self.zoom_level
-        margin    = handle_sz
 
         if self.selected_roi_index != -1:
-            r    = self.rois[self.selected_roi_index]
-            rect = QRectF(*r)
-            corners = [
-                (rect.topLeft(),     self.MODE_RESIZE_TL),
-                (rect.topRight(),    self.MODE_RESIZE_TR),
-                (rect.bottomLeft(),  self.MODE_RESIZE_BL),
-                (rect.bottomRight(), self.MODE_RESIZE_BR),
-            ]
-            for pt, mode in corners:
-                if QRectF(pt.x() - margin, pt.y() - margin,
+            rect = QRectF(*self.rois[self.selected_roi_index])
+            for pt, mode in ((rect.topLeft(),     self.MODE_RESIZE_TL),
+                             (rect.topRight(),    self.MODE_RESIZE_TR),
+                             (rect.bottomLeft(),  self.MODE_RESIZE_BL),
+                             (rect.bottomRight(), self.MODE_RESIZE_BR)):
+                if QRectF(pt.x() - handle_sz, pt.y() - handle_sz,
                           handle_sz * 2, handle_sz * 2).contains(img_x, img_y):
                     return self.selected_roi_index, mode
             if rect.contains(img_x, img_y):
@@ -273,124 +266,79 @@ class CanvasContainer(QWidget):
     def _launch_momentum(self):
         if not self._delta_history:
             return
-        avg_x = sum(d.x() for d in self._delta_history) / len(self._delta_history)
-        avg_y = sum(d.y() for d in self._delta_history) / len(self._delta_history)
-        self._velocity = QPointF(avg_x, avg_y)
+        n = len(self._delta_history)
+        self._velocity = QPointF(
+            sum(d.x() for d in self._delta_history) / n,
+            sum(d.y() for d in self._delta_history) / n,
+        )
         self._delta_history.clear()
         self._momentum_timer.start()
 
     def _momentum_tick(self):
         self._velocity *= _FRICTION
-        speed = (self._velocity.x() ** 2 + self._velocity.y() ** 2) ** 0.5
-        if speed < _MIN_VELOCITY:
+        if (self._velocity.x() ** 2 + self._velocity.y() ** 2) ** 0.5 < _MIN_VELOCITY:
             self._momentum_timer.stop()
             self._velocity = QPointF(0, 0)
             return
         self.pan_offset += self._velocity
         self.update()
+        self._emit_sync()
 
     def _stop_momentum(self):
         self._momentum_timer.stop()
         self._velocity = QPointF(0, 0)
 
     # ------------------------------------------------------------------
-    # Zoom helper (shared by wheel and pinch)
+    # Zoom
     # ------------------------------------------------------------------
 
-    def _apply_zoom(self, factor, viewport_x, viewport_y):
-        cvx = (self.pan_offset.x()
-               + (self.width()  / self.zoom_level - self.canvas.width())  / 2 * self.zoom_level)
-        cvy = (self.pan_offset.y()
-               + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level)
-        canvas_x = (viewport_x - cvx) / self.zoom_level
-        canvas_y = (viewport_y - cvy) / self.zoom_level
-
+    def _apply_zoom(self, factor, vx, vy):
+        ox, oy   = self._canvas_origin()
+        img_x    = (vx - self.pan_offset.x()) / self.zoom_level - ox
+        img_y    = (vy - self.pan_offset.y()) / self.zoom_level - oy
         self.zoom_level = max(0.1, min(10.0, self.zoom_level * factor))
-
-        new_cvx = (self.pan_offset.x()
-                   + (self.width()  / self.zoom_level - self.canvas.width())  / 2 * self.zoom_level)
-        new_cvy = (self.pan_offset.y()
-                   + (self.height() / self.zoom_level - self.canvas.height()) / 2 * self.zoom_level)
-
-        self.pan_offset.setX(self.pan_offset.x()
-                             + (viewport_x - canvas_x * self.zoom_level) - new_cvx)
-        self.pan_offset.setY(self.pan_offset.y()
-                             + (viewport_y - canvas_y * self.zoom_level) - new_cvy)
+        ox2, oy2 = self._canvas_origin()
+        self.pan_offset.setX(vx - (ox2 + img_x) * self.zoom_level)
+        self.pan_offset.setY(vy - (oy2 + img_y) * self.zoom_level)
         self.update()
+        self._emit_sync()
 
     # ------------------------------------------------------------------
-    # Event handling
+    # Events
     # ------------------------------------------------------------------
 
     def event(self, ev):
-        from PyQt5.QtCore import QEvent
         if ev.type() == QEvent.Gesture:
-            return self._handle_gesture(ev)
+            pinch = ev.gesture(Qt.PinchGesture)
+            if pinch:
+                self._stop_momentum()
+                c = pinch.centerPoint()
+                self._apply_zoom(pinch.scaleFactor(), c.x(), c.y())
+                ev.accept()
+                return True
         return super().event(ev)
-
-    def _handle_gesture(self, ev):
-        pinch = ev.gesture(Qt.PinchGesture)
-        if pinch:
-            center = pinch.centerPoint()
-            self._stop_momentum()
-            self._apply_zoom(pinch.scaleFactor(),
-                             center.x(), center.y())
-            ev.accept()
-            return True
-        return False
 
     def wheelEvent(self, event: QWheelEvent):
         self._stop_momentum()
-
-        # Trackpad two-finger scroll (synthesized events carry both axes).
-        # Qt.MouseEventSynthesizedBySystem covers macOS and Windows precision
-        # touchpads; Qt.MouseEventSynthesizedByQt covers some Linux setups.
         is_trackpad = event.source() in (Qt.MouseEventSynthesizedBySystem,
                                          Qt.MouseEventSynthesizedByQt)
-
         if event.modifiers() & Qt.ControlModifier:
-            # Ctrl+scroll zooms regardless of device.
             factor = 1.1 if event.angleDelta().y() > 0 else 0.9
             self._apply_zoom(factor, event.pos().x(), event.pos().y())
             return
-
         if is_trackpad:
-            # Two-finger pan: apply both axes directly.
             dx = event.pixelDelta().x() or event.angleDelta().x() / 8
             dy = event.pixelDelta().y() or event.angleDelta().y() / 8
             self.pan_offset += QPointF(dx, dy)
             self._record_delta(dx, dy)
-            self.update()
         else:
-            # Mouse wheel: vertical scroll only.
-            self.pan_offset.setY(self.pan_offset.y()
-                                 + event.angleDelta().y() * 0.5)
-            self.update()
+            self.pan_offset.setY(self.pan_offset.y() + event.angleDelta().y() * 0.5)
+        self.update()
+        self._emit_sync()
 
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        if self.is_panning:
-            self.is_panning = False
-            self.setCursor(Qt.OpenHandCursor if self.space_pressed else self.tool_cursor)
-            if not self._pan_is_mouse:
-                self._launch_momentum()
-            self._pan_is_mouse = False
-            return
-
-        if self.interaction_mode == self.MODE_CREATE:
-            if self.current_creation_rect:
-                r = self.current_creation_rect
-                if r.width() > 5 and r.height() > 5:
-                    self.roi_created.emit((r.x(), r.y(), r.width(), r.height()))
-            self.current_creation_rect = None
-            self.interaction_mode = self.MODE_NONE
-            self.update()
-            return
-
-        if self.interaction_mode != self.MODE_NONE:
-            if self.selected_roi_index != -1:
-                self.roi_changed.emit(self.selected_roi_index,
-                                      tuple(self.rois[self.selected_roi_index]))
-            self.interaction_mode = self.MODE_NONE
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        if self._zoom_indicator_rect().contains(event.pos()):
+            self.fit_to_panel()
 
     def mousePressEvent(self, event: QMouseEvent):
         self._stop_momentum()
@@ -427,10 +375,11 @@ class CanvasContainer(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.is_panning:
             delta = event.pos() - self.last_mouse_pos
-            self.pan_offset  += delta
+            self.pan_offset    += delta
             self._record_delta(delta.x(), delta.y())
             self.last_mouse_pos = event.pos()
             self.update()
+            self._emit_sync()
             return
 
         img_x, img_y = self._get_image_coords(event.pos())
@@ -439,17 +388,17 @@ class CanvasContainer(QWidget):
             sx, sy = self.creation_start_pos
             w, h   = img_x - sx, img_y - sy
             self.current_creation_rect = QRectF(
-                sx if w > 0 else img_x, sy if h > 0 else img_y,
-                abs(w), abs(h)
+                sx if w > 0 else img_x, sy if h > 0 else img_y, abs(w), abs(h)
             )
             self.update()
-            if self.hover_preview_enabled:
-                if 0 <= img_x < self.canvas.width() and 0 <= img_y < self.canvas.height():
-                    self.pixel_hovered.emit(int(img_x), int(img_y))
+            if (self.hover_preview_enabled
+                    and 0 <= img_x < self.canvas.width()
+                    and 0 <= img_y < self.canvas.height()):
+                self.pixel_hovered.emit(int(img_x), int(img_y))
             return
 
         if self.interaction_mode != self.MODE_NONE and self.selected_roi_index != -1:
-            r  = list(self.rois[self.selected_roi_index])
+            r      = list(self.rois[self.selected_roi_index])
             px, py = self._get_image_coords(self.last_mouse_pos)
             dx, dy = img_x - px, img_y - py
 
@@ -472,18 +421,43 @@ class CanvasContainer(QWidget):
 
         if self.interaction_tool == "selection":
             _, mode = self._hit_test(img_x, img_y)
-            cursors = {
+            self.setCursor({
                 self.MODE_MOVE:      Qt.SizeAllCursor,
                 self.MODE_RESIZE_TL: Qt.SizeFDiagCursor,
                 self.MODE_RESIZE_BR: Qt.SizeFDiagCursor,
                 self.MODE_RESIZE_TR: Qt.SizeBDiagCursor,
                 self.MODE_RESIZE_BL: Qt.SizeBDiagCursor,
-            }
-            self.setCursor(cursors.get(mode, self.tool_cursor))
+            }.get(mode, self.tool_cursor))
 
-        if self.hover_preview_enabled:
-            if 0 <= img_x < self.canvas.width() and 0 <= img_y < self.canvas.height():
-                self.pixel_hovered.emit(int(img_x), int(img_y))
+        if (self.hover_preview_enabled
+                and 0 <= img_x < self.canvas.width()
+                and 0 <= img_y < self.canvas.height()):
+            self.pixel_hovered.emit(int(img_x), int(img_y))
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if self.is_panning:
+            self.is_panning = False
+            self.setCursor(Qt.OpenHandCursor if self.space_pressed else self.tool_cursor)
+            if not self._pan_is_mouse:
+                self._launch_momentum()
+            self._pan_is_mouse = False
+            return
+
+        if self.interaction_mode == self.MODE_CREATE:
+            if self.current_creation_rect:
+                r = self.current_creation_rect
+                if r.width() > 5 and r.height() > 5:
+                    self.roi_created.emit((r.x(), r.y(), r.width(), r.height()))
+            self.current_creation_rect = None
+            self.interaction_mode = self.MODE_NONE
+            self.update()
+            return
+
+        if self.interaction_mode != self.MODE_NONE:
+            if self.selected_roi_index != -1:
+                self.roi_changed.emit(self.selected_roi_index,
+                                      tuple(self.rois[self.selected_roi_index]))
+            self.interaction_mode = self.MODE_NONE
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Space and not self.space_pressed:
@@ -512,12 +486,8 @@ class CanvasContainer(QWidget):
             QTimer.singleShot(0, lambda: self.scene_dropped.emit(event.mimeData().text()))
 
 
-# ------------------------------------------------------------------
-# ImageCanvas
-# ------------------------------------------------------------------
-
 class ImageCanvas(QWidget):
-    """Canvas that holds the image data (size reference)."""
+    """Holds the image pixmap and defines canvas dimensions."""
 
     scene_dropped = pyqtSignal(str)
 
@@ -551,14 +521,11 @@ class ImageCanvas(QWidget):
             QTimer.singleShot(0, lambda: self.scene_dropped.emit(event.mimeData().text()))
 
 
-# ------------------------------------------------------------------
-# DualCanvasContainer
-# ------------------------------------------------------------------
-
 class DualCanvasContainer(QWidget):
     """
-    Manages both single and split-screen canvas modes.
-    Forwards all signals from active canvas(es).
+    Manages single and split-screen canvas modes.
+    When sync is enabled, panning or zooming one canvas transforms the
+    viewport center through the homography and mirrors it on the other.
     """
 
     scene_dropped = pyqtSignal(str)
@@ -570,9 +537,11 @@ class DualCanvasContainer(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.is_split_mode = False
+        self.is_split_mode             = False
         self.homography_matrix         = None
         self.inverse_homography_matrix = None
+        self._sync_enabled             = False
+        self._syncing                  = False
 
         self.layout = QHBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -580,7 +549,10 @@ class DualCanvasContainer(QWidget):
         self.setLayout(self.layout)
 
         self.canvas_single = CanvasContainer()
-        self._connect_canvas_signals(self.canvas_single)
+        self.canvas_left   = CanvasContainer()
+        self.canvas_right  = CanvasContainer()
+        for canvas in (self.canvas_single, self.canvas_left, self.canvas_right):
+            self._connect_canvas_signals(canvas)
 
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(2)
@@ -588,12 +560,6 @@ class DualCanvasContainer(QWidget):
             QSplitter::handle       {{ background-color: {Colors.PANEL_ACCENT}; }}
             QSplitter::handle:hover {{ background-color: {Colors.ACCENT}; }}
         """)
-
-        self.canvas_left  = CanvasContainer()
-        self.canvas_right = CanvasContainer()
-        self._connect_canvas_signals(self.canvas_left)
-        self._connect_canvas_signals(self.canvas_right)
-
         self.splitter.addWidget(self.canvas_left)
         self.splitter.addWidget(self.canvas_right)
         self.splitter.setSizes([500, 500])
@@ -610,16 +576,67 @@ class DualCanvasContainer(QWidget):
             lambda idx, rect, c=canvas: self._on_canvas_roi_changed(c, idx, rect))
         canvas.roi_created.connect(
             lambda rect, c=canvas: self._on_canvas_roi_created(c, rect))
+        canvas.sync_changed.connect(
+            lambda zoom, cx, cy, c=canvas: self._on_sync_changed(c, zoom, cx, cy))
+
+    def _camera_label(self, canvas):
+        return ('left'  if canvas is self.canvas_left  else
+                'right' if canvas is self.canvas_right else 'single')
 
     def _on_canvas_roi_changed(self, source, roi_index, rect):
-        camera = ('left'  if source is self.canvas_left  else
-                  'right' if source is self.canvas_right else 'single')
-        self.roi_changed.emit(roi_index, rect, camera)
+        self.roi_changed.emit(roi_index, rect, self._camera_label(source))
 
     def _on_canvas_roi_created(self, source, rect):
-        camera = ('left'  if source is self.canvas_left  else
-                  'right' if source is self.canvas_right else 'single')
-        self.roi_created.emit(rect, camera)
+        self.roi_created.emit(rect, self._camera_label(source))
+
+    # ------------------------------------------------------------------
+    # Sync
+    # ------------------------------------------------------------------
+
+    def set_sync_enabled(self, enabled: bool, source_camera: str = 'right'):
+        self._sync_enabled = enabled
+        if not enabled or not self.is_split_mode:
+            return
+        source = self.canvas_left  if source_camera == 'left' else self.canvas_right
+        target = self.canvas_right if source_camera == 'left' else self.canvas_left
+        # homography_matrix maps left→right, so right-source needs the inverse
+        H      = (self.inverse_homography_matrix if source_camera == 'right'
+                  else self.homography_matrix)
+        cx, cy = source._viewport_center_image()
+        self._syncing = True
+        try:
+            self._apply_synced_view(source, target, source.zoom_level, cx, cy, H)
+        finally:
+            self._syncing = False
+
+    def _on_sync_changed(self, source: CanvasContainer,
+                         zoom: float, cx: float, cy: float):
+        if not self._sync_enabled or not self.is_split_mode or self._syncing:
+            return
+        target = self.canvas_left  if source is self.canvas_right else self.canvas_right
+        H      = (self.inverse_homography_matrix if source is self.canvas_right
+                  else self.homography_matrix)
+        self._syncing = True
+        try:
+            self._apply_synced_view(source, target, zoom, cx, cy, H)
+        finally:
+            self._syncing = False
+
+    def _apply_synced_view(self, source: CanvasContainer, target: CanvasContainer,
+                           zoom: float, cx: float, cy: float, H):
+        """Transform (cx, cy) through H and recenter the target at the same zoom."""
+        if H is not None:
+            pt     = np.array([[[cx, cy]]], dtype=np.float32)
+            tpt    = cv2.perspectiveTransform(pt, H).reshape(2)
+            cx, cy = float(tpt[0]), float(tpt[1])
+        zoom_ratio        = source.width() / target.width() if target.width() > 0 else 1.0
+        target.zoom_level = zoom * zoom_ratio
+        target._pan_to_image_point(cx, cy)
+        target.update()
+
+    # ------------------------------------------------------------------
+    # Split mode
+    # ------------------------------------------------------------------
 
     def set_split_mode(self, split_mode):
         if split_mode == self.is_split_mode:
@@ -638,14 +655,15 @@ class DualCanvasContainer(QWidget):
             if self.canvas_right.canvas.image is not None:
                 self.canvas_single.set_image(self.canvas_right.canvas.image)
             if self.canvas_right.rois:
-                roi_dicts = [{'roi': r} for r in self.canvas_right.rois]
-                self.canvas_single.set_rois(roi_dicts, self.canvas_right.roi_colors)
+                self.canvas_single.set_rois(
+                    [{'roi': r} for r in self.canvas_right.rois],
+                    self.canvas_right.roi_colors,
+                )
 
     def set_homography_matrix(self, homography_matrix):
-        import cv2
         self.homography_matrix = homography_matrix
-        if homography_matrix is not None:
-            self.inverse_homography_matrix = cv2.invert(homography_matrix)[1]
+        self.inverse_homography_matrix = (cv2.invert(homography_matrix)[1]
+                                          if homography_matrix is not None else None)
 
     def set_camera_images(self, left_pixmap, right_pixmap):
         if self.is_split_mode:
@@ -654,32 +672,29 @@ class DualCanvasContainer(QWidget):
         else:
             self.canvas_single.set_image(right_pixmap)
 
-    def _transform_roi_to_left(self, roi_tuple):
-        if self.inverse_homography_matrix is None:
-            return roi_tuple
-        import cv2
-        x, y, w, h = roi_tuple
-        corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]],
-                           dtype=np.float32).reshape(-1, 1, 2)
-        tc = cv2.perspectiveTransform(corners, self.inverse_homography_matrix).reshape(-1, 2)
-        xl, yl = tc[:, 0].min(), tc[:, 1].min()
-        return (xl, yl, tc[:, 0].max() - xl, tc[:, 1].max() - yl)
-
     def set_rois(self, rois, colors=None):
-        if self.is_split_mode:
-            self.canvas_right.set_rois(rois, colors)
-            left_rois = []
-            for roi_data in rois:
-                if 'left_rect' in roi_data:
-                    left_rois.append({'roi': roi_data['left_rect']})
-                elif self.homography_matrix is not None:
-                    left_rois.append({'roi': self._transform_roi_to_left(
-                        tuple(map(float, roi_data['roi'])))})
-                else:
-                    left_rois.append({'roi': roi_data['roi']})
-            self.canvas_left.set_rois(left_rois, colors)
-        else:
+        if not self.is_split_mode:
             self.canvas_single.set_rois(rois, colors)
+            return
+        self.canvas_right.set_rois(rois, colors)
+        left_rois = []
+        for roi_data in rois:
+            if 'left_rect' in roi_data:
+                left_rois.append({'roi': roi_data['left_rect']})
+            elif self.inverse_homography_matrix is not None:
+                x, y, w, h = map(float, roi_data['roi'])
+                corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]],
+                                   dtype=np.float32).reshape(-1, 1, 2)
+                tc = cv2.perspectiveTransform(
+                    corners, self.inverse_homography_matrix
+                ).reshape(-1, 2)
+                xl, yl = tc[:, 0].min(), tc[:, 1].min()
+                left_rois.append({'roi': (xl, yl,
+                                          tc[:, 0].max() - xl,
+                                          tc[:, 1].max() - yl)})
+            else:
+                left_rois.append({'roi': roi_data['roi']})
+        self.canvas_left.set_rois(left_rois, colors)
 
     def set_tool_cursor(self, cursor):
         for c in self._active_canvases():
@@ -690,28 +705,15 @@ class DualCanvasContainer(QWidget):
             c.set_hover_preview_enabled(enabled)
 
     def set_image(self, pixmap):
-        if self.is_split_mode:
-            self.canvas_right.set_image(pixmap)
-        else:
-            self.canvas_single.set_image(pixmap)
+        (self.canvas_right if self.is_split_mode else self.canvas_single).set_image(pixmap)
 
     def set_tool(self, tool_name):
         for c in self._active_canvases():
             c.set_tool(tool_name)
 
     def _active_canvases(self):
-        if self.is_split_mode:
-            return (self.canvas_left, self.canvas_right)
-        return (self.canvas_single,)
-    
-    def fit_focused_canvas(self, focused_camera: str):
-        canvas = {'single': self.canvas_single,
-                'left':   self.canvas_left,
-                'right':  self.canvas_right}[focused_camera]
-        canvas.fit_to_panel()
+        return (self.canvas_left, self.canvas_right) if self.is_split_mode else (self.canvas_single,)
 
     @property
     def canvas(self):
-        if self.is_split_mode:
-            return self.canvas_left.canvas
-        return self.canvas_single.canvas
+        return (self.canvas_left if self.is_split_mode else self.canvas_single).canvas

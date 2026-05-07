@@ -172,8 +172,8 @@ class ImageEditingPanel(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.current_tool  = 'selection'
-        self._is_split     = False
+        self.current_tool    = 'selection'
+        self._is_split       = False
         self._focused_camera = 'single'
         self._build_ui()
         self.canvas_container.installEventFilter(self)
@@ -391,8 +391,27 @@ class ImageEditingPanel(QWidget):
         self._sync_overlay_visibility()
         self._focused_camera = 'right' if self._is_split else 'single'
         self._sync_focus()
+        if not self._is_split:
+            self.canvas_container.set_sync_enabled(False)
         self.split_screen_toggled.emit(self._is_split)
         QTimer.singleShot(0, self._reposition_overlays)
+
+    # ------------------------------------------------------------------
+    # Sync views
+    # ------------------------------------------------------------------
+
+    def set_sync_enabled(self, enabled: bool):
+        self.canvas_container.set_sync_enabled(enabled, self.focused_camera)
+
+    # ------------------------------------------------------------------
+    # Fit canvas
+    # ------------------------------------------------------------------
+
+    def fit_focused_canvas(self):
+        canvas = {'single': self.canvas_container.canvas_single,
+                  'left':   self.canvas_container.canvas_left,
+                  'right':  self.canvas_container.canvas_right}[self.focused_camera]
+        canvas.fit_to_panel()
 
     # ------------------------------------------------------------------
     # Forwarded public API
@@ -416,6 +435,3 @@ class ImageEditingPanel(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reposition_overlays()
-    
-    def fit_focused_canvas(self):
-        self.canvas_container.fit_focused_canvas(self.focused_camera)
