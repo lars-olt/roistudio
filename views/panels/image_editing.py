@@ -438,3 +438,6 @@ class ImageEditingPanel(QWidget):
     
     def set_rois(self, rois, colors=None, names=None):
         self.canvas_container.set_rois(rois, colors, names)
+    
+    def set_roi_labels_visible(self, visible: bool):
+        self.canvas_container.set_roi_labels_visible(visible)

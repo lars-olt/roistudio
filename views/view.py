@@ -134,6 +134,11 @@ class View(QWidget):
 
         self.action_fit_canvas = QAction("Fit Canvas", self)
         self.menu_view.addAction(self.action_fit_canvas)
+        
+        self.action_roi_labels = QAction("ROI Labels", self)
+        self.action_roi_labels.setCheckable(True)
+        self.action_roi_labels.setChecked(False)
+        self.menu_view.addAction(self.action_roi_labels)
 
         self.action_sync_views = QAction("Sync Views", self)
         self.action_sync_views.setCheckable(True)
@@ -188,6 +193,10 @@ class View(QWidget):
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
         self.panel_image_editing.split_screen_toggled.connect(self._on_split_screen_toggled)
+        
+        self.action_roi_labels.triggered.connect(
+            lambda checked: self.panel_image_editing.set_roi_labels_visible(checked)
+        )
 
         self.action_fit_canvas.triggered.connect(self.panel_image_editing.fit_focused_canvas)
 

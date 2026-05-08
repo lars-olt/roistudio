@@ -75,6 +75,7 @@ class CanvasContainer(QWidget):
         self.creation_start_pos    = None
         self.current_creation_rect = None
         self.hover_preview_enabled = False
+        self.roi_labels_visible = False
 
         self.canvas = ImageCanvas()
         self.canvas.setMouseTracking(True)
@@ -209,7 +210,8 @@ class CanvasContainer(QWidget):
                 painter.setBrush(fill)
                 painter.drawRect(rect)
 
-            if i == self.hovered_roi_index and i < len(self.roi_names):
+            if (i < len(self.roi_names)
+                    and (self.roi_labels_visible or i == self.hovered_roi_index)):
                 self._draw_roi_label(painter, rect, self.roi_names[i], base_color)
 
     def _draw_roi_label(self, painter, rect, name, color):
@@ -531,6 +533,10 @@ class CanvasContainer(QWidget):
         if event.mimeData().hasText():
             event.acceptProposedAction()
             QTimer.singleShot(0, lambda: self.scene_dropped.emit(event.mimeData().text()))
+    
+    def set_roi_labels_visible(self, visible: bool):
+        self.roi_labels_visible = visible
+        self.update()
 
 
 class ImageCanvas(QWidget):
@@ -762,6 +768,10 @@ class DualCanvasContainer(QWidget):
 
     def _active_canvases(self):
         return (self.canvas_left, self.canvas_right) if self.is_split_mode else (self.canvas_single,)
+    
+    def set_roi_labels_visible(self, visible: bool):
+        for c in (self.canvas_single, self.canvas_left, self.canvas_right):
+            c.set_roi_labels_visible(visible)
 
     @property
     def canvas(self):
