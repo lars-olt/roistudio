@@ -25,6 +25,7 @@ class View(QWidget):
 
     set_sam_path_signal         = pyqtSignal()
     open_folder_signal          = pyqtSignal()
+    load_sel_signal = pyqtSignal()
     export_sel_signal           = pyqtSignal()
     run_algorithm_signal        = pyqtSignal()
     scene_dropped_signal        = pyqtSignal(str)
@@ -118,6 +119,11 @@ class View(QWidget):
         self.menu_file.addAction(self.action_open_folder)
 
         self.menu_file.addSeparator()
+        
+        self.action_load_sel = QAction("Load sel", self)
+        self.action_load_sel.triggered.connect(self.load_sel_signal.emit)
+        self.action_load_sel.setEnabled(False)
+        self.menu_file.addAction(self.action_load_sel)
 
         self.action_export_sel = QAction("Export sel", self)
         self.action_export_sel.triggered.connect(self.export_sel_signal.emit)

@@ -64,6 +64,7 @@ class Controller(QObject):
     def _connect_view_signals(self):
         self._view.set_sam_path_signal.connect(self.set_sam_path)
         self._view.open_folder_signal.connect(self.open_iof_folder)
+        self._view.load_sel_signal.connect(self.load_sel)
         self._view.export_sel_signal.connect(self.export_sel)
         self._view.scene_dropped_signal.connect(self.load_scene_by_id)
         self._view.run_algorithm_signal.connect(self.run_algorithm)
@@ -122,6 +123,90 @@ class Controller(QObject):
             self.config['sam_model_path'] = path
             self.save_config()
             self._view.show_status_message(f"SAM model path set: {path}")
+    
+    # ------------------------------------------------------------------
+    # SEL Import
+    # ------------------------------------------------------------------
+    
+    def load_sel(self):
+        if self._model.sparc_load_result is None:
+            self._view.show_status_message("No scene loaded - cannot load SEL.")
+            return
+
+        from PyQt5.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self._view, "Load SEL File", "", "SEL Files (*.sel);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            from sparc.utils.sel_writer import read_sel
+
+            load_result = self._model.sparc_load_result
+            instrument  = load_result.get('instrument', 'ZCAM').strip().upper()
+
+            right_rois, left_rois = read_sel(path, instrument)
+
+            if instrument in {'ZCAM', 'MCZ'}:
+                from asdf_settings import rapidlooks
+                crop    = rapidlooks.CROP_SETTINGS["crop"]
+                col_off = int(crop[0])
+                row_off = int(crop[2])
+            else:
+                col_off, row_off = 0, 0
+
+            # shift from full-sensor back to cropped-image coordinates
+            if col_off or row_off:
+                right_rois = right_rois.copy(); right_rois[:, 0] -= col_off; right_rois[:, 1] -= row_off
+                left_rois  = left_rois.copy();  left_rois[:, 0]  -= col_off; left_rois[:, 1]  -= row_off
+
+            instrument_config = self._get_instrument_config()
+
+            self._current_rois_data   = []
+            self._current_colors      = []
+            self._current_color_names = []
+            self.color_stack          = []
+            self.next_color_index     = 0
+
+            for right_rect, left_rect in zip(right_rois, left_rois):
+                right_rect = tuple(int(v) for v in right_rect)
+                left_rect  = tuple(int(v) for v in left_rect)
+
+                if self._has_dual_cubes():
+                    spec_data = self.sparc_controller.update_roi_spectrum_dual(
+                        load_result, left_rect, right_rect, instrument_config
+                    )
+                else:
+                    spec_data = self.sparc_controller.update_roi_spectrum(
+                        load_result['cube'], right_rect, instrument_config
+                    )
+
+                color, name = self._get_next_color()
+                self._current_colors.append(color)
+                self._current_color_names.append(name)
+                self._current_rois_data.append({
+                    'roi':        right_rect,
+                    'right_rect': right_rect,
+                    'left_rect':  left_rect,
+                    'mineral':    'Loaded ROI',
+                    **spec_data,
+                })
+
+            self._view.panel_image_editing.set_rois(
+                self._current_rois_data, self._current_colors, self._current_color_names
+            )
+            self._view.panel_spectral_view.plot_roi_spectra(
+                self._current_rois_data, self._current_colors
+            )
+            self._view.action_export_sel.setEnabled(True)
+            self._view.show_status_message(
+                f"Loaded {len(self._current_rois_data)} ROI(s) from {path}"
+            )
+
+        except Exception as e:
+            self._view.show_status_message(f"Load SEL failed: {e}")
+            import traceback; traceback.print_exc()
 
     # ------------------------------------------------------------------
     # SEL export
@@ -231,6 +316,7 @@ class Controller(QObject):
         self._current_color_names = []
         self.color_stack          = []
         self.next_color_index     = 0
+        self._view.action_load_sel.setEnabled(True)
         self._view.action_export_sel.setEnabled(False)
         self._view.select_scene(self._current_scene_id)
         self._view.enable_presets(True)
