@@ -67,7 +67,9 @@ class CanvasContainer(QWidget):
 
         self.rois               = []
         self.roi_colors         = []
+        self.roi_names          = []   # marslab color name per ROI
         self.selected_roi_index = -1
+        self.hovered_roi_index  = -1
         self.interaction_mode      = self.MODE_NONE
         self.interaction_tool      = "selection"
         self.creation_start_pos    = None
@@ -93,22 +95,25 @@ class CanvasContainer(QWidget):
         self.canvas.set_image(pixmap)
         self.update()
 
-    def set_rois(self, rois, colors=None):
-        self.rois = [tuple(map(float, r['roi'])) for r in rois]
+    def set_rois(self, rois, colors=None, names=None):
+        self.rois       = [tuple(map(float, r['roi'])) for r in rois]
         self.roi_colors = colors if colors else []
+        self.roi_names  = names  if names  else []
         self.selected_roi_index = -1
+        self.hovered_roi_index  = -1
         self.update()
 
     def set_tool(self, tool_name):
         self.interaction_tool = tool_name
         self.selected_roi_index = -1
+        self.hovered_roi_index  = -1
         self.interaction_mode = self.MODE_NONE
         self.current_creation_rect = None
         self.update()
 
     def fit_to_panel(self):
         self.zoom_level = min(self.width()  / self.canvas.width(),
-                            self.height() / self.canvas.height())
+                              self.height() / self.canvas.height())
         self.pan_offset = QPointF(0, 0)
         self.update()
         self._emit_sync()
@@ -204,6 +209,31 @@ class CanvasContainer(QWidget):
                 painter.setBrush(fill)
                 painter.drawRect(rect)
 
+            if i == self.hovered_roi_index and i < len(self.roi_names):
+                self._draw_roi_label(painter, rect, self.roi_names[i], base_color)
+
+    def _draw_roi_label(self, painter, rect, name, color):
+        pt_size = max(1, round(scaled_font(8) / self.zoom_level))
+        padding = 2 / self.zoom_level
+
+        font    = QFont("Arial", pt_size)
+        metrics = QFontMetrics(font)
+        text_w  = metrics.horizontalAdvance(name)
+        text_h  = metrics.height()
+        bg_w    = text_w + padding * 2
+        bg_h    = text_h + padding * 2
+
+        bg = QColor(20, 20, 20, 200)
+        painter.fillRect(QRectF(rect.x(), rect.y() - bg_h, bg_w, bg_h), bg)
+
+        painter.setFont(font)
+        painter.setPen(QColor(*color.getRgb()[:3]))
+        painter.drawText(
+            QRectF(rect.x() + padding, rect.y() - bg_h + padding, text_w, text_h),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            name,
+        )
+
     def _zoom_indicator_rect(self) -> QRect:
         font    = QFont("Arial", scaled_font(8))
         metrics = QFontMetrics(font)
@@ -251,6 +281,17 @@ class CanvasContainer(QWidget):
                 return i, self.MODE_MOVE
 
         return -1, self.MODE_NONE
+
+    def _update_hover(self, img_x, img_y):
+        """Update hovered_roi_index and repaint if it changed."""
+        new_hover = -1
+        for i, r in enumerate(self.rois):
+            if QRectF(*r).contains(img_x, img_y):
+                new_hover = i
+                break
+        if new_hover != self.hovered_roi_index:
+            self.hovered_roi_index = new_hover
+            self.update()
 
     # ------------------------------------------------------------------
     # Momentum
@@ -417,6 +458,9 @@ class CanvasContainer(QWidget):
             self.update()
             return
 
+        # Update hover label and cursor.
+        self._update_hover(img_x, img_y)
+
         if self.interaction_tool == "selection":
             _, mode = self._hit_test(img_x, img_y)
             self.setCursor({
@@ -456,6 +500,11 @@ class CanvasContainer(QWidget):
                 self.roi_changed.emit(self.selected_roi_index,
                                       tuple(self.rois[self.selected_roi_index]))
             self.interaction_mode = self.MODE_NONE
+
+    def leaveEvent(self, event):
+        if self.hovered_roi_index != -1:
+            self.hovered_roi_index = -1
+            self.update()
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Space and not self.space_pressed:
@@ -656,6 +705,7 @@ class DualCanvasContainer(QWidget):
                 self.canvas_single.set_rois(
                     [{'roi': r} for r in self.canvas_right.rois],
                     self.canvas_right.roi_colors,
+                    self.canvas_right.roi_names,
                 )
 
     def set_homography_matrix(self, homography_matrix):
@@ -670,11 +720,12 @@ class DualCanvasContainer(QWidget):
         else:
             self.canvas_single.set_image(right_pixmap)
 
-    def set_rois(self, rois, colors=None):
+    def set_rois(self, rois, colors=None, names=None):
         if not self.is_split_mode:
-            self.canvas_single.set_rois(rois, colors)
+            self.canvas_single.set_rois(rois, colors, names)
             return
-        self.canvas_right.set_rois(rois, colors)
+        # Names only shown on the right (focused) canvas
+        self.canvas_right.set_rois(rois, colors, names)
         left_rois = []
         for roi_data in rois:
             if 'left_rect' in roi_data:
@@ -692,7 +743,7 @@ class DualCanvasContainer(QWidget):
                                           tc[:, 1].max() - yl)})
             else:
                 left_rois.append({'roi': roi_data['roi']})
-        self.canvas_left.set_rois(left_rois, colors)
+        self.canvas_left.set_rois(left_rois, colors, names)
 
     def set_tool_cursor(self, cursor):
         for c in self._active_canvases():

@@ -435,3 +435,6 @@ class ImageEditingPanel(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reposition_overlays()
+    
+    def set_rois(self, rois, colors=None, names=None):
+        self.canvas_container.set_rois(rois, colors, names)

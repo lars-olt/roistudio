@@ -15,16 +15,18 @@ class Controller(QObject):
 
     def __init__(self, model, view):
         super().__init__()
-        self._model            = model
-        self._view             = view
-        self._current_scene_id = None
+        self._model             = model
+        self._view              = view
+        self._current_scene_id  = None
         self._current_rois_data = []
         self._current_colors    = []
+        self._current_color_names = []
         self._is_split_screen   = False
 
-        self.color_palette    = []
-        self.color_stack      = []
-        self.next_color_index = 0
+        self.color_palette      = []
+        self.color_name_palette = []
+        self.color_stack        = []
+        self.next_color_index   = 0
 
         self.config_path = _get_config_path()
         self.load_config()
@@ -39,11 +41,12 @@ class Controller(QObject):
     def _init_color_palette(self):
         from marslab.compat import mertools
         from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
-        all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.values())
+        all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.items())
         instrument = self._model.instrument
         first_id   = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
-        # first_id is 1-based for ZCAM (skip 3), 0 for PCAM (take all)
-        self.color_palette = [hex_to_rgb(c) for c in all_colors[max(0, first_id - 1):]]
+        offset     = max(0, first_id - 1)
+        self.color_palette      = [hex_to_rgb(v) for k, v in all_colors[offset:]]
+        self.color_name_palette = [k             for k, v in all_colors[offset:]]
 
     def _connect_view_signals(self):
         self._view.set_sam_path_signal.connect(self.set_sam_path)
@@ -210,10 +213,11 @@ class Controller(QObject):
 
     def _on_scene_load_complete(self, load_result):
         self._model.sparc_load_result = load_result
-        self._current_rois_data = []
-        self._current_colors    = []
-        self.color_stack        = []
-        self.next_color_index   = 0
+        self._current_rois_data   = []
+        self._current_colors      = []
+        self._current_color_names = []
+        self.color_stack          = []
+        self.next_color_index     = 0
         self._view.action_export_sel.setEnabled(False)
         self._view.select_scene(self._current_scene_id)
         self._view.enable_presets(True)
@@ -228,9 +232,8 @@ class Controller(QObject):
                 load_result['homography_matrix']
             )
 
-        # populate per-camera band selectors
-        base_bands  = load_result.get('base_bands', {})
-        band_names  = list(base_bands.keys())
+        base_bands = load_result.get('base_bands', {})
+        band_names = list(base_bands.keys())
         if band_names:
             instrument  = load_result.get('instrument', 'ZCAM')
             right_bands = [b for b in band_names if b.startswith('R')] or band_names
@@ -248,7 +251,7 @@ class Controller(QObject):
             )
 
         self._render_current_images()
-        self._view.panel_image_editing.set_rois([])
+        self._view.panel_image_editing.set_rois([], [], [])
         self._view.panel_spectral_view.clear_roi_spectra()
         self._view.panel_spectral_view.clear_plot()
         self._view.stop_loading()
@@ -308,8 +311,6 @@ class Controller(QObject):
                 result, instrument_config
             )
 
-            # Recompute all spectra from the inscribed rects so the initial display
-            # matches what clicking produces - no jumping spectra.
             load_result = self._model.sparc_load_result
             if self._has_dual_cubes():
                 for i, roi in enumerate(self._current_rois_data):
@@ -320,10 +321,19 @@ class Controller(QObject):
 
             self.color_stack      = []
             self.next_color_index = 0
-            self._current_colors  = [self._get_next_color() for _ in self._current_rois_data]
+            self._current_colors      = []
+            self._current_color_names = []
+            for _ in self._current_rois_data:
+                color, name = self._get_next_color()
+                self._current_colors.append(color)
+                self._current_color_names.append(name)
 
-            self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
-            self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            self._view.panel_image_editing.set_rois(
+                self._current_rois_data, self._current_colors, self._current_color_names
+            )
+            self._view.panel_spectral_view.plot_roi_spectra(
+                self._current_rois_data, self._current_colors
+            )
             self._view.action_export_sel.setEnabled(True)
             self._view.stop_loading()
             self._view.show_status_message(f"SPARC complete: {len(result.final_rois)} ROIs found")
@@ -344,13 +354,16 @@ class Controller(QObject):
 
     def _get_next_color(self):
         if self.color_stack:
-            return self.color_stack.pop()
-        color = self.color_palette[self.next_color_index % len(self.color_palette)]
+            color, name = self.color_stack.pop()
+            return color, name
+        idx   = self.next_color_index % len(self.color_palette)
+        color = self.color_palette[idx]
+        name  = self.color_name_palette[idx]
         self.next_color_index += 1
-        return color
+        return color, name
 
-    def _recycle_color(self, color):
-        self.color_stack.append(color)
+    def _recycle_color(self, color, name):
+        self.color_stack.append((color, name))
 
     # ------------------------------------------------------------------
     # ROI editing
@@ -366,7 +379,7 @@ class Controller(QObject):
         try:
             load_result       = self._model.sparc_load_result
             instrument_config = self._get_instrument_config()
-            color             = self._get_next_color()
+            color, name       = self._get_next_color()
 
             if self._has_dual_cubes():
                 homography = load_result.get('homography_matrix')
@@ -376,7 +389,7 @@ class Controller(QObject):
                 else:
                     right_rect = tuple(rect)
                     left_rect  = (right_rect_to_left_inscribed(right_rect, homography)
-                                  if homography is not None else right_rect) or right_rect
+                                if homography is not None else right_rect) or right_rect
                 spec_data = self.sparc_controller.update_roi_spectrum_dual(
                     load_result, left_rect, right_rect, instrument_config
                 )
@@ -394,8 +407,13 @@ class Controller(QObject):
                 **spec_data,
             })
             self._current_colors.append(color)
-            self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
-            self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            self._current_color_names.append(name)
+            self._view.panel_image_editing.set_rois(
+                self._current_rois_data, self._current_colors, self._current_color_names
+            )
+            self._view.panel_spectral_view.plot_roi_spectra(
+                self._current_rois_data, self._current_colors
+            )
             self._view.action_export_sel.setEnabled(True)
             self._view.show_status_message("ROI created")
 
@@ -406,10 +424,16 @@ class Controller(QObject):
         if not (0 <= roi_index < len(self._current_rois_data)):
             return
         try:
-            self._recycle_color(self._current_colors.pop(roi_index))
+            color = self._current_colors.pop(roi_index)
+            name  = self._current_color_names.pop(roi_index)
+            self._recycle_color(color, name)
             self._current_rois_data.pop(roi_index)
-            self._view.panel_image_editing.set_rois(self._current_rois_data, self._current_colors)
-            self._view.panel_spectral_view.plot_roi_spectra(self._current_rois_data, self._current_colors)
+            self._view.panel_image_editing.set_rois(
+                self._current_rois_data, self._current_colors, self._current_color_names
+            )
+            self._view.panel_spectral_view.plot_roi_spectra(
+                self._current_rois_data, self._current_colors
+            )
             self._view.action_export_sel.setEnabled(bool(self._current_rois_data))
             self._view.show_status_message(f"ROI {roi_index + 1} deleted")
         except Exception as e:
@@ -542,7 +566,7 @@ class Controller(QObject):
             self._render_current_images()
             if self._current_rois_data:
                 self._view.panel_image_editing.set_rois(
-                    self._current_rois_data, self._current_colors
+                    self._current_rois_data, self._current_colors, self._current_color_names
                 )
         self._view.show_status_message(
             f"Switched to {'split-screen' if is_split else 'single'} mode"
