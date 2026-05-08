@@ -300,7 +300,7 @@ class ImageEditingPanel(QWidget):
         tb.setSpacing(scaled(8))
 
         btn_w = physical(46)
-        self.toolbar.setMaximumWidth(btn_w + scaled(8))
+        self.toolbar.setFixedWidth(btn_w + scaled(8))
         self.toolbar.layout().setContentsMargins(0, scaled(4), 0, scaled(4))
         self.toolbar.layout().setSpacing(scaled(4))
 
