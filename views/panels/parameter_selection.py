@@ -1,7 +1,7 @@
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QFormLayout, QLabel, QDoubleSpinBox, QSpinBox,
-                             QCheckBox)
+                             QCheckBox, QAbstractSpinBox)
 
 from colors import Colors
 from utils.scale import Scale, scaled, scaled_font
@@ -205,6 +205,7 @@ class ParameterSelectionPanel(QFrame):
         sb = QDoubleSpinBox()
         sb.setRange(lo, hi); sb.setValue(default); sb.setSingleStep(step)
         sb.setFocusPolicy(Qt.StrongFocus)
+        sb.setButtonSymbols(QAbstractSpinBox.NoButtons)
         sb.installEventFilter(self._wheel_filter)
         return sb
 
@@ -212,6 +213,7 @@ class ParameterSelectionPanel(QFrame):
         sb = QSpinBox()
         sb.setRange(lo, hi); sb.setValue(default)
         sb.setFocusPolicy(Qt.StrongFocus)
+        sb.setButtonSymbols(QAbstractSpinBox.NoButtons)
         sb.installEventFilter(self._wheel_filter)
         return sb
 
