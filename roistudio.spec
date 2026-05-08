@@ -132,7 +132,7 @@ hidden_imports += collect_submodules("asdf_settings")
 
 datas = []
 
-# ROIStudio assets
+# ROIStudio assets - graphics/ is collected recursively, picking up logo/ too
 datas += [
     ("graphics", "graphics"),
     ("config.yml", "."),
@@ -191,8 +191,8 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,        # UPX corrupts torch DLLs
-    console=False,    # Set True to see traceback during debugging
-    icon=None,        # Add graphics/icon.ico when available
+    console=False,    # set True to see tracebacks during debugging
+    icon="graphics/logo/logo.ico" if sys.platform == "win32" else None,
 )
 
 coll = COLLECT(
@@ -208,13 +208,12 @@ coll = COLLECT(
 
 # macOS .app bundle
 if sys.platform == "darwin":
-    # MACOSX_DEPLOYMENT_TARGET is set by the CI workflow per-platform.
-    # Locally it defaults to whatever the build machine supports.
     deployment_target = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "12.0")
     app = BUNDLE(
         coll,
         name="ROIStudio.app",
         bundle_identifier="com.marslab.roistudio",
+        icon="graphics/logo/logo.icns",
         info_plist={
             "NSHighResolutionCapable": True,
             "CFBundleShortVersionString": "0.1.0",
