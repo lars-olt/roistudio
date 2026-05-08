@@ -125,7 +125,7 @@ class SpectralViewPanel(QWidget):
             )
             ax.errorbar(bwls, bspec, yerr=bstd,
                         color=color, linestyle='',
-                        marker='o', markersize=4,
+                        marker='o', markersize=2,
                         capsize=3, capthick=1, elinewidth=1)
 
     def _plot_merged(self, ax, roi_data, color):
@@ -136,7 +136,6 @@ class SpectralViewPanel(QWidget):
         )
         ax.errorbar(wls, spec, yerr=std,
                     color=color, linewidth=1,
-                    marker='o', markersize=4,
                     capsize=3, capthick=1, elinewidth=1)
 
     def _plot_split(self, ax, roi_data, color):
@@ -152,7 +151,6 @@ class SpectralViewPanel(QWidget):
             wls, spec, std = self._sort_spectrum(wls, spec, std)
             ax.errorbar(wls, spec, yerr=std,
                         color=color, linewidth=1,
-                        marker='o', markersize=4,
                         capsize=3, capthick=1, elinewidth=1)
 
     def plot_roi_spectra(self, roi_data_list, color_list):
