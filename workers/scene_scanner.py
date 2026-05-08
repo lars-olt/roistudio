@@ -1,5 +1,7 @@
 from PyQt5.QtCore import QThread, pyqtSignal
 from pathlib import Path
+from functools import reduce
+from operator import mul
 import re
 import numpy as np
 import pandas as pd
@@ -12,40 +14,58 @@ _PCAM_FILENAME_RE = re.compile(
 )
 
 
-def _make_zcam_bandset_fallback(parent_dir, seq_id=None):
-    """
-    Build a ZcamBandSet bypassing rapid's cluster_observations.
-    On Windows, asdf computes the stem column from the directory path rather
-    than the file stem, so all files in a scene share one stem and compete as
-    siblings. rate_cal_offset keeps only the single best-scoring file, dropping
-    everything else. This fallback deduplicates per filter directly - one file
-    per filter, chosen by the same cal_offset score - and hands the result
-    straight to ZcamBandSet.
-    """
-    from asdf.scan import scan_zcam_files, rate_cal_offset
-    from asdf.zcam_bandset import ZcamBandSet
-    from functools import reduce
-    from operator import mul
+def _fwd(path) -> str:
+    """Forward-slash path string to avoid asdf stem-parsing bugs on Windows."""
+    return str(path).replace('\\', '/')
 
-    all_obs = scan_zcam_files(parent_dir)
+
+def _scan_and_split(parent_dir, seq_id=None):
+    """
+    Scan a folder and split files into per-pointing groups using RSM.
+
+    Each pointing consists of a left/right camera pair with consecutive RSM
+    values (e.g. 460/462). Sorting unique RSMs and chunking into pairs of two
+    correctly groups all pointings regardless of scene count.
+
+    Returns a list of DataFrames, one per pointing, each containing all filters
+    for that pointing.
+    """
+    from asdf.scan import scan_zcam_files
+
+    all_obs = scan_zcam_files(_fwd(parent_dir))
     if seq_id:
         all_obs = all_obs[
             all_obs['SEQ_ID'].str.lower().str.contains(str(seq_id).lower())
         ]
 
-    # drop off-size subframes (focus/context frames) - keep only the
-    # drop off-size subframes (focus/context frames) - keep only files
-    # with the largest frame size
+    # Drop focus/context subframes — keep only the largest frame size.
     frame_areas = all_obs['SUBFRAME'].map(lambda s: reduce(mul, s[2:]))
     all_obs     = all_obs[frame_areas == frame_areas.max()]
 
+    rsm_vals = sorted(all_obs['RSM'].unique())
+    groups   = []
+    for i in range(0, len(rsm_vals), 2):
+        pair  = rsm_vals[i:i + 2]
+        group = all_obs[all_obs['RSM'].isin(pair)].copy().reset_index(drop=True)
+        if len(group) >= 3:
+            groups.append(group)
+
+    return groups
+
+
+def _bandset_from_group(group):
+    """Build and format a ZcamBandSet from a pre-filtered metadata DataFrame."""
+    from asdf.scan import rate_cal_offset
+    from asdf.zcam_bandset import ZcamBandSet
+
+    # Deduplicate: one file per filter, best cal_offset score wins.
     keep_rows = []
-    for _filt, group in all_obs.groupby('FILTER'):
-        if len(group) == 1:
-            keep_rows.append(group.iloc[0])
+    for _filt, fgroup in group.groupby('FILTER'):
+        if len(fgroup) == 1:
+            keep_rows.append(fgroup.iloc[0])
         else:
-            scores = rate_cal_offset(group)
-            keep_rows.append(group.loc[scores[scores].index[0]])
+            scores = rate_cal_offset(fgroup)
+            keep_rows.append(fgroup.loc[scores[scores].index[0]])
 
     deduped = pd.DataFrame(keep_rows).reset_index(drop=True)
     bs = ZcamBandSet(deduped)
@@ -122,46 +142,34 @@ class SceneScanThread(QThread):
     # ------------------------------------------------------------------
 
     def _find_zcam_scenes(self, folder_path):
-        from rapid.helpers import get_zcam_bandset
-
         folder      = Path(folder_path)
         parent_dirs = {f.parent for f in folder.rglob('*.IMG') if f.is_file()}
         scenes      = {}
 
         for parent_dir in parent_dirs:
-            obs_ix = 0
-            while obs_ix < 100:
-                try:
-                    bs = get_zcam_bandset(
-                        parent_dir, seq_id=None,
-                        observation_ix=obs_ix, load=False
-                    )
-                    if len(bs.metadata) < 3:
-                        bs    = _make_zcam_bandset_fallback(parent_dir)
-                        filts = bs.metadata["BAND"].sort_values()
-                        if len(filts) > 0:
+            try:
+                groups = _scan_and_split(parent_dir)
+                for obs_ix, group in enumerate(groups):
+                    try:
+                        bs = _bandset_from_group(group)
+                        if len(bs.metadata) >= 3:
                             scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, None, obs_ix)
-                        break
-
-                    filts = bs.metadata["BAND"].sort_values()
-                    if len(filts) > 0:
-                        scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, None, obs_ix)
-                        obs_ix += 1
-                    else:
-                        break
-                except Exception:
-                    break
+                    except Exception:
+                        continue
+            except Exception:
+                continue
 
         return scenes
 
     def _load_zcam_thumbnail(self, path, seq_id, obs_ix):
-        from rapid.helpers import get_zcam_bandset
         from marslab.imgops.imgutils import crop
         from asdf_settings import rapidlooks
 
-        bs = get_zcam_bandset(path, seq_id=seq_id, observation_ix=obs_ix, load=False)
-        if len(bs.metadata) < 3:
-            bs = _make_zcam_bandset_fallback(path, seq_id=seq_id)
+        groups = _scan_and_split(path, seq_id)
+        if obs_ix >= len(groups):
+            return None, None
+
+        bs = _bandset_from_group(groups[obs_ix])
 
         metadata = {}
         if hasattr(bs, 'metadata') and bs.metadata is not None:
@@ -266,10 +274,10 @@ class SceneScanThread(QThread):
     # ------------------------------------------------------------------
 
     def _stretch_rgb(self, rgb):
-        rgb     = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
-        lo, hi  = (np.percentile(rgb[rgb > 0], [1, 98])
-                   if np.any(rgb > 0) else (0, 1))
-        rgb     = np.clip((rgb - lo) / (hi - lo) if hi > lo else rgb, 0, 1)
+        rgb    = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
+        lo, hi = (np.percentile(rgb[rgb > 0], [1, 98])
+                  if np.any(rgb > 0) else (0, 1))
+        rgb    = np.clip((rgb - lo) / (hi - lo) if hi > lo else rgb, 0, 1)
         return (rgb * 255).astype(np.uint8)
 
     def _numpy_to_pixmap(self, img_array):
