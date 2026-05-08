@@ -1,6 +1,6 @@
 from PyQt5.QtCore import QRect, Qt, pyqtSignal
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction,
-                             QSplitter)
+                             QSplitter, QStackedWidget)
 
 from .panels import SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel, StatusPanel, ParameterSelectionPanel
 from colors import Colors
@@ -10,12 +10,8 @@ from utils.scale import Scale, scaled, scaled_font
 _DEFAULT_WINDOW_WIDTH  = 1600
 _DEFAULT_WINDOW_HEIGHT = 900
 
-_LEFT_RATIO  = 0.55
-_RIGHT_RATIO = 0.7
-_MAIN_RATIO  = 0.35
+_MAIN_RATIO = 0.35
 
-# Each preset targets a specific camera and band combination.
-# Add new ZCAM presets here, or define a _PCAM_PRESETS list for Pancam support.
 _ZCAM_PRESETS = [
     {'label': 'Right RGB',    'camera': 'right', 'r': 'R0R', 'g': 'R0G', 'b': 'R0B', 'dcs': False},
     {'label': 'Left RGB',     'camera': 'left',  'r': 'L0R', 'g': 'L0G', 'b': 'L0B', 'dcs': False},
@@ -27,7 +23,6 @@ _ZCAM_PRESETS = [
 class View(QWidget):
     """Main application view."""
 
-    load_cube_signal            = pyqtSignal()
     set_sam_path_signal         = pyqtSignal()
     open_folder_signal          = pyqtSignal()
     export_sel_signal           = pyqtSignal()
@@ -134,7 +129,7 @@ class View(QWidget):
 
         self.action_fit_canvas = QAction("Fit Canvas", self)
         self.menu_view.addAction(self.action_fit_canvas)
-        
+
         self.action_roi_labels = QAction("ROI Labels", self)
         self.action_roi_labels.setCheckable(True)
         self.action_roi_labels.setChecked(False)
@@ -157,8 +152,6 @@ class View(QWidget):
 
         self.menu_window = QMenu("Window", self.menubar)
         self.menubar.addMenu(self.menu_window)
-
-        self.menu_window.addSection("Mode")
 
         self.action_mode_scene = QAction("Scene Loading", self)
         self.action_mode_scene.setCheckable(True)
@@ -193,11 +186,10 @@ class View(QWidget):
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
         self.panel_image_editing.split_screen_toggled.connect(self._on_split_screen_toggled)
-        
+
         self.action_roi_labels.triggered.connect(
             lambda checked: self.panel_image_editing.set_roi_labels_visible(checked)
         )
-
         self.action_fit_canvas.triggered.connect(self.panel_image_editing.fit_focused_canvas)
 
     def _splitter_stylesheet(self):
@@ -225,15 +217,16 @@ class View(QWidget):
         self.right_splitter.setHandleWidth(1)
         self.right_splitter.setStyleSheet(style)
 
-        # panel_image_selection (index 0) and panel_parameter_selection (index 1)
-        # both live permanently in the left splitter. Mode switching collapses one
-        # to size 0 and expands the other — no widget ever changes parent.
-        self.left_splitter.addWidget(self.panel_image_selection)
-        self.left_splitter.addWidget(self.panel_parameter_selection)
+        # Top slot switches between image selection and parameter panels via
+        # a stacked widget - no size collapsing tricks needed.
+        self.top_stack = QStackedWidget()
+        self.top_stack.addWidget(self.panel_image_selection)   # index 0 - scene loading
+        self.top_stack.addWidget(self.panel_parameter_selection)  # index 1 - roi processing
+
+        self.left_splitter.addWidget(self.top_stack)
         self.left_splitter.addWidget(self.panel_spectral_view)
-        self.left_splitter.setCollapsible(0, True)
-        self.left_splitter.setCollapsible(1, True)
-        self.left_splitter.setCollapsible(2, False)
+        self.left_splitter.setCollapsible(0, False)
+        self.left_splitter.setCollapsible(1, False)
 
         self.right_splitter.addWidget(self.panel_image_editing)
         self.right_splitter.setCollapsible(0, False)
@@ -243,7 +236,7 @@ class View(QWidget):
 
         h = _DEFAULT_WINDOW_HEIGHT
         w = _DEFAULT_WINDOW_WIDTH
-        self.left_splitter.setSizes([int(h * _LEFT_RATIO), 0, int(h * (1 - _LEFT_RATIO))])
+        self.left_splitter.setSizes([int(h * 0.55), int(h * 0.45)])
         self.right_splitter.setSizes([h])
         self.main_splitter.setSizes([int(w * _MAIN_RATIO), int(w * (1 - _MAIN_RATIO))])
 
@@ -254,17 +247,9 @@ class View(QWidget):
         if mode == self._mode:
             return
         self._mode = mode
-
         self.action_mode_scene.setChecked(mode == 'scene_loading')
         self.action_mode_roi.setChecked(mode == 'roi_processing')
-
-        spectral_h = self.panel_spectral_view.height()
-        top_h      = self.left_splitter.height() - spectral_h
-
-        if mode == 'roi_processing':
-            self.left_splitter.setSizes([0, top_h, spectral_h])
-        else:
-            self.left_splitter.setSizes([top_h, 0, spectral_h])
+        self.top_stack.setCurrentIndex(0 if mode == 'scene_loading' else 1)
 
     def _apply_scale(self):
         self.menubar.setStyleSheet(self._menu_stylesheet())
@@ -283,14 +268,8 @@ class View(QWidget):
             self.panel_spectral_view.hide_preview()
 
     def _on_split_screen_toggled(self, is_split):
-        # Sync Views is only available in split mode.
-        if not is_split:
-            self.action_sync_views.setChecked(False)
-            self.action_sync_views.setEnabled(False)
-        else:
-            self.action_sync_views.setEnabled(True)
-
-        # Enable/disable left-camera presets based on split mode.
+        self.action_sync_views.setChecked(False)
+        self.action_sync_views.setEnabled(is_split)
         for action, preset in self._preset_actions:
             if preset['camera'] == 'left':
                 action.setEnabled(is_split and self._scene_loaded())
