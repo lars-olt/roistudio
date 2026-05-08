@@ -22,14 +22,23 @@ _bootstrap_torch()
 _bootstrap_pipeline()
 
 import sys
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QPalette, QKeySequence, QFont
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QColor, QPalette, QKeySequence, QFont, QIcon
 from PyQt5.QtWidgets import QApplication, QShortcut
 
 from models import Model
 from views import View
 from controllers import Controller
 from colors import Colors
+from utils.paths import _resource_path
+
+
+def _make_app_icon():
+    icon = QIcon()
+    icon.addFile(_resource_path("graphics/logo_500.png"),  QSize(500,  500))
+    icon.addFile(_resource_path("graphics/logo_1000.png"), QSize(1000, 1000))
+    icon.addFile(_resource_path("graphics/logo_1500.png"), QSize(1500, 1500))
+    return icon
 
 
 def _set_app_font(_factor=None):
@@ -43,6 +52,7 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setWindowIcon(_make_app_icon())
 
     from utils.scale import Scale
     Scale.init()
