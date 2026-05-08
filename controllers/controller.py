@@ -342,6 +342,11 @@ class Controller(QObject):
 
     def _on_split_screen_toggled(self, is_split):
         self._is_split_screen = is_split
+
+        if not is_split and self._current_rois_data:
+            homography = (self._model.sparc_load_result or {}).get('homography_matrix')
+            roi_controller.sync_left_rois(self._current_rois_data, homography)
+
         if self._model.sparc_load_result is not None:
             self._render_current_images()
             if self._current_rois_data:

@@ -167,7 +167,7 @@ class SpectralViewPanel(QWidget):
         for i, roi_data in enumerate(roi_data_list):
             color = color_list[i] if i < len(color_list) else (255, 255, 255)
             self._plot_roi(self.ax, roi_data, tuple(c / 255.0 for c in color))
-        self._fit_layout()
+        self.canvas.draw()
 
     def plot_preview_spectrum_separate(self, wavelengths, reflectances,
                                        bayer_wls, bayer_reflectances):

@@ -70,6 +70,18 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     }
 
 
+def sync_left_rois(rois_data, homography):
+    """Recompute left_rect for every ROI from its right_rect via the homography.
+
+    Called when leaving split screen so both sides are back in sync.
+    """
+    for roi in rois_data:
+        right_rect   = roi['right_rect']
+        left_rect    = (right_rect_to_left_inscribed(right_rect, homography)
+                        if homography is not None else right_rect) or right_rect
+        roi['left_rect'] = left_rect
+
+
 def _left_rect_to_right(left_rect, homography_matrix):
     if homography_matrix is None:
         return left_rect
