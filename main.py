@@ -35,9 +35,9 @@ from utils.paths import _resource_path
 
 def _make_app_icon():
     icon = QIcon()
-    icon.addFile(_resource_path("graphics/logo_500.png"),  QSize(500,  500))
-    icon.addFile(_resource_path("graphics/logo_1000.png"), QSize(1000, 1000))
-    icon.addFile(_resource_path("graphics/logo_1500.png"), QSize(1500, 1500))
+    icon.addFile(_resource_path("graphics/logo/logo_500.png"),  QSize(500,  500))
+    icon.addFile(_resource_path("graphics/logo/logo_1000.png"), QSize(1000, 1000))
+    icon.addFile(_resource_path("graphics/logo/logo_1500.png"), QSize(1500, 1500))
     return icon
 
 
