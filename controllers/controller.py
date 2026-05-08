@@ -41,12 +41,25 @@ class Controller(QObject):
     def _init_color_palette(self):
         from marslab.compat import mertools
         from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
+
         all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.items())
         instrument = self._model.instrument
         first_id   = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
         offset     = max(0, first_id - 1)
-        self.color_palette      = [hex_to_rgb(v) for k, v in all_colors[offset:]]
-        self.color_name_palette = [k             for k, v in all_colors[offset:]]
+        available  = all_colors[offset:]
+
+        preferred = [
+            'red', 'magenta', 'cyan', 'orange', 'azure', 'purple',
+            'lime', 'rust', 'green', 'blue', 'yellow', 'magenta 2+', 'magenta -3',
+        ]
+
+        name_to_item = {k.lower(): (k, v) for k, v in available}
+        ordered      = [name_to_item[n] for n in preferred if n in name_to_item]
+        remainder    = [(k, v) for k, v in available if k.lower() not in {n for n in preferred}]
+        final        = ordered + remainder
+
+        self.color_palette      = [hex_to_rgb(v) for k, v in final]
+        self.color_name_palette = [k             for k, v in final]
 
     def _connect_view_signals(self):
         self._view.set_sam_path_signal.connect(self.set_sam_path)
