@@ -1,7 +1,7 @@
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QFormLayout, QLabel, QDoubleSpinBox, QSpinBox,
-                             QCheckBox, QAbstractSpinBox)
+                             QCheckBox, QSlider, QAbstractSpinBox)
 
 from colors import Colors
 from utils.scale import Scale, scaled, scaled_font
@@ -22,6 +22,7 @@ class ParameterSelectionPanel(QFrame):
 
     view_settings_changed = pyqtSignal(float, float)
     merge_spectra_changed = pyqtSignal(bool)
+    line_width_changed    = pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
@@ -47,23 +48,28 @@ class ParameterSelectionPanel(QFrame):
         self.scroll_area.setWidget(content)
 
         # View Settings
-        self.spin_y_min         = self._dbl(-0.1, 1.0, 0.0, 0.05)
-        self.spin_y_max         = self._dbl(0.0,  5.0, 0.4, 0.05)
-        self.chk_merge_spectra  = self._chk(True)
+        self.spin_y_min        = self._dbl(-0.1, 1.0, 0.0,  0.05)
+        self.spin_y_max        = self._dbl(0.0,  5.0, 0.4,  0.05)
+        self.chk_merge_spectra = self._chk(True)
+        self.slider_line_width = self._slider(50, 100, 75, step=5)
 
         self.spin_y_min.valueChanged.connect(self._emit_view_settings)
         self.spin_y_max.valueChanged.connect(self._emit_view_settings)
         self.chk_merge_spectra.toggled.connect(self.merge_spectra_changed.emit)
+        self.slider_line_width.valueChanged.connect(
+            lambda v: self.line_width_changed.emit(v / 100.0)
+        )
 
-        view_form = self._form([
-            ("Y-Axis Min",          self.spin_y_min,
+        self._add_section("View Settings", self._form([
+            ("Y-Axis Min",           self.spin_y_min,
              "Minimum value for the spectral plot Y-axis (Reflectance)."),
-            ("Y-Axis Max",          self.spin_y_max,
+            ("Y-Axis Max",           self.spin_y_max,
              "Maximum value for the spectral plot Y-axis (Reflectance)."),
             ("Merge camera spectra", self.chk_merge_spectra,
              "Average stereo bands into one spectrum, or plot each camera separately."),
-        ])
-        self._add_section("View Settings", view_form)
+            ("Line Width",           self.slider_line_width,
+             "Thickness of spectrum lines in the spectral plot."),
+        ]))
 
         # Segmentation
         self.chk_preserve_bg = self._chk(True)
@@ -76,7 +82,7 @@ class ParameterSelectionPanel(QFrame):
             ("Points/Side",  self.spin_points,
              "SAM sampling points per side. Higher = finer detail, slower."),
             ("Pred IOU",     self.spin_iou,
-             "IoU threshold — filters out low-confidence masks."),
+             "IoU threshold - filters out low-confidence masks."),
         ]))
 
         # ROI Extraction
@@ -166,6 +172,25 @@ class ParameterSelectionPanel(QFrame):
                      self.spin_contamination, self.spin_freq, self.spin_max_clusters):
             spin.setStyleSheet(spin_style)
 
+        self.slider_line_width.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: {scaled(4)}px;
+                background: {Colors.PANEL_ACCENT};
+                border-radius: {scaled(2)}px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {Colors.ACCENT};
+                width: {scaled(12)}px;
+                height: {scaled(12)}px;
+                margin: -{scaled(4)}px 0;
+                border-radius: {scaled(6)}px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {Colors.ACCENT};
+                border-radius: {scaled(2)}px;
+            }}
+        """)
+
         chk_style = f"""
             QCheckBox {{ color: {Colors.TEXT_PRIMARY}; font-size: {fs}pt; }}
             QCheckBox::indicator {{
@@ -199,8 +224,6 @@ class ParameterSelectionPanel(QFrame):
     # Helpers
     # ------------------------------------------------------------------
 
-    _wheel_filter = _WheelFilter()
-
     def _dbl(self, lo, hi, default, step):
         sb = QDoubleSpinBox()
         sb.setRange(lo, hi); sb.setValue(default); sb.setSingleStep(step)
@@ -220,6 +243,11 @@ class ParameterSelectionPanel(QFrame):
     def _chk(self, checked=False):
         cb = QCheckBox(); cb.setChecked(checked)
         return cb
+
+    def _slider(self, lo, hi, default, step=1):
+        sl = QSlider(Qt.Horizontal)
+        sl.setRange(lo, hi); sl.setValue(default); sl.setSingleStep(step)
+        return sl
 
     def _form(self, rows):
         """Build a QFormLayout from (label, widget, tooltip) triples."""

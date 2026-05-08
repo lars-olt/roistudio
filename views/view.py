@@ -187,6 +187,9 @@ class View(QWidget):
         self.panel_parameter_selection.merge_spectra_changed.connect(
             self.panel_spectral_view.set_merge_spectra
         )
+        self.panel_parameter_selection.line_width_changed.connect(
+            self.panel_spectral_view.set_line_width
+        )
 
         self.panel_image_editing.scene_dropped_signal.connect(self.scene_dropped_signal.emit)
         self.panel_image_editing.canvas_container.pixel_hovered.connect(self._on_pixel_hover)

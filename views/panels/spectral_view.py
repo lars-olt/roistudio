@@ -21,9 +21,10 @@ class SpectralViewPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.roi_spectra_data = None
-        self.y_min = 0.0
-        self.y_max = 0.4
+        self.y_min       = 0.0
+        self.y_max       = 0.4
         self.merge_spectra = True
+        self.line_width  = 0.75
         self.init_ui()
         Scale.changed.connect(self._apply_scale)
 
@@ -45,7 +46,7 @@ class SpectralViewPanel(QWidget):
         layout.addWidget(self.canvas)
 
         # Defer the first tight_layout until after the widget has its real
-        # size from the layout pass — avoids the clipped-on-load issue.
+        # size from the layout pass - avoids the clipped-on-load issue.
         QTimer.singleShot(0, self._fit_layout)
 
     def setup_plot_style(self):
@@ -103,6 +104,12 @@ class SpectralViewPanel(QWidget):
             roi_data_list, color_list = self.roi_spectra_data
             self.plot_roi_spectra(roi_data_list, color_list)
 
+    def set_line_width(self, width: float):
+        self.line_width = width
+        if self.roi_spectra_data is not None:
+            roi_data_list, color_list = self.roi_spectra_data
+            self.plot_roi_spectra(roi_data_list, color_list)
+
     @staticmethod
     def _sort_spectrum(wavelengths, spectrum, std):
         wls  = np.array(wavelengths, dtype=float)
@@ -126,7 +133,7 @@ class SpectralViewPanel(QWidget):
             ax.errorbar(bwls, bspec, yerr=bstd,
                         color=color, linestyle='',
                         marker='o', markersize=2,
-                        capsize=3, capthick=1, elinewidth=1)
+                        capsize=2, capthick=self.line_width, elinewidth=self.line_width)
 
     def _plot_merged(self, ax, roi_data, color):
         wls, spec, std = self._sort_spectrum(
@@ -135,8 +142,8 @@ class SpectralViewPanel(QWidget):
             roi_data['std'],
         )
         ax.errorbar(wls, spec, yerr=std,
-                    color=color, linewidth=1,
-                    capsize=3, capthick=1, elinewidth=1)
+                    color=color, linewidth=self.line_width,
+                    capsize=2, capthick=self.line_width, elinewidth=self.line_width)
 
     def _plot_split(self, ax, roi_data, color):
         for wl_key, spec_key, std_key in (
@@ -150,8 +157,8 @@ class SpectralViewPanel(QWidget):
                 continue
             wls, spec, std = self._sort_spectrum(wls, spec, std)
             ax.errorbar(wls, spec, yerr=std,
-                        color=color, linewidth=1,
-                        capsize=3, capthick=1, elinewidth=1)
+                        color=color, linewidth=self.line_width,
+                        capsize=2, capthick=self.line_width, elinewidth=self.line_width)
 
     def plot_roi_spectra(self, roi_data_list, color_list):
         self.roi_spectra_data = (roi_data_list, color_list)
