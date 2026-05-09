@@ -41,7 +41,7 @@ class StatusPanel(QWidget):
         )
 
         icon_size   = scaled(32)
-        logo_pixmap = QPixmap(_resource_path("graphics/logo/logo_500.png")).scaled(
+        logo_pixmap = QPixmap(_resource_path("graphics/mcz_logo.png")).scaled(
             icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
         self.logo_label.setPixmap(logo_pixmap)
