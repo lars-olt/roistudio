@@ -210,8 +210,7 @@ class CanvasContainer(QWidget):
                 painter.setBrush(fill)
                 painter.drawRect(rect)
 
-            if (i < len(self.roi_names)
-                    and (self.roi_labels_visible or i == self.hovered_roi_index)):
+            if i < len(self.roi_names) and self.roi_labels_visible:
                 self._draw_roi_label(painter, rect, self.roi_names[i], base_color)
 
     def _draw_roi_label(self, painter, rect, name, color):
