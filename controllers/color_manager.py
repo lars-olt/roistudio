@@ -9,39 +9,68 @@ class ColorManager:
     def __init__(self, instrument):
         self._palette      = []
         self._name_palette = []
+        self._merspect_indices = {}
         self._stack        = []
         self._next_index   = 0
+        self._reserved     = set()
         self._init_palette(instrument)
 
     def _init_palette(self, instrument):
-        from marslab.compat import mertools
         from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
+        from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 
-        all_colors = list(mertools.MERSPECT_M20_COLOR_MAPPINGS.items())
-        first_id   = _MASK_DEFAULTS[_normalize_instrument(instrument)]['first_id']
-        available  = all_colors[max(0, first_id - 1):]
+        merspect_order = [
+            'eraser', 'green', 'yellow', 'blue', 'red', 'magenta', 'cyan',
+            'orange', 'azure', 'purple', 'lime', 'rust',
+            'green+2', 'green-1', 'green-2', 'yellow-2', 'blue+2', 'blue-1',
+            'blue-2', 'red+2', 'red-1', 'red-2', 'magenta+2', 'magenta+1',
+            'magenta-1', 'magenta-2', 'magenta-3', 'cyan+2', 'cyan+1', 'cyan-1',
+            'cyan-2', 'cyan-3', 'orange+2', 'orange+1', 'orange-1', 'orange-2',
+            'orange-3', 'azure+2', 'azure+1', 'azure-1', 'azure-2', 'azure-3',
+            'black', 'dark-gray', 'gray', 'light-gray',
+        ]
+        self._merspect_indices = {k: i for i, k in enumerate(merspect_order)}
+
+        # eraser is not a valid ROI color.
+        usable = [k for k in merspect_order if k != 'eraser']
 
         preferred = [
             'red', 'magenta', 'cyan', 'orange', 'azure', 'purple',
-            'lime', 'rust', 'green', 'blue', 'yellow', 'magenta 2+', 'magenta -3',
+            'lime', 'rust', 'green', 'blue', 'yellow', 'magenta+2', 'magenta-3',
         ]
-        name_to_item = {k.lower(): (k, v) for k, v in available}
-        ordered      = [name_to_item[n] for n in preferred if n in name_to_item]
-        remainder    = [(k, v) for k, v in available if k.lower() not in set(preferred)]
+        preferred_set = set(preferred)
+        ordered       = [k for k in preferred if k in set(usable)]
+        remainder     = [k for k in usable    if k not in preferred_set]
 
-        for k, v in ordered + remainder:
-            self._palette.append(hex_to_rgb(v))
-            self._name_palette.append(k)
+        for k in ordered + remainder:
+            if k in MERSPECT_M20_COLOR_MAPPINGS:
+                self._palette.append(hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[k]))
+                self._name_palette.append(k)
+
+    def merspect_index(self, name: str) -> int:
+        """Return the MERSpect label index for a color name."""
+        return self._merspect_indices[name]
+
+    def reserve(self, names: list):
+        """Mark a set of color names as in-use so next() skips over them."""
+        self._reserved = set(names)
+        self._next_index = 0
 
     def next(self):
         """Return the next (color, name) pair, recycling returned colors first."""
         if self._stack:
             return self._stack.pop()
-        idx   = self._next_index % len(self._palette)
-        color = self._palette[idx]
-        name  = self._name_palette[idx]
+        while self._next_index < len(self._palette):
+            idx   = self._next_index
+            name  = self._name_palette[idx]
+            self._next_index += 1
+            if name not in self._reserved:
+                return self._palette[idx], name
+        # all colors exhausted - wrap around ignoring reserved
+        self._next_index = 0
+        idx  = self._next_index % len(self._palette)
         self._next_index += 1
-        return color, name
+        return self._palette[idx], self._name_palette[idx]
 
     def recycle(self, color, name):
         self._stack.append((color, name))
@@ -49,3 +78,4 @@ class ColorManager:
     def reset(self):
         self._stack      = []
         self._next_index = 0
+        self._reserved   = set()

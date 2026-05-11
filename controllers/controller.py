@@ -250,27 +250,25 @@ class Controller(QObject):
     # ------------------------------------------------------------------
 
     def _export_sel(self):
-        sel_controller.export_sel(self._view, self._model, self._current_rois_data)
+        sel_controller.export_sel(
+            self._view, self._model,
+            self._current_rois_data,
+            self._current_color_names,
+            self.color_manager,
+        )
 
     def _load_sel(self):
-        rois_data = sel_controller.load_sel(
+        outcome = sel_controller.load_sel(
             self._view, self._model,
             self._get_instrument_config(),
             self.sparc_controller,
             self._has_dual_cubes(),
+            self.color_manager,
         )
-        if rois_data is None:
+        if outcome is None:
             return
 
-        self.color_manager.reset()
-        self._current_rois_data   = rois_data
-        self._current_colors      = []
-        self._current_color_names = []
-        for _ in rois_data:
-            color, name = self.color_manager.next()
-            self._current_colors.append(color)
-            self._current_color_names.append(name)
-
+        self._current_rois_data, self._current_colors, self._current_color_names = outcome
         self._update_roi_view()
         self._view.action_export_sel.setEnabled(True)
 
