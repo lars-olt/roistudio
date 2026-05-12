@@ -12,6 +12,11 @@ def bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False):
     DCS on: decorrelation stretch (Gillespie et al. 1986) with per-channel
     0.5-99.5 percentile clip.
     """
+    # Strip masks so downstream numpy calls (percentile, isfinite) operate on plain arrays.
+    r_arr = np.ma.filled(r_arr, np.nan) if np.ma.is_masked(r_arr) else np.asarray(r_arr)
+    g_arr = np.ma.filled(g_arr, np.nan) if np.ma.is_masked(g_arr) else np.asarray(g_arr)
+    b_arr = np.ma.filled(b_arr, np.nan) if np.ma.is_masked(b_arr) else np.asarray(b_arr)
+
     if use_dcs:
         return _dcs_pixmap(r_arr, g_arr, b_arr)
 
