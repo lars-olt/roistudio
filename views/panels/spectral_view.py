@@ -183,14 +183,11 @@ class SpectralViewPanel(QWidget):
         wls  = np.array(wavelengths, dtype=float)
         spec = np.array(reflectances, dtype=float)
         ix   = np.argsort(wls)
-        self.ax.plot(wls[ix], spec[ix],
-                     color='white', linewidth=1, alpha=0.3,
-                     marker='o', markersize=3, zorder=100)
+        self.ax.plot(wls[ix], spec[ix], color='white', linewidth=1, alpha=0.3, zorder=100)
 
         if len(bayer_wls) > 0:
             self.ax.plot(np.array(bayer_wls), np.array(bayer_reflectances),
-                         color='white', linestyle='', alpha=0.3,
-                         marker='o', markersize=3, zorder=100)
+                         color='white', linestyle='', alpha=0.3, zorder=100)
 
         self._fit_layout()
 
