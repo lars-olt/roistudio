@@ -108,6 +108,7 @@ class ImageEditingPanel(QWidget):
         self.canvas_container.roi_deleted.connect(self.roi_deleted.emit)
         self.canvas_container.roi_created.connect(self.roi_created.emit)
         self.canvas_container.roi_too_small.connect(self.roi_too_small.emit)
+        self.canvas_container.tool_shortcut.connect(self.select_tool)
         c_layout.addWidget(self.canvas_container)
         layout.addWidget(content)
 

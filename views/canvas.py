@@ -33,6 +33,7 @@ class CanvasContainer(QWidget):
     # time so sync handlers always receive a stable snapshot.
     sync_changed  = pyqtSignal(float, float, float)
     roi_too_small = pyqtSignal()
+    tool_shortcut = pyqtSignal(str)
 
     MODE_NONE      = 0
     MODE_MOVE      = 1
@@ -552,6 +553,12 @@ class CanvasContainer(QWidget):
             self.update()
 
     def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key_V:
+            self.tool_shortcut.emit("selection")
+            return
+        if event.key() == Qt.Key_R:
+            self.tool_shortcut.emit("rectangle")
+            return
         if event.key() == Qt.Key_Space and not self.space_pressed:
             self.space_pressed = True
             if not self.is_panning:
@@ -631,6 +638,7 @@ class DualCanvasContainer(QWidget):
     roi_deleted   = pyqtSignal(int)
     roi_created   = pyqtSignal(tuple, str)
     roi_too_small = pyqtSignal()
+    tool_shortcut = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -676,6 +684,7 @@ class DualCanvasContainer(QWidget):
         canvas.sync_changed.connect(
             lambda zoom, cx, cy, c=canvas: self._on_sync_changed(c, zoom, cx, cy))
         canvas.roi_too_small.connect(self.roi_too_small.emit)
+        canvas.tool_shortcut.connect(self.tool_shortcut.emit)
 
     def _camera_label(self, canvas):
         return ('left'  if canvas is self.canvas_left  else
