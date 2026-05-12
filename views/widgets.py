@@ -130,10 +130,10 @@ class BandComboBox(QComboBox):
         self.setStyleSheet(f"""
             QComboBox {{
                 background-color: {Colors.DEFAULT_FEATURE};
-                color: {Colors.TEXT_PRIMARY};
+                color: white;
                 border: 1px solid {Colors.PANEL_ACCENT};
-                border-radius: 0px;
-                padding: 1px {scaled(6)}px;
+                border-radius: {scaled(3)}px;
+                padding: 0px {scaled(3)}px;
                 font-size: {fs}pt;
                 font-family: Consolas, monospace;
             }}
@@ -143,7 +143,7 @@ class BandComboBox(QComboBox):
             QComboBox::drop-down {{ width: 0px; border: none; }}
             QComboBox QAbstractItemView {{
                 background-color: {Colors.PANEL_BACKGROUND};
-                color: {Colors.TEXT_PRIMARY};
+                color: white;
                 border: 1px solid {Colors.ACCENT};
                 border-radius: 0px;
                 padding: 0px;
@@ -152,7 +152,7 @@ class BandComboBox(QComboBox):
                 font-family: Consolas, monospace;
             }}
             QComboBox QAbstractItemView::item {{
-                padding: {scaled(3)}px {scaled(8)}px;
+                padding: 1px {scaled(8)}px;
                 border: none;
             }}
             QComboBox QAbstractItemView::item:selected {{
@@ -163,6 +163,8 @@ class BandComboBox(QComboBox):
                 background-color: {Colors.SUBTLE_PANEL_ACCENT};
             }}
         """)
+        self.ensurePolished()
+        self.setFixedHeight(self.fontMetrics().height() + scaled(6))
         self._update_width()
 
     def _update_width(self):
@@ -173,6 +175,60 @@ class BandComboBox(QComboBox):
         self.setFixedWidth(max(fm.horizontalAdvance("WWW") + scaled(16),
                                max_w + scaled(16)))
 
+    def set_active(self, active: bool):
+        """Switch between active and inactive (grayed-out) appearance."""
+        self.setEnabled(active)
+        fs = scaled_font(9)
+        if active:
+            bg     = Colors.DEFAULT_FEATURE
+            border = Colors.PANEL_ACCENT
+            color  = "white"
+            hover  = (f"QComboBox:hover {{ border: 1px solid {Colors.ACCENT}; "
+                      f"background-color: {Colors.SUBTLE_PANEL_ACCENT}; }}")
+            focus  = f"QComboBox:focus {{ border: 1px solid {Colors.ACCENT}; }}"
+        else:
+            bg     = Colors.DISABLED_FEATURE
+            border = Colors.DISABLED_BORDER
+            color  = Colors.TEXT_OVERLAY_LABEL
+            hover  = ""
+            focus  = ""
+        self.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {bg};
+                color: {color};
+                border: 1px solid {border};
+                border-radius: {scaled(3)}px;
+                padding: 0px {scaled(3)}px;
+                font-size: {fs}pt;
+                font-family: Consolas, monospace;
+            }}
+            QComboBox:disabled {{ color: {Colors.TEXT_OVERLAY_LABEL}; }}
+            {hover}
+            {focus}
+            QComboBox::drop-down {{ width: 0px; border: none; }}
+            QComboBox QAbstractItemView {{
+                background-color: {Colors.PANEL_BACKGROUND};
+                color: white;
+                border: 1px solid {Colors.ACCENT};
+                border-radius: 0px;
+                padding: 0px;
+                outline: none;
+                font-size: {fs}pt;
+                font-family: Consolas, monospace;
+            }}
+            QComboBox QAbstractItemView::item {{
+                padding: 1px {scaled(8)}px;
+                border: none;
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background-color: {Colors.ACCENT};
+                color: white;
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background-color: {Colors.SUBTLE_PANEL_ACCENT};
+            }}
+        """)
+
     def addItems(self, texts):
         super().addItems(texts)
         self._update_width()
@@ -180,7 +236,8 @@ class BandComboBox(QComboBox):
     def clear(self):
         super().clear()
         self.ensurePolished()
-        self.setFixedWidth(self.fontMetrics().horizontalAdvance("WWW") + scaled(16))
+        fm = self.fontMetrics()
+        self.setFixedWidth(fm.horizontalAdvance("WWW") + scaled(16))
 
     def showPopup(self):
         super().showPopup()

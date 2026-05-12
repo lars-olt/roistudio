@@ -1,160 +1,17 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QCheckBox
-from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QPointF, QRectF
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                             QLabel, QComboBox, QFrame)
+from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap, QFontMetrics, QFont
 
 from colors import Colors
 from utils.paths import _resource_path
 from utils.scale import Scale, physical, scaled, scaled_font
 from ..canvas import CanvasContainer, DualCanvasContainer
 from ..widgets import ToolbarButton, LoadingIndicator, BandComboBox
+from .stretch_bar import StretchBar
 
 _OVERLAY_BG      = QColor(40, 40, 40, 180)
 _CURSOR_NATIVE_W = 32
-
-
-def _checkbox_style():
-    sz = scaled(12)
-    return f"""
-        QCheckBox {{
-            color: white; font-size: {scaled_font(9)}pt;
-            background: transparent; spacing: {scaled(4)}px;
-        }}
-        QCheckBox::indicator {{
-            width: {sz}px; height: {sz}px;
-            border: 1px solid {Colors.PANEL_ACCENT};
-            border-radius: 0px; background: transparent;
-        }}
-        QCheckBox::indicator:checked {{
-            background: {Colors.ACCENT}; border: 1px solid {Colors.ACCENT};
-        }}
-        QCheckBox::indicator:hover {{ border: 1px solid {Colors.ACCENT}; }}
-        QToolTip {{
-            background-color: {Colors.PANEL_BACKGROUND};
-            color: {Colors.TEXT_PRIMARY};
-            border: 1px solid {Colors.ACCENT};
-            padding: {scaled(4)}px;
-        }}
-    """
-
-
-class BandSelectorOverlay(QWidget):
-    """
-    Floating R/G/B + DCS band selector parented to a CanvasContainer.
-    Sits centred at the bottom of the canvas. Draws a 1px accent border
-    along the bottom edge when this canvas is focused.
-    """
-
-    changed = pyqtSignal()
-
-    def __init__(self, parent: CanvasContainer):
-        super().__init__(parent)
-        self.setFocusPolicy(Qt.NoFocus)
-        self._focused = False
-
-        self._row = QHBoxLayout()
-        self.setLayout(self._row)
-
-        self.combo_r = BandComboBox()
-        self.combo_g = BandComboBox()
-        self.combo_b = BandComboBox()
-        self._labels = []
-
-        for text, combo in (("R:", self.combo_r), ("G:", self.combo_g), ("B:", self.combo_b)):
-            lbl = QLabel(text)
-            self._labels.append(lbl)
-            self._row.addWidget(lbl)
-            self._row.addWidget(combo)
-            combo.currentTextChanged.connect(self.changed.emit)
-
-        self._sep = QLabel("|")
-        self._row.addWidget(self._sep)
-
-        self.chk_dcs = QCheckBox("DCS")
-        self.chk_dcs.setChecked(False)
-        self.chk_dcs.setToolTip("Apply decorrelation stretch to selected bands.")
-        self.chk_dcs.toggled.connect(self.changed.emit)
-        self._row.addWidget(self.chk_dcs)
-
-        self._apply_scale()
-        Scale.changed.connect(self._apply_scale)
-        self.adjustSize()
-
-    def set_focused(self, focused: bool):
-        if focused != self._focused:
-            self._focused = focused
-            self.update()
-
-    def _apply_scale(self):
-        self._row.setContentsMargins(scaled(6), scaled(3), scaled(6), scaled(3))
-        self._row.setSpacing(scaled(4))
-
-        fs = scaled_font(9)
-        for lbl in self._labels:
-            lbl.setStyleSheet(f"color: white; font-size: {fs}pt; background: transparent;")
-        self._sep.setStyleSheet(
-            f"color: {Colors.PANEL_ACCENT}; font-size: {fs}pt; background: transparent;"
-        )
-        self.chk_dcs.setStyleSheet(_checkbox_style())
-        self.adjustSize()
-        self._reposition()
-
-    def populate(self, band_names, r=None, g=None, b=None):
-        def _pick(preferred, fallbacks, idx):
-            if preferred and preferred in band_names:
-                return preferred
-            for c in fallbacks:
-                if c in band_names:
-                    return c
-            return band_names[min(idx, len(band_names) - 1)] if band_names else ''
-
-        defaults = (
-            _pick(r, ('R0R', 'R2'), 0),
-            _pick(g, ('R0G', 'R1'), 1),
-            _pick(b, ('R0B', 'R1'), 2),
-        )
-        for combo, sel in zip((self.combo_r, self.combo_g, self.combo_b), defaults):
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItems(band_names)
-            combo.setCurrentText(sel)
-            combo.blockSignals(False)
-
-        self.adjustSize()
-        self._reposition()
-
-    def apply_preset(self, r: str, g: str, b: str, dcs: bool):
-        """Apply a color scale preset, blocking signals until all three bands are set."""
-        for combo, val in ((self.combo_r, r), (self.combo_g, g), (self.combo_b, b)):
-            combo.blockSignals(True)
-            combo.setCurrentText(val)
-            combo.blockSignals(False)
-        self.chk_dcs.blockSignals(True)
-        self.chk_dcs.setChecked(dcs)
-        self.chk_dcs.blockSignals(False)
-        self.changed.emit()
-
-    def get_selection(self):
-        return (self.combo_r.currentText(), self.combo_g.currentText(),
-                self.combo_b.currentText(), self.chk_dcs.isChecked())
-
-    def _reposition(self):
-        parent = self.parent()
-        if parent is None:
-            return
-        self.adjustSize()
-        self.move((parent.width() - self.width()) // 2,
-                  parent.height() - self.height() - scaled(10))
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), _OVERLAY_BG)
-        if self._focused:
-            pen = QPen(QColor(Colors.ACCENT), 1)
-            painter.setPen(pen)
-            y = self.height() - 1
-            painter.drawLine(0, y, self.width(), y)
-        painter.end()
 
 
 class ImageEditingPanel(QWidget):
@@ -252,9 +109,9 @@ class ImageEditingPanel(QWidget):
         layout.addWidget(content)
 
         # Band selector overlays — one per camera, parented to their canvas
-        self._overlay_single = BandSelectorOverlay(self.canvas_container.canvas_single)
-        self._overlay_right  = BandSelectorOverlay(self.canvas_container.canvas_right)
-        self._overlay_left   = BandSelectorOverlay(self.canvas_container.canvas_left)
+        self._overlay_single = StretchBar(self.canvas_container.canvas_single)
+        self._overlay_right  = StretchBar(self.canvas_container.canvas_right)
+        self._overlay_left   = StretchBar(self.canvas_container.canvas_left)
 
         for overlay, camera in ((self._overlay_single, 'single'),
                                 (self._overlay_right,  'right'),
@@ -420,8 +277,8 @@ class ImageEditingPanel(QWidget):
     def set_image(self, pixmap):
         self.canvas_container.set_image(pixmap)
 
-    def set_rois(self, rois, colors=None):
-        self.canvas_container.set_rois(rois, colors)
+    def set_rois(self, rois, colors=None, names=None):
+        self.canvas_container.set_rois(rois, colors, names)
 
     def start_loading(self):
         self.loading_indicator.start_loading()
@@ -435,9 +292,6 @@ class ImageEditingPanel(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reposition_overlays()
-    
-    def set_rois(self, rois, colors=None, names=None):
-        self.canvas_container.set_rois(rois, colors, names)
-    
+
     def set_roi_labels_visible(self, visible: bool):
         self.canvas_container.set_roi_labels_visible(visible)

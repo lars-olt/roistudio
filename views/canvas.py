@@ -7,7 +7,7 @@ from PyQt5.QtGui import (QPainter, QColor, QKeyEvent, QMouseEvent, QWheelEvent,
                          QPen, QFont, QFontMetrics)
 
 from colors import Colors
-from utils.scale import scaled, scaled_font
+from utils.scale import scaled, scaled_font, bar_height
 
 
 _FRICTION        = 0.88
@@ -67,7 +67,7 @@ class CanvasContainer(QWidget):
 
         self.rois               = []
         self.roi_colors         = []
-        self.roi_names          = []   # marslab color name per ROI
+        self.roi_names          = []
         self.selected_roi_index = -1
         self.hovered_roi_index  = -1
         self.interaction_mode      = self.MODE_NONE
@@ -75,7 +75,7 @@ class CanvasContainer(QWidget):
         self.creation_start_pos    = None
         self.current_creation_rect = None
         self.hover_preview_enabled = False
-        self.roi_labels_visible = False
+        self.roi_labels_visible    = False
 
         self.canvas = ImageCanvas()
         self.canvas.setMouseTracking(True)
@@ -150,6 +150,13 @@ class CanvasContainer(QWidget):
     def _emit_sync(self):
         cx, cy = self._viewport_center_image()
         self.sync_changed.emit(self.zoom_level, cx, cy)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        from views.panels.stretch_bar import StretchBar
+        for child in self.children():
+            if isinstance(child, StretchBar):
+                child._reposition()
 
     # ------------------------------------------------------------------
     # Painting
@@ -236,24 +243,23 @@ class CanvasContainer(QWidget):
         )
 
     def _zoom_indicator_rect(self) -> QRect:
-        font    = QFont("Arial", scaled_font(8))
-        metrics = QFontMetrics(font)
-        margin  = scaled(8)
-        box_w   = metrics.horizontalAdvance("10.00x") + 2 * margin
-        box_h   = metrics.height() + 2 * margin
+        font  = QFont("Arial", scaled_font(9))
+        box_h = bar_height()
+        box_w = QFontMetrics(font).horizontalAdvance("10.00x") + 2 * scaled(3)
         return QRect(self.width()  - box_w - scaled(10),
                      self.height() - box_h - scaled(10),
                      box_w, box_h)
 
     def _draw_zoom_indicator(self, painter):
-        font    = QFont("Arial", scaled_font(8))
-        metrics = QFontMetrics(font)
-        r       = self._zoom_indicator_rect()
+        font = QFont("Arial", scaled_font(9))
+        r    = self._zoom_indicator_rect()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(40, 40, 40, 180))
+        painter.drawRoundedRect(r, scaled(3), scaled(3))
         painter.setFont(font)
-        painter.fillRect(r, QColor(40, 40, 40, 180))
         painter.setPen(QColor(255, 255, 255))
-        painter.drawText(r.x() + scaled(8), r.y() + scaled(8) + metrics.ascent(),
-                         f"{self.zoom_level:.2f}x")
+        painter.drawText(QRectF(r), Qt.AlignCenter, f"{self.zoom_level:.2f}x")
 
     # ------------------------------------------------------------------
     # Hit testing
@@ -459,7 +465,6 @@ class CanvasContainer(QWidget):
             self.update()
             return
 
-        # Update hover label and cursor.
         self._update_hover(img_x, img_y)
 
         if self.interaction_tool == "selection":
@@ -532,7 +537,7 @@ class CanvasContainer(QWidget):
         if event.mimeData().hasText():
             event.acceptProposedAction()
             QTimer.singleShot(0, lambda: self.scene_dropped.emit(event.mimeData().text()))
-    
+
     def set_roi_labels_visible(self, visible: bool):
         self.roi_labels_visible = visible
         self.update()
@@ -651,7 +656,6 @@ class DualCanvasContainer(QWidget):
             return
         source = self.canvas_left  if source_camera == 'left' else self.canvas_right
         target = self.canvas_right if source_camera == 'left' else self.canvas_left
-        # homography_matrix maps left→right, so right-source needs the inverse
         H      = (self.inverse_homography_matrix if source_camera == 'right'
                   else self.homography_matrix)
         cx, cy = source._viewport_center_image()
@@ -729,7 +733,6 @@ class DualCanvasContainer(QWidget):
         if not self.is_split_mode:
             self.canvas_single.set_rois(rois, colors, names)
             return
-        # Names only shown on the right (focused) canvas
         self.canvas_right.set_rois(rois, colors, names)
         left_rois = []
         for roi_data in rois:
@@ -767,7 +770,7 @@ class DualCanvasContainer(QWidget):
 
     def _active_canvases(self):
         return (self.canvas_left, self.canvas_right) if self.is_split_mode else (self.canvas_single,)
-    
+
     def set_roi_labels_visible(self, visible: bool):
         for c in (self.canvas_single, self.canvas_left, self.canvas_right):
             c.set_roi_labels_visible(visible)

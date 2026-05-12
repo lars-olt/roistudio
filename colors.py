@@ -15,3 +15,8 @@ class Colors:
 
     ACCENT_HOVER         = "#0AA0FC"
     ACCENT_PRESSED       = "#076EAD"
+
+    # Overlay bar disabled state
+    DISABLED_FEATURE     = "#2A2A2A"   # dropdown fill when inactive
+    DISABLED_BORDER      = "#3A3A3A"   # checkbox and dropdown border when inactive
+    TEXT_OVERLAY_LABEL   = "#888888"   # label text (Preset:, R:, G:, B:, DCS) when inactive

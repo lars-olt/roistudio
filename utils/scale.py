@@ -97,3 +97,11 @@ def scaled(value: float) -> int:
 def scaled_font(pt: float) -> int:
     """Font size in pt, layout-factor-scaled."""
     return max(1, round(pt * Scale.factor))
+
+
+def bar_height() -> int:
+    """Height of the stretch bar and zoom indicator - derived from the scaled font."""
+    from PyQt5.QtGui import QFont, QFontMetrics
+    font = QFont()
+    font.setPointSize(scaled_font(9))
+    return QFontMetrics(font).height() + scaled(6) + 2 * scaled(5)
