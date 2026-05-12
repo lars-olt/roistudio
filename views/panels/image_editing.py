@@ -274,6 +274,12 @@ class ImageEditingPanel(QWidget):
     # Forwarded public API
     # ------------------------------------------------------------------
 
+    def set_overlay_presets(self, presets: list):
+        """Push instrument presets to all three overlays."""
+        self._overlay_single.set_presets('right', presets)
+        self._overlay_right.set_presets('right', presets)
+        self._overlay_left.set_presets('left', presets)
+
     def set_image(self, pixmap):
         self.canvas_container.set_image(pixmap)
 

@@ -12,12 +12,31 @@ _DEFAULT_WINDOW_HEIGHT = 900
 
 _MAIN_RATIO = 0.35
 
-_ZCAM_PRESETS = [
-    {'label': 'Right RGB',    'camera': 'right', 'r': 'R0R', 'g': 'R0G', 'b': 'R0B', 'dcs': False},
-    {'label': 'Left RGB',     'camera': 'left',  'r': 'L0R', 'g': 'L0G', 'b': 'L0B', 'dcs': False},
-    {'label': 'R6 R3 R1 DCS', 'camera': 'right', 'r': 'R6',  'g': 'R3',  'b': 'R1',  'dcs': True},
-    {'label': 'L2 L5 L6 DCS', 'camera': 'left',  'r': 'L2',  'g': 'L5',  'b': 'L6',  'dcs': True},
-]
+# All named color/band presets, keyed by instrument.
+# Each entry: label shown in the menu and stretch bar, camera side, R/G/B band names, DCS flag.
+# Edit these to change what any preset does - one place, affects both the View menu and the overlay.
+INSTRUMENT_PRESETS = {
+    'ZCAM': {
+        'right': {
+            'RGB': {'r': 'R0R', 'g': 'R0G', 'b': 'R0B', 'dcs': False},
+            'DCS': {'r': 'R6',  'g': 'R3',  'b': 'R1',  'dcs': True},
+        },
+        'left': {
+            'RGB': {'r': 'L0R', 'g': 'L0G', 'b': 'L0B', 'dcs': False},
+            'DCS': {'r': 'L2',  'g': 'L5',  'b': 'L6',  'dcs': True},
+        },
+    },
+    'PCAM': {
+        'right': {
+            'RGB': {'r': 'R2', 'g': 'R1', 'b': 'R1', 'dcs': False},
+            'DCS': {'r': 'R2', 'g': 'R1', 'b': 'R1', 'dcs': True},
+        },
+        'left': {
+            'RGB': {'r': 'L2', 'g': 'L5', 'b': 'L6', 'dcs': False},
+            'DCS': {'r': 'L2', 'g': 'L5', 'b': 'L6', 'dcs': True},
+        },
+    },
+}
 
 
 class View(QWidget):
@@ -30,7 +49,7 @@ class View(QWidget):
     run_algorithm_signal        = pyqtSignal()
     scene_dropped_signal        = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
-    apply_preset_signal         = pyqtSignal(dict)
+    apply_stretch_mode_signal       = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -99,6 +118,11 @@ class View(QWidget):
             QMenu::item:checked:selected {{
                 color: white;
             }}
+            QMenu::separator {{
+                height: 1px;
+                background-color: {Colors.PANEL_ACCENT};
+                margin-top: {scaled(4)}px;
+            }}
         """
 
     def _create_menu_bar(self):
@@ -148,13 +172,13 @@ class View(QWidget):
         self.action_sync_views.triggered.connect(self._on_sync_views_toggled)
         self.menu_view.addAction(self.action_sync_views)
 
-        self.menu_view.addSection("Scale")
-        for preset in _ZCAM_PRESETS:
-            action = QAction(preset['label'], self)
-            action.triggered.connect(lambda checked, p=preset: self.apply_preset_signal.emit(p))
+        self.menu_view.addSeparator()
+        for mode, label in (("RGB", "Set all RGB"), ("DCS", "Set all DCS")):
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, m=mode: self.apply_stretch_mode_signal.emit(m))
             action.setEnabled(False)
             self.menu_view.addAction(action)
-            self._preset_actions.append((action, preset))
+            self._preset_actions.append((action, mode))
 
         self.menu_window = QMenu("Window", self.menubar)
         self.menubar.addMenu(self.menu_window)
@@ -170,6 +194,11 @@ class View(QWidget):
         self.action_mode_roi.setChecked(False)
         self.action_mode_roi.triggered.connect(lambda: self._set_mode('roi_processing'))
         self.menu_window.addAction(self.action_mode_roi)
+
+    def set_instrument_presets(self, instrument: str):
+        """Push instrument presets to the stretch bar overlays."""
+        presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
+        self.panel_image_editing.set_overlay_presets(presets)
 
     def _create_panels(self):
         self.panel_image_selection     = ImageSelectionPanel()
@@ -279,26 +308,20 @@ class View(QWidget):
     def _on_split_screen_toggled(self, is_split):
         self.action_sync_views.setChecked(False)
         self.action_sync_views.setEnabled(is_split)
-        for action, preset in self._preset_actions:
-            if preset['camera'] == 'left':
-                action.setEnabled(is_split and self._scene_loaded())
 
     def _on_sync_views_toggled(self, checked: bool):
         self.panel_image_editing.set_sync_enabled(checked)
 
     def _scene_loaded(self):
-        return any(action.isEnabled() for action, p in self._preset_actions
-                   if p['camera'] == 'right')
+        return any(action.isEnabled() for action, _ in self._preset_actions)
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
     def enable_presets(self, enabled: bool):
-        is_split = self.panel_image_editing._is_split
-        for action, preset in self._preset_actions:
-            camera = preset['camera']
-            action.setEnabled(enabled and (camera == 'right' or (camera == 'left' and is_split)))
+        for action, _ in self._preset_actions:
+            action.setEnabled(enabled)
 
     def start_loading(self):
         self.panel_image_editing.start_loading()

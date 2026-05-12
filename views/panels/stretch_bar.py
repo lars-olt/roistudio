@@ -130,6 +130,7 @@ class StretchBar(QWidget):
         self._default_r = None
         self._default_g = None
         self._default_b = None
+        self._named_presets = {}  # {label: bands dict} for this camera, set via set_presets()
 
         self._row = QHBoxLayout()
         self.setLayout(self._row)
@@ -139,8 +140,8 @@ class StretchBar(QWidget):
 
         self.combo_preset = QComboBox()
         self.combo_preset.setFocusPolicy(Qt.NoFocus)
-        self.combo_preset.addItems(["None", "RGB", "DCS"])
-        self.combo_preset.setToolTip("Apply a color stretch preset.")
+        self.combo_preset.addItem("None")
+        self.combo_preset.setToolTip("Apply a named color stretch preset.")
         self.combo_preset.activated.connect(self._on_preset_selected)
         self.combo_preset.showPopup = self._show_preset_popup
         self._row.addWidget(self.combo_preset, 0, Qt.AlignVCenter)
@@ -175,6 +176,18 @@ class StretchBar(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def set_presets(self, camera: str, presets: dict):
+        """Populate the preset combo from the instrument preset dict for this camera."""
+        self._named_presets = presets.get(camera, {})
+        self.combo_preset.blockSignals(True)
+        self.combo_preset.clear()
+        self.combo_preset.addItem("None")
+        for label in self._named_presets:
+            self.combo_preset.addItem(label)
+        self.combo_preset.setCurrentIndex(0)
+        self.combo_preset.blockSignals(False)
+        self._style_band_controls(enabled=True)
 
     def set_focused(self, focused: bool):
         if focused != self._focused:
@@ -317,12 +330,14 @@ class StretchBar(QWidget):
 
     def _on_preset_selected(self, index):
         label = self.combo_preset.itemText(index)
-        r, g, b = self._default_r or '', self._default_g or '', self._default_b or ''
         if label == "None":
             self._style_band_controls(enabled=True)
-        else:
-            self._style_band_controls(enabled=False)
-            self.apply_preset(r, g, b, label == "DCS")
+            return
+        bands = self._named_presets.get(label)
+        if bands is None:
+            return
+        self._style_band_controls(enabled=False)
+        self.apply_preset(bands['r'], bands['g'], bands['b'], bands['dcs'])
 
     def _show_preset_popup(self):
         QComboBox.showPopup(self.combo_preset)

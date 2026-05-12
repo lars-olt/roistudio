@@ -74,7 +74,7 @@ class Controller(QObject):
         self._view.run_algorithm_signal.connect(self._run_algorithm)
         self._view.scene_double_clicked_signal.connect(self._load_scene_by_id)
         self._view.pixel_hover_callback = self._on_pixel_hover
-        self._view.apply_preset_signal.connect(self._apply_preset)
+        self._view.apply_stretch_mode_signal.connect(self._apply_stretch_mode)
 
         panel = self._view.panel_image_editing
         panel.roi_changed.connect(self._on_roi_changed)
@@ -328,15 +328,21 @@ class Controller(QObject):
     # Presets and split screen
     # ------------------------------------------------------------------
 
-    def _apply_preset(self, preset: dict):
+    def _apply_stretch_mode(self, mode: str):
+        """Apply RGB or DCS to all active canvases using the current instrument's presets."""
         if self._model.sparc_load_result is None:
             return
-        camera = preset['camera']
-        if not self._is_split_screen and camera == 'right':
-            camera = 'single'
-        self._view.panel_image_editing.apply_preset(
-            camera, preset['r'], preset['g'], preset['b'], preset['dcs']
-        )
+        instrument = self._model.instrument
+        from views.view import INSTRUMENT_PRESETS
+        presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
+        cameras = (['single', 'left', 'right'] if self._is_split_screen
+                   else ['single'])
+        for camera in cameras:
+            side   = 'right' if camera in ('single', 'right') else 'left'
+            bands  = presets[side][mode]
+            self._view.panel_image_editing.apply_preset(
+                camera, bands['r'], bands['g'], bands['b'], bands['dcs']
+            )
 
     def _on_split_screen_toggled(self, is_split):
         self._is_split_screen = is_split

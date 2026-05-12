@@ -35,6 +35,7 @@ def on_scene_load_complete(load_result, scene_id, model, view):
         )
 
     _set_band_names(load_result, view)
+    view.set_instrument_presets(load_result.get('instrument', 'ZCAM'))
     view.panel_image_editing.set_rois([], [], [])
     view.panel_spectral_view.clear_roi_spectra()
     view.panel_spectral_view.clear_plot()
