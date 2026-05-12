@@ -24,6 +24,7 @@ class Controller(QObject):
         self._current_colors    = []
         self._current_color_names = []
         self._is_split_screen   = False
+        self._split_screen_rois_dirty = False
 
         self.config_path = _get_config_path()
         self.load_config()
@@ -83,6 +84,7 @@ class Controller(QObject):
         panel.roi_too_small.connect(
             lambda: self._view.show_status_message("ROI too small - draw a larger rectangle.")
         )
+        panel.split_screen_exit_requested.connect(self._on_split_screen_exit_requested)
         panel.split_screen_toggled.connect(self._on_split_screen_toggled)
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)
 
@@ -127,6 +129,7 @@ class Controller(QObject):
         self._current_rois_data = []
         self._current_colors    = []
         self._current_color_names = []
+        self._split_screen_rois_dirty = False
         self.color_manager.reset()
 
     def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
@@ -234,6 +237,8 @@ class Controller(QObject):
                 self.sparc_controller,
                 self._has_dual_cubes(),
             )
+            if self._is_split_screen:
+                self._split_screen_rois_dirty = True
             self._view.panel_spectral_view.plot_roi_spectra(
                 self._current_rois_data, self._current_colors
             )
@@ -347,18 +352,47 @@ class Controller(QObject):
                 camera, bands['r'], bands['g'], bands['b'], bands['dcs']
             )
 
+    def _on_split_screen_exit_requested(self):
+        if self._split_screen_rois_dirty and self._current_rois_data:
+            from PyQt5.QtWidgets import QMessageBox
+            dlg = QMessageBox(self._view)
+            dlg.setWindowTitle("Leave Split Screen")
+            dlg.setText("ROIs that have been resized or moved will be reset.\nAre you sure you want to continue?")
+            dlg.setIcon(QMessageBox.NoIcon)
+            dlg.setStyleSheet("QLabel { qproperty-alignment: AlignCenter; }")
+            cancel    = dlg.addButton("Cancel",   QMessageBox.AcceptRole)
+            continue_ = dlg.addButton("Continue", QMessageBox.DestructiveRole)
+            dlg.setDefaultButton(cancel)
+            dlg.exec_()
+            if dlg.clickedButton() is not continue_:
+                return
+        self._view.panel_image_editing.confirm_split_screen_exit()
+
     def _on_split_screen_toggled(self, is_split):
         self._is_split_screen = is_split
+        if is_split:
+            self._split_screen_rois_dirty = False
 
         if not is_split and self._current_rois_data:
-            homography = (self._model.sparc_load_result or {}).get('homography_matrix')
+            homography        = (self._model.sparc_load_result or {}).get('homography_matrix')
+            instrument_config = self._get_instrument_config()
             roi_controller.sync_left_rois(self._current_rois_data, homography)
+            for i, roi in enumerate(self._current_rois_data):
+                spec_data = self.sparc_controller.update_roi_spectrum_dual(
+                    self._model.sparc_load_result,
+                    roi['left_rect'], roi['right_rect'],
+                    instrument_config,
+                )
+                self._current_rois_data[i] = {**roi, **spec_data}
 
         if self._model.sparc_load_result is not None:
             self._render_current_images()
             if self._current_rois_data:
                 self._view.panel_image_editing.set_rois(
                     self._current_rois_data, self._current_colors, self._current_color_names
+                )
+                self._view.panel_spectral_view.plot_roi_spectra(
+                    self._current_rois_data, self._current_colors
                 )
         self._view.show_status_message(
             f"Switched to {'split-screen' if is_split else 'single'} mode"

@@ -25,7 +25,8 @@ class ImageEditingPanel(QWidget):
     roi_deleted          = pyqtSignal(int)
     roi_created          = pyqtSignal(tuple, str)
     roi_too_small        = pyqtSignal()
-    split_screen_toggled = pyqtSignal(bool)
+    split_screen_toggled     = pyqtSignal(bool)
+    split_screen_exit_requested = pyqtSignal()
     canvas_focus_changed = pyqtSignal(str)   # 'single' | 'left' | 'right'
 
     def __init__(self):
@@ -244,15 +245,27 @@ class ImageEditingPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _toggle_split_screen(self):
-        self._is_split = not self.btn_split_screen.is_selected
-        self.btn_split_screen.set_selected(self._is_split)
-        self.canvas_container.set_split_mode(self._is_split)
+        entering_split = not self.btn_split_screen.is_selected
+        if not entering_split:
+            # Let the controller decide whether to proceed (may show a confirmation dialog).
+            self.split_screen_exit_requested.emit()
+            return
+        self._apply_split_screen(True)
+
+    def confirm_split_screen_exit(self):
+        """Called by the controller after the user confirms they want to leave split screen."""
+        self._apply_split_screen(False)
+
+    def _apply_split_screen(self, is_split: bool):
+        self._is_split = is_split
+        self.btn_split_screen.set_selected(is_split)
+        self.canvas_container.set_split_mode(is_split)
         self._sync_overlay_visibility()
-        self._focused_camera = 'right' if self._is_split else 'single'
+        self._focused_camera = 'right' if is_split else 'single'
         self._sync_focus()
-        if not self._is_split:
+        if not is_split:
             self.canvas_container.set_sync_enabled(False)
-        self.split_screen_toggled.emit(self._is_split)
+        self.split_screen_toggled.emit(is_split)
         QTimer.singleShot(0, self._reposition_overlays)
 
     # ------------------------------------------------------------------
