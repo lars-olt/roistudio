@@ -41,6 +41,10 @@ class CanvasContainer(QWidget):
     MODE_RESIZE_BL = 4
     MODE_RESIZE_BR = 5
     MODE_CREATE    = 6
+    MODE_RESIZE_T  = 7
+    MODE_RESIZE_B  = 8
+    MODE_RESIZE_L  = 9
+    MODE_RESIZE_R  = 10
 
     HANDLE_SIZE = 4
 
@@ -271,16 +275,35 @@ class CanvasContainer(QWidget):
             return -1, self.MODE_NONE
 
         handle_sz = self.HANDLE_SIZE / self.zoom_level
+        edge_sz   = handle_sz * 2
 
         if self.selected_roi_index != -1:
             rect = QRectF(*self.rois[self.selected_roi_index])
-            for pt, mode in ((rect.topLeft(),     self.MODE_RESIZE_TL),
-                             (rect.topRight(),    self.MODE_RESIZE_TR),
-                             (rect.bottomLeft(),  self.MODE_RESIZE_BL),
-                             (rect.bottomRight(), self.MODE_RESIZE_BR)):
+
+            # Corner handles - take priority over sides.
+            for pt, mode in (
+                (rect.topLeft(),     self.MODE_RESIZE_TL),
+                (rect.topRight(),    self.MODE_RESIZE_TR),
+                (rect.bottomLeft(),  self.MODE_RESIZE_BL),
+                (rect.bottomRight(), self.MODE_RESIZE_BR),
+            ):
                 if QRectF(pt.x() - handle_sz, pt.y() - handle_sz,
-                          handle_sz * 2, handle_sz * 2).contains(img_x, img_y):
+                        handle_sz * 2, handle_sz * 2).contains(img_x, img_y):
                     return self.selected_roi_index, mode
+
+            # Side edges: proximity is how close the cursor is to the edge,
+            # span checks the cursor is between the corners (not in corner territory).
+            ix0, ix1 = rect.left() + edge_sz, rect.right()  - edge_sz
+            iy0, iy1 = rect.top()  + edge_sz, rect.bottom() - edge_sz
+            for edge, proximity, span, span_min, span_max, mode in (
+                (rect.top(),    img_y, img_x, ix0, ix1, self.MODE_RESIZE_T),
+                (rect.bottom(), img_y, img_x, ix0, ix1, self.MODE_RESIZE_B),
+                (rect.left(),   img_x, img_y, iy0, iy1, self.MODE_RESIZE_L),
+                (rect.right(),  img_x, img_y, iy0, iy1, self.MODE_RESIZE_R),
+            ):
+                if abs(proximity - edge) <= edge_sz and span_min < span < span_max:
+                    return self.selected_roi_index, mode
+
             if rect.contains(img_x, img_y):
                 return self.selected_roi_index, self.MODE_MOVE
 
@@ -288,6 +311,7 @@ class CanvasContainer(QWidget):
             if QRectF(*r).contains(img_x, img_y):
                 return i, self.MODE_MOVE
 
+        # no ROI hit
         return -1, self.MODE_NONE
 
     def _update_hover(self, img_x, img_y):
@@ -459,6 +483,14 @@ class CanvasContainer(QWidget):
                 r[1] += dy; r[2] += dx; r[3] -= dy
             elif self.interaction_mode == self.MODE_RESIZE_BL:
                 r[0] += dx; r[2] -= dx; r[3] += dy
+            elif self.interaction_mode == self.MODE_RESIZE_T:
+                r[1] += dy; r[3] -= dy
+            elif self.interaction_mode == self.MODE_RESIZE_B:
+                r[3] += dy
+            elif self.interaction_mode == self.MODE_RESIZE_L:
+                r[0] += dx; r[2] -= dx
+            elif self.interaction_mode == self.MODE_RESIZE_R:
+                r[2] += dx
 
             r[2] = max(5, r[2]); r[3] = max(5, r[3])
             self.rois[self.selected_roi_index] = tuple(r)
@@ -476,6 +508,10 @@ class CanvasContainer(QWidget):
                 self.MODE_RESIZE_BR: Qt.SizeFDiagCursor,
                 self.MODE_RESIZE_TR: Qt.SizeBDiagCursor,
                 self.MODE_RESIZE_BL: Qt.SizeBDiagCursor,
+                self.MODE_RESIZE_T:  Qt.SizeVerCursor,
+                self.MODE_RESIZE_B:  Qt.SizeVerCursor,
+                self.MODE_RESIZE_L:  Qt.SizeHorCursor,
+                self.MODE_RESIZE_R:  Qt.SizeHorCursor,
             }.get(mode, self.tool_cursor))
 
         if (self.hover_preview_enabled
