@@ -559,6 +559,14 @@ class CanvasContainer(QWidget):
         if event.key() == Qt.Key_R:
             self.tool_shortcut.emit("rectangle")
             return
+        if event.key() == Qt.Key_F:
+            self.fit_to_panel()
+            return
+        if event.key() == Qt.Key_Escape:
+            if self.selected_roi_index != -1:
+                self.selected_roi_index = -1
+                self.update()
+            return
         if event.key() == Qt.Key_Space and not self.space_pressed:
             self.space_pressed = True
             if not self.is_panning:
