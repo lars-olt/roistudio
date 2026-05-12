@@ -80,6 +80,9 @@ class Controller(QObject):
         panel.roi_changed.connect(self._on_roi_changed)
         panel.roi_deleted.connect(self._on_roi_deleted)
         panel.roi_created.connect(self._on_roi_created)
+        panel.roi_too_small.connect(
+            lambda: self._view.show_status_message("ROI too small - draw a larger rectangle.")
+        )
         panel.split_screen_toggled.connect(self._on_split_screen_toggled)
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)
 

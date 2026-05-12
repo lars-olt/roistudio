@@ -32,6 +32,7 @@ class CanvasContainer(QWidget):
     # Emits (zoom, image_cx, image_cy) — viewport center captured at interaction
     # time so sync handlers always receive a stable snapshot.
     sync_changed  = pyqtSignal(float, float, float)
+    roi_too_small = pyqtSignal()
 
     MODE_NONE      = 0
     MODE_MOVE      = 1
@@ -496,6 +497,8 @@ class CanvasContainer(QWidget):
                 r = self.current_creation_rect
                 if r.width() > 5 and r.height() > 5:
                     self.roi_created.emit((r.x(), r.y(), r.width(), r.height()))
+                else:
+                    self.roi_too_small.emit()
             self.current_creation_rect = None
             self.interaction_mode = self.MODE_NONE
             self.update()
@@ -591,6 +594,7 @@ class DualCanvasContainer(QWidget):
     roi_selected  = pyqtSignal(int)
     roi_deleted   = pyqtSignal(int)
     roi_created   = pyqtSignal(tuple, str)
+    roi_too_small = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -635,6 +639,7 @@ class DualCanvasContainer(QWidget):
             lambda rect, c=canvas: self._on_canvas_roi_created(c, rect))
         canvas.sync_changed.connect(
             lambda zoom, cx, cy, c=canvas: self._on_sync_changed(c, zoom, cx, cy))
+        canvas.roi_too_small.connect(self.roi_too_small.emit)
 
     def _camera_label(self, canvas):
         return ('left'  if canvas is self.canvas_left  else

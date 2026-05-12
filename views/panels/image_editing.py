@@ -24,6 +24,7 @@ class ImageEditingPanel(QWidget):
     roi_changed          = pyqtSignal(int, tuple, str)
     roi_deleted          = pyqtSignal(int)
     roi_created          = pyqtSignal(tuple, str)
+    roi_too_small        = pyqtSignal()
     split_screen_toggled = pyqtSignal(bool)
     canvas_focus_changed = pyqtSignal(str)   # 'single' | 'left' | 'right'
 
@@ -105,6 +106,7 @@ class ImageEditingPanel(QWidget):
         self.canvas_container.roi_changed.connect(self.roi_changed.emit)
         self.canvas_container.roi_deleted.connect(self.roi_deleted.emit)
         self.canvas_container.roi_created.connect(self.roi_created.emit)
+        self.canvas_container.roi_too_small.connect(self.roi_too_small.emit)
         c_layout.addWidget(self.canvas_container)
         layout.addWidget(content)
 
@@ -274,7 +276,7 @@ class ImageEditingPanel(QWidget):
     # Forwarded public API
     # ------------------------------------------------------------------
 
-    def set_overlay_presets(self, presets: list):
+    def set_overlay_presets(self, presets: dict):
         """Push instrument presets to all three overlays."""
         self._overlay_single.set_presets('right', presets)
         self._overlay_right.set_presets('right', presets)
