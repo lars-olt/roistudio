@@ -16,7 +16,6 @@ class ColorManager:
         self._init_palette(instrument)
 
     def _init_palette(self, instrument):
-        from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
         from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 
         merspect_order = [
@@ -26,8 +25,7 @@ class ColorManager:
             'blue-2', 'red+2', 'red-1', 'red-2', 'magenta+2', 'magenta+1',
             'magenta-1', 'magenta-2', 'magenta-3', 'cyan+2', 'cyan+1', 'cyan-1',
             'cyan-2', 'cyan-3', 'orange+2', 'orange+1', 'orange-1', 'orange-2',
-            'orange-3', 'azure+2', 'azure+1', 'azure-1', 'azure-2', 'azure-3',
-            'black', 'dark-gray', 'gray', 'light-gray',
+            'orange-3', 'azure+2', 'azure+1',
         ]
         self._merspect_indices = {k: i for i, k in enumerate(merspect_order)}
 
