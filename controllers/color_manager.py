@@ -72,6 +72,31 @@ class ColorManager:
         self._next_index += 1
         return self._palette[idx], self._name_palette[idx]
 
+    def peek(self):
+        """Return the next (color, name) pair without consuming it."""
+        if self._stack:
+            return self._stack[-1]
+        idx = self._next_index
+        while idx < len(self._palette):
+            name = self._name_palette[idx]
+            if name not in self._reserved:
+                return self._palette[idx], name
+            idx += 1
+        return self._palette[0], self._name_palette[0]
+
+    def set_next(self, name: str):
+        """Force a specific color to be returned by the next next() call."""
+        if name not in self._name_palette:
+            return
+        idx   = self._name_palette.index(name)
+        color = self._palette[idx]
+        # Push onto the stack so it takes priority over the sequential index.
+        self._stack.append((color, name))
+
+    def full_palette(self):
+        """Return the complete (color, name) palette list."""
+        return list(zip(self._palette, self._name_palette))
+
     def recycle(self, color, name):
         self._stack.append((color, name))
 

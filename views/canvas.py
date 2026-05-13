@@ -34,6 +34,7 @@ class CanvasContainer(QWidget):
     sync_changed  = pyqtSignal(float, float, float)
     roi_too_small = pyqtSignal()
     tool_shortcut = pyqtSignal(str)
+    roi_right_clicked = pyqtSignal(int, QPoint)
 
     MODE_NONE      = 0
     MODE_MOVE      = 1
@@ -425,6 +426,12 @@ class CanvasContainer(QWidget):
             return
 
         img_x, img_y = self._get_image_coords(event.pos())
+        
+        if event.button() == Qt.RightButton:
+            for i, r in enumerate(self.rois):
+                if QRectF(*r).contains(img_x, img_y):
+                    self.roi_right_clicked.emit(i, event.globalPos())
+                    return
 
         if self.interaction_tool == "selection" and event.button() == Qt.LeftButton:
             idx, mode = self._hit_test(img_x, img_y)
@@ -647,6 +654,7 @@ class DualCanvasContainer(QWidget):
     roi_created   = pyqtSignal(tuple, str)
     roi_too_small = pyqtSignal()
     tool_shortcut = pyqtSignal(str)
+    roi_right_clicked = pyqtSignal(int, QPoint)
 
     def __init__(self):
         super().__init__()
@@ -693,6 +701,7 @@ class DualCanvasContainer(QWidget):
             lambda zoom, cx, cy, c=canvas: self._on_sync_changed(c, zoom, cx, cy))
         canvas.roi_too_small.connect(self.roi_too_small.emit)
         canvas.tool_shortcut.connect(self.tool_shortcut.emit)
+        canvas.roi_right_clicked.connect(self.roi_right_clicked.emit)
 
     def _camera_label(self, canvas):
         return ('left'  if canvas is self.canvas_left  else

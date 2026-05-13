@@ -7,11 +7,64 @@ from colors import Colors
 from utils.paths import _resource_path
 from utils.scale import Scale, physical, scaled, scaled_font
 from ..canvas import CanvasContainer, DualCanvasContainer
-from ..widgets import ToolbarButton, LoadingIndicator, BandComboBox
+from ..widgets import ToolbarButton, LoadingIndicator, BandComboBox, ColorSwatchGrid
 from .stretch_bar import StretchBar
 
 _OVERLAY_BG      = QColor(40, 40, 40, 180)
 _CURSOR_NATIVE_W = 32
+
+
+class _ActiveColorSwatch(QWidget):
+    """Toolbar swatch showing the next ROI color. Click to open the palette."""
+
+    clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._color   = (150, 150, 150)
+        self._hovered = False
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Next ROI color - click to change")
+        self.setMouseTracking(True)
+        self._apply_scale()
+        Scale.changed.connect(self._apply_scale)
+
+    def _apply_scale(self):
+        self.setFixedSize(physical(46), physical(38))
+
+    def set_color(self, color):
+        self._color = color
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        bg = QPixmap(_resource_path("graphics/toolbar_blank.png")).scaled(
+            self.width(), self.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        painter.drawPixmap(0, 0, bg)
+
+        sz       = int(min(self.width(), self.height()) * 0.45)
+        margin_x = (self.width()  - sz) // 2
+        margin_y = (self.height() - sz) // 2
+        outline  = QColor(Colors.ACCENT) if self._hovered else QColor(Colors.PANEL_ACCENT)
+        painter.setPen(QPen(outline, 1))
+        painter.setBrush(QColor(*self._color))
+        painter.drawEllipse(margin_x, margin_y, sz, sz)
+        painter.end()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
 
 
 class ImageEditingPanel(QWidget):
@@ -25,6 +78,7 @@ class ImageEditingPanel(QWidget):
     roi_deleted          = pyqtSignal(int)
     roi_created          = pyqtSignal(tuple, str)
     roi_too_small        = pyqtSignal()
+    roi_right_clicked    = pyqtSignal(int, QPoint)  # roi_index, global pos
     split_screen_toggled     = pyqtSignal(bool)
     split_screen_exit_requested = pyqtSignal()
     canvas_focus_changed = pyqtSignal(str)   # 'single' | 'left' | 'right'
@@ -79,6 +133,7 @@ class ImageEditingPanel(QWidget):
             _resource_path("graphics/toolbar_selection.png"),
             _resource_path("graphics/toolbar_selection_selected.png")
         )
+        self.btn_selection.setToolTip("Selection tool (V)")
         self.btn_selection.set_selected(True)
         self.btn_selection.clicked.connect(lambda: self.select_tool("selection"))
         t_layout.addWidget(self.btn_selection)
@@ -87,15 +142,23 @@ class ImageEditingPanel(QWidget):
             _resource_path("graphics/toolbar_rectangle.png"),
             _resource_path("graphics/toolbar_rectangle_selected.png")
         )
+        self.btn_rectangle.setToolTip("Rectangle ROI tool (R)")
         self.btn_rectangle.clicked.connect(lambda: self.select_tool("rectangle"))
         t_layout.addWidget(self.btn_rectangle)
+
+        self._color_swatch = _ActiveColorSwatch()
+        self._color_swatch.clicked.connect(self._on_active_color_clicked)
+        t_layout.addWidget(self._color_swatch)
 
         t_layout.addStretch()
 
         self.btn_split_screen = ToolbarButton(
             _resource_path("graphics/toolbar_single_screen.png"),
-            _resource_path("graphics/toolbar_split_screen.png")
+            _resource_path("graphics/toolbar_split_screen.png"),
+            hover_icon_path          = _resource_path("graphics/toolbar_single_screen_hover.png"),
+            selected_hover_icon_path = _resource_path("graphics/toolbar_split_screen_hover.png"),
         )
+        self.btn_split_screen.setToolTip("Toggle split screen (S)")
         self.btn_split_screen.set_selected(False)
         self.btn_split_screen.clicked.connect(self._toggle_split_screen)
         t_layout.addWidget(self.btn_split_screen)
@@ -109,6 +172,9 @@ class ImageEditingPanel(QWidget):
         self.canvas_container.roi_created.connect(self.roi_created.emit)
         self.canvas_container.roi_too_small.connect(self.roi_too_small.emit)
         self.canvas_container.tool_shortcut.connect(self.select_tool)
+        self.canvas_container.roi_right_clicked.connect(self.roi_right_clicked.emit)
+
+        self._swatch_grid = ColorSwatchGrid(self)
         c_layout.addWidget(self.canvas_container)
         layout.addWidget(content)
 
@@ -164,6 +230,19 @@ class ImageEditingPanel(QWidget):
         self.toolbar.setFixedWidth(btn_w + scaled(8))
         self.toolbar.layout().setContentsMargins(0, scaled(4), 0, scaled(4))
         self.toolbar.layout().setSpacing(scaled(4))
+        self.toolbar.setStyleSheet(f"""
+            QWidget {{
+                background-color: {Colors.PANEL_ACCENT};
+                border-right: 1px solid {Colors.DEFAULT_FEATURE};
+            }}
+            QToolTip {{
+                background-color: {Colors.PANEL_BACKGROUND};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.ACCENT};
+                padding: {scaled(4)}px;
+                font-size: {scaled_font(9)}pt;
+            }}
+        """)
 
         self.run_button.setStyleSheet(f"""
             QPushButton {{
@@ -289,6 +368,21 @@ class ImageEditingPanel(QWidget):
     # ------------------------------------------------------------------
     # Forwarded public API
     # ------------------------------------------------------------------
+
+    def set_active_color(self, color):
+        """Update the active color swatch to reflect the next color."""
+        self._color_swatch.set_color(color)
+
+    def _on_active_color_clicked(self):
+        self._swatch_grid.show_at(
+            self._color_swatch.mapToGlobal(
+                self._color_swatch.rect().bottomLeft()
+            )
+        )
+
+    def set_swatch_palette(self, palette, in_use_names, selected_name=None):
+        """Repopulate the swatch grid and connect its signal if not already done."""
+        self._swatch_grid.populate(palette, in_use_names, selected_name)
 
     def set_overlay_presets(self, presets: dict):
         """Push instrument presets to all three overlays."""

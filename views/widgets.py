@@ -1,8 +1,8 @@
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
-                             QVBoxLayout, QFrame, QToolButton,
-                             QSizePolicy, QListView, QAbstractItemView)
-from PyQt5.QtGui import QIcon, QMovie, QDrag
+                             QVBoxLayout, QGridLayout, QFrame, QToolButton,
+                             QSizePolicy, QListView)
+from PyQt5.QtGui import QIcon, QMovie, QDrag, QPainter, QPen, QColor
 
 from colors import Colors
 from utils.paths import _resource_path
@@ -41,13 +41,19 @@ class LoadingIndicator(QLabel):
 
 
 class ToolbarButton(QPushButton):
-    """Toolbar button with normal and selected icon states."""
+    """Toolbar button with normal, hover, and selected icon states."""
 
-    def __init__(self, normal_icon_path, selected_icon_path, parent=None):
+    def __init__(self, normal_icon_path, selected_icon_path, hover_icon_path=None, selected_hover_icon_path=None, parent=None):
         super().__init__(parent)
-        self.normal_icon   = QIcon(normal_icon_path)
-        self.selected_icon = QIcon(selected_icon_path)
-        self.is_selected   = False
+        self.normal_icon         = QIcon(normal_icon_path)
+        self.selected_icon       = QIcon(selected_icon_path)
+        self.selected_hover_icon = QIcon(selected_hover_icon_path) if selected_hover_icon_path else None
+        if hover_icon_path is None:
+            stem, ext       = normal_icon_path.rsplit('.', 1)
+            hover_icon_path = f"{stem}_hover.{ext}"
+        self.hover_icon  = QIcon(hover_icon_path)
+        self.is_selected = False
+        self._hovered    = False
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(
@@ -64,12 +70,27 @@ class ToolbarButton(QPushButton):
         self.update_icon()
 
     def update_icon(self):
-        self.setIcon(self.selected_icon if (self.is_selected or self.isChecked())
-                     else self.normal_icon)
+        selected = self.is_selected or self.isChecked()
+        if self._hovered and selected and self.selected_hover_icon:
+            self.setIcon(self.selected_hover_icon)
+        elif self._hovered and not selected:
+            self.setIcon(self.hover_icon)
+        elif selected:
+            self.setIcon(self.selected_icon)
+        else:
+            self.setIcon(self.normal_icon)
 
     def set_selected(self, selected):
         self.is_selected = selected
         self.setChecked(selected)
+        self.update_icon()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update_icon()
+
+    def leaveEvent(self, event):
+        self._hovered = False
         self.update_icon()
 
 
@@ -305,3 +326,95 @@ class CollapsibleSection(QWidget):
 
     def add_widget(self, widget):
         self.content_layout.addWidget(widget)
+
+
+class ColorSwatchButton(QWidget):
+    """A single circular color swatch, optionally dimmed when in use."""
+
+    clicked = pyqtSignal(tuple, str)  # (color, name)
+
+    _SWATCH_SIZE = 18
+    _BORDER      = 2
+
+    def __init__(self, color, name, in_use=False, selected=False, parent=None):
+        super().__init__(parent)
+        self._color    = color
+        self._name     = name
+        self._in_use   = in_use
+        self._selected = selected
+        sz = scaled(self._SWATCH_SIZE)
+        self.setFixedSize(sz, sz)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(name)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        sz      = self.width()
+        margin  = scaled(self._BORDER)
+        alpha   = 110 if self._in_use else 255
+        color   = QColor(*self._color, alpha)
+        outline = QColor(Colors.ACCENT) if self._selected else QColor(Colors.PANEL_ACCENT)
+
+        painter.setPen(QPen(outline, scaled(self._BORDER)))
+        painter.setBrush(color)
+        painter.drawEllipse(margin, margin, sz - margin * 2, sz - margin * 2)
+        painter.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self._color, self._name)
+
+
+class ColorSwatchGrid(QFrame):
+    """
+    Floating palette grid for picking ROI colors.
+    Emits color_selected when a swatch is clicked, then hides itself.
+    In-use colors are shown dimmed but remain selectable.
+    """
+
+    color_selected = pyqtSignal(tuple, str)  # (color, name)
+
+    _COLS = 8
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.Popup)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.PANEL_BACKGROUND};
+                border: 1px solid {Colors.PANEL_ACCENT};
+                border-radius: {scaled(4)}px;
+            }}
+        """)
+        self._grid = QGridLayout()
+        self._grid.setContentsMargins(scaled(6), scaled(6), scaled(6), scaled(6))
+        self._grid.setSpacing(scaled(3))
+        self.setLayout(self._grid)
+
+    def populate(self, palette, in_use_names, selected_name=None):
+        """Rebuild the grid from a (color, name) palette list."""
+        for i in reversed(range(self._grid.count())):
+            w = self._grid.itemAt(i).widget()
+            if w:
+                w.setParent(None)
+
+        for idx, (color, name) in enumerate(palette):
+            swatch = ColorSwatchButton(
+                color, name,
+                in_use   = name in in_use_names,
+                selected = name == selected_name,
+            )
+            swatch.clicked.connect(self._on_swatch_clicked)
+            self._grid.addWidget(swatch, idx // self._COLS, idx % self._COLS)
+
+        self.adjustSize()
+
+    def _on_swatch_clicked(self, color, name):
+        self.color_selected.emit(color, name)
+        self.hide()
+
+    def show_at(self, pos):
+        self.move(pos)
+        self.show()
+        self.raise_()

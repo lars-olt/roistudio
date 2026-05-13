@@ -23,8 +23,9 @@ class Controller(QObject):
         self._current_rois_data = []
         self._current_colors    = []
         self._current_color_names = []
-        self._is_split_screen   = False
+        self._is_split_screen         = False
         self._split_screen_rois_dirty = False
+        self._pending_recolor_index   = None  # ROI index being recolored, or None for next-color
 
         self.config_path = _get_config_path()
         self.load_config()
@@ -87,6 +88,8 @@ class Controller(QObject):
         panel.split_screen_exit_requested.connect(self._on_split_screen_exit_requested)
         panel.split_screen_toggled.connect(self._on_split_screen_toggled)
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)
+        panel.roi_right_clicked.connect(self._on_roi_right_clicked)
+        panel._swatch_grid.color_selected.connect(self._on_color_selected)
 
     def _connect_controller_signals(self):
         sc = self.scene_controller
@@ -125,12 +128,14 @@ class Controller(QObject):
             self._view.show_status_message(f"Error: scene {scene_id} not found in cache")
             return
         self._view.show_status_message(f"Loading scene: {scene_id}")
-        self._current_scene_id  = self.scene_controller.start_load(scene_id)
-        self._current_rois_data = []
-        self._current_colors    = []
-        self._current_color_names = []
+        self._current_scene_id        = self.scene_controller.start_load(scene_id)
+        self._current_rois_data       = []
+        self._current_colors          = []
+        self._current_color_names     = []
         self._split_screen_rois_dirty = False
+        self._pending_recolor_index   = None
         self.color_manager.reset()
+        self._refresh_swatch()
 
     def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
         scene_callbacks.on_scene_found(scene_id, pixmap, filename, self._view)
@@ -171,6 +176,7 @@ class Controller(QObject):
             )
             if outcome is not None:
                 self._current_rois_data, self._current_colors, self._current_color_names = outcome
+                self._refresh_swatch()
         except Exception as e:
             self._view.stop_loading()
             self._view.show_status_message(f"Error visualizing results: {e}")
@@ -252,6 +258,45 @@ class Controller(QObject):
         self._view.panel_spectral_view.plot_roi_spectra(
             self._current_rois_data, self._current_colors
         )
+        self._refresh_swatch()
+
+    def _refresh_swatch(self):
+        """Sync the active color swatch and palette grid with current state."""
+        panel             = self._view.panel_image_editing
+        next_color, next_name = self.color_manager.peek()
+        panel.set_active_color(next_color)
+        panel.set_swatch_palette(
+            self.color_manager.full_palette(),
+            in_use_names  = self._current_color_names,
+            selected_name = next_name,
+        )
+
+    def _on_roi_right_clicked(self, roi_index, global_pos):
+        """Open the palette to recolor an existing ROI."""
+        self._pending_recolor_index = roi_index
+        panel = self._view.panel_image_editing
+        panel.set_swatch_palette(
+            self.color_manager.full_palette(),
+            in_use_names  = self._current_color_names,
+            selected_name = self._current_color_names[roi_index],
+        )
+        panel._swatch_grid.show_at(global_pos)
+
+    def _on_color_selected(self, color, name):
+        """Handle a swatch pick - either recolor an ROI or set the next color."""
+        if self._pending_recolor_index is not None:
+            idx = self._pending_recolor_index
+            self._pending_recolor_index = None
+            if idx < len(self._current_rois_data):
+                old_color = self._current_colors[idx]
+                old_name  = self._current_color_names[idx]
+                self.color_manager.recycle(old_color, old_name)
+                self._current_colors[idx]      = color
+                self._current_color_names[idx] = name
+                self._update_roi_view()
+        else:
+            self.color_manager.set_next(name)
+            self._refresh_swatch()
 
     # ------------------------------------------------------------------
     # SEL export / import
@@ -346,8 +391,8 @@ class Controller(QObject):
         cameras = (['single', 'left', 'right'] if self._is_split_screen
                    else ['single'])
         for camera in cameras:
-            side   = 'right' if camera in ('single', 'right') else 'left'
-            bands  = presets[side][mode]
+            side  = 'right' if camera in ('single', 'right') else 'left'
+            bands = presets[side][mode]
             self._view.panel_image_editing.apply_preset(
                 camera, bands['r'], bands['g'], bands['b'], bands['dcs']
             )
