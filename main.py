@@ -95,6 +95,13 @@ if __name__ == '__main__':
     QShortcut(QKeySequence(Qt.CTRL + Qt.Key_S),     view).activated.connect(
         view.export_sel_signal.emit
     )
+    shortcut_v = QShortcut(QKeySequence(Qt.Key_V), view)
+    shortcut_v.setContext(Qt.ApplicationShortcut)
+    shortcut_v.activated.connect(lambda: view.panel_image_editing.select_tool("selection"))
+
+    shortcut_r = QShortcut(QKeySequence(Qt.Key_R), view)
+    shortcut_r.setContext(Qt.ApplicationShortcut)
+    shortcut_r.activated.connect(lambda: view.panel_image_editing.select_tool("rectangle"))
 
     view.show()
     Scale.set_window(view.windowHandle())

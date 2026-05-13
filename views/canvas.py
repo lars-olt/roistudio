@@ -560,12 +560,6 @@ class CanvasContainer(QWidget):
             self.update()
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_V:
-            self.tool_shortcut.emit("selection")
-            return
-        if event.key() == Qt.Key_R:
-            self.tool_shortcut.emit("rectangle")
-            return
         if event.key() == Qt.Key_F:
             self.fit_to_panel()
             return
