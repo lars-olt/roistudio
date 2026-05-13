@@ -45,13 +45,14 @@ class _ActiveColorSwatch(QWidget):
         )
         painter.drawPixmap(0, 0, bg)
 
-        sz       = int(min(self.width(), self.height()) * 0.45)
+        sz       = int(min(self.width(), self.height()) * 0.55)
         margin_x = (self.width()  - sz) // 2
         margin_y = (self.height() - sz) // 2
-        outline  = QColor(Colors.ACCENT) if self._hovered else QColor(Colors.PANEL_ACCENT)
+        radius   = scaled(3)
+        outline  = QColor(Colors.ACCENT) if self._hovered else QColor(Colors.TEXT_SECONDARY)
         painter.setPen(QPen(outline, 1))
         painter.setBrush(QColor(*self._color))
-        painter.drawEllipse(margin_x, margin_y, sz, sz)
+        painter.drawRoundedRect(margin_x, margin_y, sz, sz, radius, radius)
         painter.end()
 
     def enterEvent(self, event):

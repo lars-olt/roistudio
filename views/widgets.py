@@ -329,12 +329,12 @@ class CollapsibleSection(QWidget):
 
 
 class ColorSwatchButton(QWidget):
-    """A single circular color swatch, optionally dimmed when in use."""
+    """A single rounded-rect color swatch, optionally dimmed when in use."""
 
     clicked = pyqtSignal(tuple, str)  # (color, name)
 
     _SWATCH_SIZE = 18
-    _BORDER      = 2
+    _RADIUS      = 3
 
     def __init__(self, color, name, in_use=False, selected=False, parent=None):
         super().__init__(parent)
@@ -342,6 +342,7 @@ class ColorSwatchButton(QWidget):
         self._name     = name
         self._in_use   = in_use
         self._selected = selected
+        self._hovered  = False
         sz = scaled(self._SWATCH_SIZE)
         self.setFixedSize(sz, sz)
         self.setCursor(Qt.PointingHandCursor)
@@ -351,16 +352,24 @@ class ColorSwatchButton(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        sz      = self.width()
-        margin  = scaled(self._BORDER)
         alpha   = 110 if self._in_use else 255
         color   = QColor(*self._color, alpha)
-        outline = QColor(Colors.ACCENT) if self._selected else QColor(Colors.PANEL_ACCENT)
+        outline = (QColor(Colors.ACCENT) if (self._selected or self._hovered)
+                   else QColor(Colors.TEXT_SECONDARY))
+        radius  = scaled(self._RADIUS)
 
-        painter.setPen(QPen(outline, scaled(self._BORDER)))
+        painter.setPen(QPen(QColor(Colors.ACCENT), 1) if self._hovered else Qt.NoPen)
         painter.setBrush(color)
-        painter.drawEllipse(margin, margin, sz - margin * 2, sz - margin * 2)
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), radius, radius)
         painter.end()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
