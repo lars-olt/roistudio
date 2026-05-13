@@ -159,7 +159,7 @@ class ImageEditingPanel(QWidget):
             hover_icon_path          = _resource_path("graphics/toolbar_single_screen_hover.png"),
             selected_hover_icon_path = _resource_path("graphics/toolbar_split_screen_hover.png"),
         )
-        self.btn_split_screen.setToolTip("Toggle split screen (S)")
+        self.btn_split_screen.setToolTip("Toggle split screen")
         self.btn_split_screen.set_selected(False)
         self.btn_split_screen.clicked.connect(self._toggle_split_screen)
         t_layout.addWidget(self.btn_split_screen)

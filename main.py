@@ -90,7 +90,7 @@ if __name__ == '__main__':
     QShortcut(QKeySequence(Qt.CTRL + Qt.Key_0),     view).activated.connect(Scale.reset)
 
     QShortcut(QKeySequence(Qt.Key_S),               view).activated.connect(
-        view.panel_image_editing._toggle_split_screen
+        lambda: view.action_sync_views.trigger()
     )
     QShortcut(QKeySequence(Qt.CTRL + Qt.Key_S),     view).activated.connect(
         view.export_sel_signal.emit
