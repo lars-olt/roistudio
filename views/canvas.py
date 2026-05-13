@@ -560,9 +560,6 @@ class CanvasContainer(QWidget):
             self.update()
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_F:
-            self.fit_to_panel()
-            return
         if event.key() == Qt.Key_Escape:
             if self.selected_roi_index != -1:
                 self.selected_roi_index = -1

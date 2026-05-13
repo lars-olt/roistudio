@@ -103,6 +103,10 @@ if __name__ == '__main__':
     shortcut_r.setContext(Qt.ApplicationShortcut)
     shortcut_r.activated.connect(lambda: view.panel_image_editing.select_tool("rectangle"))
 
+    shortcut_f = QShortcut(QKeySequence(Qt.Key_F), view)
+    shortcut_f.setContext(Qt.ApplicationShortcut)
+    shortcut_f.activated.connect(view.panel_image_editing.fit_focused_canvas)
+
     view.show()
     Scale.set_window(view.windowHandle())
 
