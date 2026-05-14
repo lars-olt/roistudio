@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
@@ -123,8 +123,8 @@ class ClickableLabel(QLabel):
         drag.setMimeData(mime)
         drag.setPixmap(self.thumbnail_pixmap)
         drag.setHotSpot(QPoint(self.thumbnail_pixmap.width()  // 2,
-                            self.thumbnail_pixmap.height() // 2))
-        QTimer.singleShot(0, lambda: drag.exec_(Qt.CopyAction))
+                               self.thumbnail_pixmap.height() // 2))
+        drag.exec_(Qt.CopyAction)
 
     def set_scene_data(self, scene_id, pixmap):
         self.scene_id         = scene_id
@@ -329,12 +329,13 @@ class CollapsibleSection(QWidget):
 
 
 class ColorSwatchButton(QWidget):
-    """A single rounded-rect color swatch, optionally dimmed when in use."""
+    """A single rounded-rect color swatch. Unused colors get a white border; hovered get accent blue."""
 
     clicked = pyqtSignal(tuple, str)  # (color, name)
 
-    _SWATCH_SIZE = 18
-    _RADIUS      = 3
+    _SWATCH_SIZE   = 18
+    _RADIUS        = 3
+    _BORDER_WIDTH  = 1
 
     def __init__(self, color, name, in_use=False, selected=False, parent=None):
         super().__init__(parent)
@@ -352,15 +353,21 @@ class ColorSwatchButton(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        alpha   = 110 if self._in_use else 255
-        color   = QColor(*self._color, alpha)
-        outline = (QColor(Colors.ACCENT) if (self._selected or self._hovered)
-                   else QColor(Colors.TEXT_SECONDARY))
-        radius  = scaled(self._RADIUS)
+        radius = scaled(self._RADIUS)
+        rect   = self.rect().adjusted(
+            self._BORDER_WIDTH, self._BORDER_WIDTH,
+            -self._BORDER_WIDTH, -self._BORDER_WIDTH,
+        )
 
-        painter.setPen(QPen(QColor(Colors.ACCENT), 1) if self._hovered else Qt.NoPen)
-        painter.setBrush(color)
-        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), radius, radius)
+        if self._hovered:
+            painter.setPen(QPen(QColor(Colors.ACCENT), self._BORDER_WIDTH))
+        elif not self._in_use:
+            painter.setPen(QPen(QColor("white"), self._BORDER_WIDTH))
+        else:
+            painter.setPen(Qt.NoPen)
+
+        painter.setBrush(QColor(*self._color))
+        painter.drawRoundedRect(rect, radius, radius)
         painter.end()
 
     def enterEvent(self, event):
