@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QTimer
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
@@ -123,8 +123,8 @@ class ClickableLabel(QLabel):
         drag.setMimeData(mime)
         drag.setPixmap(self.thumbnail_pixmap)
         drag.setHotSpot(QPoint(self.thumbnail_pixmap.width()  // 2,
-                               self.thumbnail_pixmap.height() // 2))
-        drag.exec_(Qt.CopyAction)
+                            self.thumbnail_pixmap.height() // 2))
+        QTimer.singleShot(0, lambda: drag.exec_(Qt.CopyAction))
 
     def set_scene_data(self, scene_id, pixmap):
         self.scene_id         = scene_id
