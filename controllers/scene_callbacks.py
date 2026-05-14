@@ -34,8 +34,9 @@ def on_scene_load_complete(load_result, scene_id, model, view):
             load_result['homography_matrix']
         )
 
-    _set_band_names(load_result, view)
-    view.set_instrument_presets(load_result.get('instrument', 'ZCAM'))
+    instrument = load_result.get('instrument', 'ZCAM')
+    _set_band_names(load_result, view, instrument)
+    view.set_instrument_presets(instrument)
     view.panel_image_editing.set_rois([], [], [])
     view.panel_spectral_view.clear_roi_spectra()
     view.panel_spectral_view.clear_plot()
@@ -49,25 +50,24 @@ def on_scene_load_error(error_msg, view):
     view.enable_presets(False)
 
 
-def _set_band_names(load_result, view):
+def _set_band_names(load_result, view, instrument):
+    from views.view import INSTRUMENT_PRESETS
+
     base_bands = load_result.get('base_bands', {})
     band_names = list(base_bands.keys())
     if not band_names:
         return
 
-    instrument  = load_result.get('instrument', 'ZCAM')
     right_bands = [b for b in band_names if b.startswith('R')] or band_names
     left_bands  = [b for b in band_names if b.startswith('L')] or band_names
 
-    if instrument == 'ZCAM':
-        r_r, g_r, b_r = 'R0R', 'R0G', 'R0B'
-        r_l, g_l, b_l = 'L0R', 'L0G', 'L0B'
-    else:
-        r_r, g_r, b_r = 'R2', 'R1', 'R1'
-        r_l, g_l, b_l = 'L2', 'L5', 'L6'
+    # Pull default RGB band names from INSTRUMENT_PRESETS - single source of truth.
+    presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
+    right   = presets['right']['RGB']
+    left    = presets['left']['RGB']
 
     view.panel_image_editing.set_band_names(
         right_bands, left_bands,
-        r_r, g_r, b_r,
-        r_l, g_l, b_l,
+        right['r'], right['g'], right['b'],
+        left['r'],  left['g'],  left['b'],
     )

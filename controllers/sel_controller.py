@@ -1,7 +1,36 @@
 """SEL file export and import."""
 
+import traceback
+from pathlib import Path
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import numpy as np
+from marslab.imgops.imgutils import enhance_color
+from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 from PyQt5.QtWidgets import QFileDialog
+from sparc.visualization.plotting import plot_spectra_with_error
+from sparc.utils.sel_writer import (
+    export_sel as _write_sel,
+    read_sel,
+    filenames_from_load_result,
+)
+from utils.converters import hex_to_rgb
+
+# RGB and DCS band triplets per instrument and camera side.
+# Mirrors INSTRUMENT_PRESETS in view.py - kept here to avoid a circular import.
+_EXPORT_BAND_SETS = {
+    'ZCAM': {
+        'right': {'RGB': ('R0R', 'R0G', 'R0B'), 'DCS': ('R6',  'R3',  'R1')},
+        'left':  {'RGB': ('L0R', 'L0G', 'L0B'), 'DCS': ('L2',  'L5',  'L6')},
+    },
+    'PCAM': {
+        'right': {'RGB': ('R2', 'R1', 'R1'), 'DCS': ('R2', 'R1', 'R1')},
+        'left':  {'RGB': ('L2', 'L5', 'L6'), 'DCS': ('L2', 'L5', 'L6')},
+    },
+}
 
 
 def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
@@ -23,21 +52,17 @@ def export_sel(view, model, rois_data, color_names, color_manager, output_path=N
         return
 
     try:
-        from sparc.utils.sel_writer import export_sel as _write_sel, filenames_from_load_result
-
         instrument = load_result.get('instrument', 'ZCAM').strip().upper()
         n_rois     = len(rois_data)
-        right_rois = np.array([r['right_rect']                    for r in rois_data], dtype=np.int32)
+        right_rois = np.array([r['right_rect']                     for r in rois_data], dtype=np.int32)
         left_rois  = np.array([r.get('left_rect', r['right_rect']) for r in rois_data], dtype=np.int32)
 
         col_off, row_off, full_H, full_W = _sensor_offsets(load_result, instrument)
-
         if col_off or row_off:
             right_rois = right_rois.copy(); right_rois[:, 0] += col_off; right_rois[:, 1] += row_off
             left_rois  = left_rois.copy();  left_rois[:, 0]  += col_off; left_rois[:, 1]  += row_off
 
-        # Use each color's MERSpect index as the label so ROI colors round-trip
-        # correctly when the .sel file is opened in MERSpect.
+        # Use each ROI's MERSpect color index so colors round-trip correctly in MERSpect.
         label_ids = [color_manager.merspect_index(name) for name in color_names]
 
         left_names, right_names = filenames_from_load_result(load_result, n_rois)
@@ -55,7 +80,7 @@ def export_sel(view, model, rois_data, color_names, color_manager, output_path=N
 
     except Exception as e:
         view.show_status_message(f"Export failed: {e}")
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
 
 
 def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, color_manager):
@@ -72,9 +97,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
         return None
 
     try:
-        from sparc.utils.sel_writer import read_sel
-
-        instrument              = load_result.get('instrument', 'ZCAM').strip().upper()
+        instrument               = load_result.get('instrument', 'ZCAM').strip().upper()
         right_rois, left_rois, label_ids = read_sel(path, instrument)
 
         col_off, row_off, _, _ = _sensor_offsets(load_result, instrument)
@@ -82,32 +105,26 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
             right_rois = right_rois.copy(); right_rois[:, 0] -= col_off; right_rois[:, 1] -= row_off
             left_rois  = left_rois.copy();  left_rois[:, 0]  -= col_off; left_rois[:, 1]  -= row_off
 
-        # Map MERSpect label indices back to color names, falling back to
-        # sequential palette assignment for any unrecognised label.
         index_to_name = {v: k for k, v in color_manager._merspect_indices.items()}
 
-        rois_data   = []
-        colors      = []
-        color_names = []
+        rois_data, colors, color_names = [], [], []
 
         for i, (right_rect, left_rect) in enumerate(zip(right_rois, left_rois)):
             right_rect = tuple(int(v) for v in right_rect)
             left_rect  = tuple(int(v) for v in left_rect)
 
-            if has_dual_cubes:
-                spec_data = sparc_controller.update_roi_spectrum_dual(
+            spec_data = (
+                sparc_controller.update_roi_spectrum_dual(
                     load_result, left_rect, right_rect, instrument_config
-                )
-            else:
-                spec_data = sparc_controller.update_roi_spectrum(
+                ) if has_dual_cubes else
+                sparc_controller.update_roi_spectrum(
                     load_result['cube'], right_rect, instrument_config
                 )
+            )
 
-            label    = label_ids[i] if i < len(label_ids) else None
-            name     = index_to_name.get(label)
+            label = label_ids[i] if i < len(label_ids) else None
+            name  = index_to_name.get(label)
             if name and name in color_manager._merspect_indices:
-                from utils.converters import hex_to_rgb
-                from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
                 color = hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[name])
             else:
                 color, name = color_manager.next()
@@ -129,8 +146,130 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
 
     except Exception as e:
         view.show_status_message(f"Load SEL failed: {e}")
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return None
+
+
+def export_context(view, model, rois_data, colors, color_names, color_manager):
+    """Export a context folder: SEL file + four annotated images + spectra plot."""
+    if not rois_data:
+        view.show_status_message("No ROIs to export.")
+        return
+
+    load_result = model.sparc_load_result
+    if load_result is None:
+        view.show_status_message("No scene loaded - cannot export context.")
+        return
+
+    scene_id   = load_result.get('id', 'scene')
+    output_dir, _ = QFileDialog.getSaveFileName(
+        view, "Export Context Folder", scene_id, ""
+    )
+    if not output_dir:
+        return
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        instrument  = load_result.get('instrument', 'ZCAM').strip().upper()
+        base_bands  = load_result.get('base_bands', {})
+        band_sets   = _EXPORT_BAND_SETS.get(instrument, _EXPORT_BAND_SETS['ZCAM'])
+        mpl_colors  = [tuple(c / 255.0 for c in color) for color in colors]
+        right_rects = [r['roi']       for r in rois_data]
+        left_rects  = [r['left_rect'] for r in rois_data]
+
+        export_sel(view, model, rois_data, color_names, color_manager,
+                   output_path=str(output_path / f"{scene_id}.sel"))
+
+        for camera, mode, rects, label in (
+            ('right', 'RGB', right_rects, 'right_rgb'),
+            ('left',  'RGB', left_rects,  'left_rgb'),
+            ('right', 'DCS', right_rects, 'right_dcs'),
+            ('left',  'DCS', left_rects,  'left_dcs'),
+        ):
+            arr = _render_bands(*band_sets[camera][mode], base_bands, dcs=(mode == 'DCS'))
+            if arr is not None:
+                _save_annotated(arr, rects, mpl_colors, output_path / f"{scene_id}_{label}.png")
+
+        spectra = np.array([r['spectrum'] for r in rois_data])
+        stds    = np.array([r['std']      for r in rois_data])
+        wls     = rois_data[0]['wavelengths']
+
+        fig = plot_spectra_with_error(spectra, stds, wavelengths=wls, colors=mpl_colors, show=False)
+        fig.savefig(output_path / f"{scene_id}_spectra.png", bbox_inches='tight', dpi=150)
+        plt.close(fig)
+
+        view.show_status_message(f"Context exported to {output_path}")
+
+    except Exception as e:
+        view.show_status_message(f"Context export failed: {e}")
+        traceback.print_exc()
+
+
+def _render_bands(r_name, g_name, b_name, base_bands, dcs):
+    """Render three named bands to a uint8 (H, W, 3) numpy array."""
+    if not all(k in base_bands for k in (r_name, g_name, b_name)):
+        return None
+
+    def clean(name):
+        arr = base_bands[name].astype(np.float32)
+        return np.where(np.isfinite(arr), arr, np.nan)
+
+    r, g, b = clean(r_name), clean(g_name), clean(b_name)
+
+    if not dcs:
+        rgb    = np.stack([r, g, b], axis=-1)
+        result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
+        return (np.ma.filled(result, 0) * 255).astype(np.uint8)
+
+    # Decorrelation stretch - eigenspace rotation per Gillespie et al. 1986.
+    H, W    = r.shape
+    invalid = ~np.isfinite(r) | ~np.isfinite(g) | ~np.isfinite(b)
+    r = np.where(invalid, 0.0, r).astype(np.float32)
+    g = np.where(invalid, 0.0, g).astype(np.float32)
+    b = np.where(invalid, 0.0, b).astype(np.float32)
+
+    vecs  = np.stack([r, g, b], axis=-1).reshape(-1, 3)
+    valid = vecs[~invalid.ravel()]
+    if valid.shape[0] < 4:
+        return np.zeros((H, W, 3), dtype=np.uint8)
+
+    cov        = np.cov(valid.T).astype(np.float32)
+    eigvals, V = np.linalg.eig(cov)
+    T          = (V @ np.diag(1.0 / np.sqrt(np.abs(eigvals))) @ V.T).astype(np.float32)
+    means      = valid.mean(axis=0)
+    dcs_arr    = ((vecs - means) @ T + means + (means - means @ T)).reshape(H, W, 3)
+
+    result   = np.zeros((H, W, 3), dtype=np.float32)
+    valid_2d = ~invalid
+    for c in range(3):
+        ch     = dcs_arr[:, :, c]
+        v      = ch[valid_2d]
+        if v.size == 0:
+            continue
+        lo, hi = np.percentile(v, [0.5, 99.5])
+        result[:, :, c] = np.clip((ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0)
+    result[invalid] = 0.0
+    return (result * 255).astype(np.uint8)
+
+
+def _save_annotated(arr, rects, mpl_colors, filepath):
+    """Save a uint8 RGB array with colored ROI rectangles overlaid."""
+    fig, ax = plt.subplots(figsize=(12, 9), dpi=150)
+    fig.patch.set_facecolor('black')
+    ax.set_facecolor('black')
+    ax.imshow(arr)
+    ax.axis('off')
+    for i, (x, y, w, h) in enumerate(rects):
+        ax.add_patch(mpatches.Rectangle(
+            (x, y), w, h,
+            linewidth=1.5,
+            edgecolor=mpl_colors[i % len(mpl_colors)],
+            facecolor='none',
+        ))
+    fig.savefig(filepath, bbox_inches='tight', pad_inches=0, dpi=150)
+    plt.close(fig)
 
 
 def _sensor_offsets(load_result, instrument):
@@ -146,170 +285,3 @@ def _sensor_offsets(load_result, instrument):
 
     h, w = load_result['rgb_img'].shape[:2]
     return 0, 0, h, w
-
-
-def export_context(view, model, rois_data, colors, color_names, color_manager):
-    """Export a context folder containing the SEL file and five annotated images."""
-    if not rois_data:
-        view.show_status_message("No ROIs to export.")
-        return
-
-    load_result = model.sparc_load_result
-    if load_result is None:
-        view.show_status_message("No scene loaded - cannot export context.")
-        return
-
-    from pathlib import Path
-    from PyQt5.QtWidgets import QFileDialog
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    import numpy as np
-    from marslab.imgops.imgutils import enhance_color
-
-    scene_id   = load_result.get('id', 'scene')
-    output_dir, _ = QFileDialog.getSaveFileName(
-        view, "Export Context Folder", scene_id, ""
-    )
-    if not output_dir:
-        return
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    try:
-        instrument = load_result.get('instrument', 'ZCAM').strip().upper()
-        base_bands = load_result.get('base_bands', {})
-
-        _BAND_SETS = {
-            'ZCAM': {
-                'right': {
-                    'RGB': ('R0R', 'R0G', 'R0B'),
-                    'DCS': ('R6',  'R3',  'R1'),
-                },
-                'left': {
-                    'RGB': ('L0R', 'L0G', 'L0B'),
-                    'DCS': ('L2',  'L5',  'L6'),
-                },
-            },
-            'PCAM': {
-                'right': {
-                    'RGB': ('R2', 'R1', 'R1'),
-                    'DCS': ('R2', 'R1', 'R1'),
-                },
-                'left': {
-                    'RGB': ('L2', 'L5', 'L6'),
-                    'DCS': ('L2', 'L5', 'L6'),
-                },
-            },
-        }
-        band_sets  = _BAND_SETS.get(instrument, _BAND_SETS['ZCAM'])
-        mpl_colors = [tuple(c / 255.0 for c in color) for color in colors]
-
-        def get_band(name):
-            """Return a clean float32 array for a band, masking invalid values."""
-            arr = base_bands[name].astype(np.float32)
-            return np.where(np.isfinite(arr), arr, np.nan)
-
-        def render_to_numpy(r_name, g_name, b_name, dcs):
-            """Render three bands to a uint8 (H, W, 3) numpy array."""
-            if not all(k in base_bands for k in (r_name, g_name, b_name)):
-                return None
-            r, g, b = get_band(r_name), get_band(g_name), get_band(b_name)
-
-            if not dcs:
-                rgb    = np.stack([r, g, b], axis=-1)
-                result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
-                return (np.ma.filled(result, 0) * 255).astype(np.uint8)
-
-            # Decorrelation stretch - replicate _dcs_pixmap logic as pure numpy.
-            H, W    = r.shape
-            invalid = ~np.isfinite(r) | ~np.isfinite(g) | ~np.isfinite(b)
-            r = np.where(invalid, 0.0, r).astype(np.float32)
-            g = np.where(invalid, 0.0, g).astype(np.float32)
-            b = np.where(invalid, 0.0, b).astype(np.float32)
-
-            vecs  = np.stack([r, g, b], axis=-1).reshape(-1, 3)
-            valid = vecs[~invalid.ravel()]
-            if valid.shape[0] < 4:
-                return np.zeros((H, W, 3), dtype=np.uint8)
-
-            cov        = np.cov(valid.T).astype(np.float32)
-            eigvals, V = np.linalg.eig(cov)
-            T          = (V @ np.diag(1.0 / np.sqrt(np.abs(eigvals))) @ V.T).astype(np.float32)
-            means      = valid.mean(axis=0)
-            dcs_arr    = ((vecs - means) @ T + means + (means - means @ T)).reshape(H, W, 3)
-
-            result   = np.zeros((H, W, 3), dtype=np.float32)
-            valid_2d = ~invalid
-            for c in range(3):
-                ch     = dcs_arr[:, :, c]
-                v      = ch[valid_2d]
-                if v.size == 0:
-                    continue
-                lo, hi = np.percentile(v, [0.5, 99.5])
-                result[:, :, c] = np.clip((ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0)
-            result[invalid] = 0.0
-            return (result * 255).astype(np.uint8)
-
-        def save_annotated(arr, rects, filepath):
-            """Save a uint8 RGB array with ROI rectangles overlaid."""
-            fig, ax = plt.subplots(figsize=(12, 9), dpi=150)
-            fig.patch.set_facecolor('black')
-            ax.set_facecolor('black')
-            ax.imshow(arr)
-            ax.axis('off')
-            for i, (x, y, w, h) in enumerate(rects):
-                ax.add_patch(mpatches.Rectangle(
-                    (x, y), w, h,
-                    linewidth=1.5,
-                    edgecolor=mpl_colors[i % len(mpl_colors)],
-                    facecolor='none',
-                ))
-            fig.savefig(filepath, bbox_inches='tight', pad_inches=0, dpi=150)
-            plt.close(fig)
-
-        # Right ROIs are roi['roi'], left ROIs are roi['left_rect'].
-        right_rects = [(r['roi'])       for r in rois_data]
-        left_rects  = [(r['left_rect']) for r in rois_data]
-
-        # SEL file
-        export_sel(view, model, rois_data, color_names, color_manager,
-                   output_path=str(output_path / f"{scene_id}.sel"))
-
-        # Four annotated images
-        for camera, label, rects in (
-            ('right', 'right_rgb', right_rects),
-            ('left',  'left_rgb',  left_rects),
-            ('right', 'right_dcs', right_rects),
-            ('left',  'left_dcs',  left_rects),
-        ):
-            mode = 'DCS' if 'dcs' in label else 'RGB'
-            r, g, b = band_sets[camera][mode]
-            arr = render_to_numpy(r, g, b, dcs=(mode == 'DCS'))
-            if arr is not None:
-                save_annotated(arr, rects, output_path / f"{scene_id}_{label}.png")
-
-        # Spectra plot
-        from sparc.visualization.plotting import plot_spectra_with_error
-
-        spectra = np.array([r['spectrum'] for r in rois_data])
-        stds    = np.array([r['std']      for r in rois_data])
-        wls     = rois_data[0]['wavelengths']
-
-        fig = plot_spectra_with_error(
-            spectra, stds,
-            wavelengths = wls,
-            colors      = mpl_colors,
-            show        = False,
-        )
-        fig.savefig(output_path / f"{scene_id}_spectra.png",
-                    bbox_inches='tight', dpi=150)
-        plt.close(fig)
-
-        view.show_status_message(f"Context exported to {output_path}")
-
-    except Exception as e:
-        view.show_status_message(f"Context export failed: {e}")
-        import traceback; traceback.print_exc()
