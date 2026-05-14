@@ -6,11 +6,10 @@ from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap, QFontMetrics, 
 from colors import Colors
 from utils.paths import _resource_path
 from utils.scale import Scale, physical, scaled, scaled_font
-from ..canvas import CanvasContainer, DualCanvasContainer
+from ..canvas import DualCanvasContainer
 from ..widgets import ToolbarButton, LoadingIndicator, BandComboBox, ColorSwatchGrid
 from .stretch_bar import StretchBar
 
-_OVERLAY_BG      = QColor(40, 40, 40, 180)
 _CURSOR_NATIVE_W = 32
 
 
