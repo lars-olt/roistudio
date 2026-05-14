@@ -1,37 +1,34 @@
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QFileDialog
 
+from workers.scene_scanner import SceneScanThread
+from workers.scene_loader import SceneLoadThread
+
 
 class SceneController(QObject):
     """Handles scene scanning and loading operations."""
 
     scan_started = pyqtSignal()
     scan_stopped = pyqtSignal()
-    # Added instrument (str) to scene_found signature
-    scene_found = pyqtSignal(str, object, str, str, object, int, str)
+    scene_found  = pyqtSignal(str, object, str, str, object, int, str)
     scan_complete = pyqtSignal(int)
-    scan_error = pyqtSignal(str)
+    scan_error    = pyqtSignal(str)
 
-    load_started = pyqtSignal()
-    load_stopped = pyqtSignal()
+    load_started  = pyqtSignal()
+    load_stopped  = pyqtSignal()
     load_complete = pyqtSignal(object)
-    load_error = pyqtSignal(str)
+    load_error    = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
         self._scan_thread = None
         self._load_thread = None
-        # Cache now stores (folder_path, seq_id, obs_ix, instrument)
-        self._scene_cache = {}
+        self._scene_cache = {}  # scene_id -> (folder_path, seq_id, obs_ix, instrument)
 
     def open_folder_dialog(self, parent):
-        """Opens folder selection dialog."""
         return QFileDialog.getExistingDirectory(parent, "Select IOF Data Folder", "")
 
     def start_scan(self, folder_path):
-        """Starts background scene scanning."""
-        from workers.scene_scanner import SceneScanThread
-
         if self._scan_thread is not None and self._scan_thread.isRunning():
             self._scan_thread.quit()
             self._scan_thread.wait()
@@ -47,13 +44,10 @@ class SceneController(QObject):
         self.scan_started.emit()
 
     def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
-        """Caches scene info (including instrument) and forwards signal."""
         self._scene_cache[scene_id] = (folder_path, seq_id, obs_ix, instrument)
         self.scene_found.emit(scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument)
 
     def start_load(self, scene_id):
-        from workers.scene_loader import SceneLoadThread
-
         if scene_id not in self._scene_cache:
             self.load_error.emit(f"Scene {scene_id} not found in cache")
             return None
@@ -74,9 +68,8 @@ class SceneController(QObject):
         return scene_id
 
     def get_scene_info(self, scene_id):
-        """Returns cached scene info as (folder_path, seq_id, obs_ix, instrument)."""
+        """Return cached scene info as (folder_path, seq_id, obs_ix, instrument)."""
         return self._scene_cache.get(scene_id)
 
     def clear_cache(self):
-        """Clears scene cache."""
         self._scene_cache.clear()

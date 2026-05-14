@@ -1,5 +1,7 @@
-from PyQt5.QtCore import QObject, pyqtSignal
 import numpy as np
+from PyQt5.QtCore import QObject, pyqtSignal
+
+from workers.sparc_runner import SparcRunThread
 
 
 class SparcController(QObject):
@@ -17,7 +19,6 @@ class SparcController(QObject):
 
     def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument,
                     params=None, load_result=None):
-        from workers.sparc_runner import SparcRunThread
         self._sparc_thread = SparcRunThread(
             sam_path, folder_path, seq_id, obs_ix, instrument, params, load_result
         )
@@ -49,9 +50,9 @@ class SparcController(QObject):
         Compute merged and per-camera spectra from the band recipe.
 
         Returns:
-            merged:  (spectrum, std) - stereo bands averaged, shape (n_bands,)
-            left:    (spectrum, std, wavelengths) - all left-camera bands incl. stereo
-            right:   (spectrum, std, wavelengths) - all right-camera bands incl. stereo
+            merged: (spectrum, std) - stereo bands averaged, shape (n_bands,)
+            left:   (spectrum, std, wavelengths) - all left-camera bands incl. stereo
+            right:  (spectrum, std, wavelengths) - all right-camera bands incl. stereo
         """
         recipe     = load_result['merged_band_recipe']
         left_keys  = load_result['left_band_keys']
@@ -66,8 +67,7 @@ class SparcController(QObject):
 
         merged_spec = np.empty(len(recipe))
         merged_std  = np.empty(len(recipe))
-
-        left_bands  = []   # (wavelength, value, std)
+        left_bands  = []  # (wavelength, value, std)
         right_bands = []
 
         for i, (source, _name, l_key, r_key) in enumerate(recipe):
@@ -208,7 +208,7 @@ class SparcController(QObject):
                 'bayer_spectrum':    bspec,
                 'bayer_std':         bstd,
                 'bayer_wavelengths': bwls,
-                # per-camera fields populated after recompute in _on_sparc_complete
+                # per-camera fields populated after recompute in on_sparc_complete
                 'left_spectrum':     [],
                 'left_std':          [],
                 'left_wavelengths':  [],

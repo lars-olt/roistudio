@@ -1,11 +1,13 @@
 """Color palette management for ROI display."""
 
 from collections import deque
+
+from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 from utils.converters import hex_to_rgb
 
 
 class ColorManager:
-    """Hands out colors from the merspect palette using a priority-ordered deque.
+    """Hands out colors from the MERSpect palette using a priority-ordered deque.
 
     The deque is built with preferred colors first, remainder after. On recycle,
     a color is only re-added if not already present - preferred colors go to the
@@ -13,7 +15,7 @@ class ColorManager:
     """
 
     def __init__(self, instrument):
-        self._palette          = []   # (color, name) for the full palette
+        self._palette          = []
         self._name_palette     = []
         self._merspect_indices = {}
         self._preferred_set    = set()
@@ -22,9 +24,6 @@ class ColorManager:
         self._init_palette(instrument)
 
     def _init_palette(self, instrument):
-        from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
-        from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
-
         merspect_order = [
             'eraser', 'green', 'yellow', 'blue', 'red', 'magenta', 'cyan',
             'orange', 'azure', 'purple', 'lime', 'rust',
@@ -32,7 +31,7 @@ class ColorManager:
             'blue-2', 'red+2', 'red-1', 'red-2', 'magenta+2', 'magenta+1',
             'magenta-1', 'magenta-2', 'magenta-3', 'cyan+2', 'cyan+1', 'cyan-1',
             'cyan-2', 'cyan-3', 'orange+2', 'orange+1', 'orange-1', 'orange-2',
-            'orange-3', 'azure+2', 'azure+1'
+            'orange-3', 'azure+2', 'azure+1',
         ]
         self._merspect_indices = {k: i for i, k in enumerate(merspect_order)}
 
@@ -78,7 +77,7 @@ class ColorManager:
         """Pop and return the next (color, name) pair from the front of the deque."""
         if self._deque:
             return self._deque.popleft()
-        # all colors exhausted - wrap around with the full palette
+        # All colors exhausted - wrap around with the full palette.
         self._rebuild_deque()
         return self._deque.popleft() if self._deque else (self._palette[0], self._name_palette[0])
 

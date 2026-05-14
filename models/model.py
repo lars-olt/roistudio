@@ -2,24 +2,22 @@ import numpy as np
 from PyQt5.QtCore import QObject, pyqtSignal
 
 
-# Internal instrument selection. Change this to switch between instruments.
-# Will be replaced by a GUI dropdown in a future update.
-INSTRUMENT = "ZCAM"  # Options: "ZCAM", "PCAM"
+INSTRUMENT = "ZCAM"  # options: "ZCAM", "PCAM"
 
 
 class Model(QObject):
-    """Manages all data for ROIStudio."""
+    """Manages all application data for ROIStudio."""
 
     data_changed = pyqtSignal()
     scene_loaded = pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
-        self._spec_data = np.array([])
-        self._roi_data = []
+        self._spec_data         = np.array([])
+        self._roi_data          = []
         self._sparc_load_result = None
-        self._iof_folder_path = None
-        self._instrument = INSTRUMENT
+        self._iof_folder_path   = None
+        self._instrument        = INSTRUMENT
 
     @property
     def instrument(self):
@@ -56,7 +54,7 @@ class Model(QObject):
     def sparc_load_result(self, result):
         self._sparc_load_result = result
         if result is not None:
-            # Keep instrument in sync with what was actually loaded
+            # Keep instrument in sync with what was actually loaded.
             if isinstance(result, dict) and 'instrument' in result:
                 self._instrument = result['instrument']
             self.scene_loaded.emit(result)

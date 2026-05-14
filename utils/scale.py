@@ -16,6 +16,7 @@ devicePixelRatio when rendering. Two scale factors handle the two cases:
 """
 
 from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtGui import QFont, QFontMetrics
 from PyQt5.QtWidgets import QApplication
 
 
@@ -85,12 +86,12 @@ Scale = _ScaleManager()
 
 
 def physical(value: float) -> int:
-    """Fixed widget dimension — pre-divided by DPR, user-step-scaled."""
+    """Fixed widget dimension - pre-divided by DPR, user-step-scaled."""
     return max(1, round(value * Scale.physical_factor / _dpr()))
 
 
 def scaled(value: float) -> int:
-    """Logical layout value — layout-factor-scaled, no DPR division."""
+    """Logical layout value - layout-factor-scaled, no DPR division."""
     return max(1, round(value * Scale.factor))
 
 
@@ -101,7 +102,6 @@ def scaled_font(pt: float) -> int:
 
 def bar_height() -> int:
     """Height of the stretch bar and zoom indicator - derived from the scaled font."""
-    from PyQt5.QtGui import QFont, QFontMetrics
     font = QFont()
     font.setPointSize(scaled_font(9))
     return QFontMetrics(font).height() + scaled(6) + 2 * scaled(5)

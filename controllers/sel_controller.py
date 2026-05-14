@@ -8,6 +8,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
+from asdf_settings import rapidlooks
 from marslab.imgops.imgutils import enhance_color
 from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 from PyQt5.QtWidgets import QFileDialog
@@ -275,10 +276,9 @@ def _save_annotated(arr, rects, mpl_colors, filepath):
 def _sensor_offsets(load_result, instrument):
     """Return (col_off, row_off, full_H, full_W) for converting between cropped and sensor coords."""
     if instrument in {'ZCAM', 'MCZ'}:
-        from asdf_settings import rapidlooks
-        crop     = rapidlooks.CROP_SETTINGS["crop"]
-        col_off  = int(crop[0])
-        row_off  = int(crop[2])
+        crop    = rapidlooks.CROP_SETTINGS["crop"]
+        col_off = int(crop[0])
+        row_off = int(crop[2])
         raw_band = next(iter(load_result["base_bands"].values()))
         ch, cw   = raw_band.shape
         return col_off, row_off, ch + crop[2] + crop[3], cw + crop[0] + crop[1]

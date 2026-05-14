@@ -31,18 +31,18 @@ from views import View
 from controllers import Controller
 from colors import Colors
 from utils.paths import _resource_path
+from utils.scale import Scale, scaled_font
 
 
 def _make_app_icon():
     icon = QIcon()
-    icon.addFile(_resource_path("graphics/logo/logo.png"),  QSize(500,  500))
+    icon.addFile(_resource_path("graphics/logo/logo.png"),    QSize(500,  500))
     icon.addFile(_resource_path("graphics/logo/logo@2x.png"), QSize(1000, 1000))
     icon.addFile(_resource_path("graphics/logo/logo@3x.png"), QSize(1500, 1500))
     return icon
 
 
 def _set_app_font(_factor=None):
-    from utils.scale import scaled_font
     QApplication.instance().setFont(QFont("Segoe UI", scaled_font(9)))
 
 
@@ -54,9 +54,7 @@ if __name__ == '__main__':
     app.setStyle("Fusion")
     app.setWindowIcon(_make_app_icon())
 
-    from utils.scale import Scale
     Scale.init()
-
     _set_app_font()
     Scale.changed.connect(_set_app_font)
 
@@ -73,9 +71,9 @@ if __name__ == '__main__':
     palette.setColor(QPalette.BrightText,      Qt.red)
     palette.setColor(QPalette.Link,            QColor(Colors.ACCENT))
     palette.setColor(QPalette.Highlight,       QColor(Colors.ACCENT))
-    palette.setColor(QPalette.Disabled, QPalette.Text,        QColor(Colors.TEXT_DISABLED))
-    palette.setColor(QPalette.Disabled, QPalette.ButtonText,  QColor(Colors.TEXT_DISABLED))
-    palette.setColor(QPalette.Disabled, QPalette.WindowText,  QColor(Colors.TEXT_DISABLED))
+    palette.setColor(QPalette.Disabled, QPalette.Text,       QColor(Colors.TEXT_DISABLED))
+    palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(Colors.TEXT_DISABLED))
+    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(Colors.TEXT_DISABLED))
     palette.setColor(QPalette.HighlightedText, Qt.white)
     app.setPalette(palette)
 
@@ -89,12 +87,13 @@ if __name__ == '__main__':
     QShortcut(QKeySequence(Qt.CTRL + Qt.Key_Minus), view).activated.connect(Scale.step_down)
     QShortcut(QKeySequence(Qt.CTRL + Qt.Key_0),     view).activated.connect(Scale.reset)
 
-    QShortcut(QKeySequence(Qt.Key_S),               view).activated.connect(
+    QShortcut(QKeySequence(Qt.Key_S),           view).activated.connect(
         lambda: view.action_sync_views.trigger()
     )
-    QShortcut(QKeySequence(Qt.CTRL + Qt.Key_S),     view).activated.connect(
+    QShortcut(QKeySequence(Qt.CTRL + Qt.Key_S), view).activated.connect(
         view.export_sel_signal.emit
     )
+
     shortcut_v = QShortcut(QKeySequence(Qt.Key_V), view)
     shortcut_v.setContext(Qt.ApplicationShortcut)
     shortcut_v.activated.connect(lambda: view.panel_image_editing.select_tool("selection"))
