@@ -118,6 +118,8 @@ class Controller(QObject):
     def _open_iof_folder(self):
         folder_path = self.scene_controller.open_folder_dialog(self._view)
         if folder_path:
+            import os
+            folder_path = os.path.normpath(os.path.expanduser(folder_path))
             self._model.iof_folder_path = folder_path
             self._view.clear_thumbnails()
             self.scene_controller.clear_cache()
