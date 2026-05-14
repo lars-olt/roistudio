@@ -72,6 +72,7 @@ class Controller(QObject):
         self._view.open_folder_signal.connect(self._open_iof_folder)
         self._view.export_sel_signal.connect(self._export_sel)
         self._view.load_sel_signal.connect(self._load_sel)
+        self._view.export_context_signal.connect(self._export_context)
         self._view.scene_dropped_signal.connect(self._load_scene_by_id)
         self._view.run_algorithm_signal.connect(self._run_algorithm)
         self._view.scene_double_clicked_signal.connect(self._load_scene_by_id)
@@ -212,7 +213,7 @@ class Controller(QObject):
             self._current_colors.append(color)
             self._current_color_names.append(name)
             self._update_roi_view()
-            self._view.action_export_sel.setEnabled(True)
+            self._view.set_export_enabled(True)
             self._view.show_status_message("ROI created")
         except Exception as e:
             self._view.show_status_message(f"Error creating ROI: {e}")
@@ -226,7 +227,7 @@ class Controller(QObject):
             self.color_manager.recycle(color, name)
             self._current_rois_data.pop(roi_index)
             self._update_roi_view()
-            self._view.action_export_sel.setEnabled(bool(self._current_rois_data))
+            self._view.set_export_enabled(bool(self._current_rois_data))
             self._view.show_status_message(f"ROI {roi_index + 1} deleted")
         except Exception as e:
             self._view.show_status_message(f"Error deleting ROI: {e}")
@@ -310,6 +311,15 @@ class Controller(QObject):
             self.color_manager,
         )
 
+    def _export_context(self):
+        sel_controller.export_context(
+            self._view, self._model,
+            self._current_rois_data,
+            self._current_colors,
+            self._current_color_names,
+            self.color_manager,
+        )
+
     def _load_sel(self):
         outcome = sel_controller.load_sel(
             self._view, self._model,
@@ -323,7 +333,7 @@ class Controller(QObject):
 
         self._current_rois_data, self._current_colors, self._current_color_names = outcome
         self._update_roi_view()
-        self._view.action_export_sel.setEnabled(True)
+        self._view.set_export_enabled(True)
 
     # ------------------------------------------------------------------
     # Hover preview

@@ -45,7 +45,8 @@ class View(QWidget):
     set_sam_path_signal         = pyqtSignal()
     open_folder_signal          = pyqtSignal()
     load_sel_signal = pyqtSignal()
-    export_sel_signal           = pyqtSignal()
+    export_sel_signal             = pyqtSignal()
+    export_context_signal         = pyqtSignal()
     run_algorithm_signal        = pyqtSignal()
     scene_dropped_signal        = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
@@ -153,6 +154,11 @@ class View(QWidget):
         self.action_export_sel.triggered.connect(self.export_sel_signal.emit)
         self.action_export_sel.setEnabled(False)
         self.menu_file.addAction(self.action_export_sel)
+
+        self.action_export_context = QAction("Export context", self)
+        self.action_export_context.triggered.connect(self.export_context_signal.emit)
+        self.action_export_context.setEnabled(False)
+        self.menu_file.addAction(self.action_export_context)
 
         self.menu_view = QMenu("View", self.menubar)
         self.menubar.addMenu(self.menu_view)
@@ -318,6 +324,11 @@ class View(QWidget):
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    def set_export_enabled(self, enabled: bool):
+        """Enable or disable both export actions together."""
+        self.action_export_sel.setEnabled(enabled)
+        self.action_export_context.setEnabled(enabled)
 
     def enable_presets(self, enabled: bool):
         for action, _ in self._preset_actions:

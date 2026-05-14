@@ -66,7 +66,7 @@ def on_sparc_complete(result, model, view, sparc_controller, color_manager):
 
     view.panel_image_editing.set_rois(rois_data, colors, names)
     view.panel_spectral_view.plot_roi_spectra(rois_data, colors)
-    view.action_export_sel.setEnabled(True)
+    view.set_export_enabled(True)
     view.stop_loading()
     view.show_status_message(f"SPARC complete: {len(result.final_rois)} ROIs found")
 

@@ -19,7 +19,7 @@ def on_scene_load_complete(load_result, scene_id, model, view):
     """Update model and view after a scene has finished loading."""
     model.sparc_load_result = load_result
 
-    view.action_export_sel.setEnabled(False)
+    view.set_export_enabled(False)
     view.action_load_sel.setEnabled(True)
     view.select_scene(scene_id)
     view.enable_presets(True)

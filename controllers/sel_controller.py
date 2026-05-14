@@ -4,7 +4,7 @@ import numpy as np
 from PyQt5.QtWidgets import QFileDialog
 
 
-def export_sel(view, model, rois_data, color_names, color_manager):
+def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
     if not rois_data:
         view.show_status_message("No ROIs to export.")
         return
@@ -14,10 +14,11 @@ def export_sel(view, model, rois_data, color_names, color_manager):
         view.show_status_message("No scene loaded - cannot export SEL.")
         return
 
-    scene_id   = load_result.get('id', 'scene')
-    output_path, _ = QFileDialog.getSaveFileName(
-        view, "Export SEL File", f"{scene_id}.sel", "SEL Files (*.sel);;All Files (*)"
-    )
+    scene_id = load_result.get('id', 'scene')
+    if output_path is None:
+        output_path, _ = QFileDialog.getSaveFileName(
+            view, "Export SEL File", f"{scene_id}.sel", "SEL Files (*.sel);;All Files (*)"
+        )
     if not output_path:
         return
 
@@ -145,3 +146,170 @@ def _sensor_offsets(load_result, instrument):
 
     h, w = load_result['rgb_img'].shape[:2]
     return 0, 0, h, w
+
+
+def export_context(view, model, rois_data, colors, color_names, color_manager):
+    """Export a context folder containing the SEL file and five annotated images."""
+    if not rois_data:
+        view.show_status_message("No ROIs to export.")
+        return
+
+    load_result = model.sparc_load_result
+    if load_result is None:
+        view.show_status_message("No scene loaded - cannot export context.")
+        return
+
+    from pathlib import Path
+    from PyQt5.QtWidgets import QFileDialog
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import numpy as np
+    from marslab.imgops.imgutils import enhance_color
+
+    scene_id   = load_result.get('id', 'scene')
+    output_dir, _ = QFileDialog.getSaveFileName(
+        view, "Export Context Folder", scene_id, ""
+    )
+    if not output_dir:
+        return
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+        base_bands = load_result.get('base_bands', {})
+
+        _BAND_SETS = {
+            'ZCAM': {
+                'right': {
+                    'RGB': ('R0R', 'R0G', 'R0B'),
+                    'DCS': ('R6',  'R3',  'R1'),
+                },
+                'left': {
+                    'RGB': ('L0R', 'L0G', 'L0B'),
+                    'DCS': ('L2',  'L5',  'L6'),
+                },
+            },
+            'PCAM': {
+                'right': {
+                    'RGB': ('R2', 'R1', 'R1'),
+                    'DCS': ('R2', 'R1', 'R1'),
+                },
+                'left': {
+                    'RGB': ('L2', 'L5', 'L6'),
+                    'DCS': ('L2', 'L5', 'L6'),
+                },
+            },
+        }
+        band_sets  = _BAND_SETS.get(instrument, _BAND_SETS['ZCAM'])
+        mpl_colors = [tuple(c / 255.0 for c in color) for color in colors]
+
+        def get_band(name):
+            """Return a clean float32 array for a band, masking invalid values."""
+            arr = base_bands[name].astype(np.float32)
+            return np.where(np.isfinite(arr), arr, np.nan)
+
+        def render_to_numpy(r_name, g_name, b_name, dcs):
+            """Render three bands to a uint8 (H, W, 3) numpy array."""
+            if not all(k in base_bands for k in (r_name, g_name, b_name)):
+                return None
+            r, g, b = get_band(r_name), get_band(g_name), get_band(b_name)
+
+            if not dcs:
+                rgb    = np.stack([r, g, b], axis=-1)
+                result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
+                return (np.ma.filled(result, 0) * 255).astype(np.uint8)
+
+            # Decorrelation stretch - replicate _dcs_pixmap logic as pure numpy.
+            H, W    = r.shape
+            invalid = ~np.isfinite(r) | ~np.isfinite(g) | ~np.isfinite(b)
+            r = np.where(invalid, 0.0, r).astype(np.float32)
+            g = np.where(invalid, 0.0, g).astype(np.float32)
+            b = np.where(invalid, 0.0, b).astype(np.float32)
+
+            vecs  = np.stack([r, g, b], axis=-1).reshape(-1, 3)
+            valid = vecs[~invalid.ravel()]
+            if valid.shape[0] < 4:
+                return np.zeros((H, W, 3), dtype=np.uint8)
+
+            cov        = np.cov(valid.T).astype(np.float32)
+            eigvals, V = np.linalg.eig(cov)
+            T          = (V @ np.diag(1.0 / np.sqrt(np.abs(eigvals))) @ V.T).astype(np.float32)
+            means      = valid.mean(axis=0)
+            dcs_arr    = ((vecs - means) @ T + means + (means - means @ T)).reshape(H, W, 3)
+
+            result   = np.zeros((H, W, 3), dtype=np.float32)
+            valid_2d = ~invalid
+            for c in range(3):
+                ch     = dcs_arr[:, :, c]
+                v      = ch[valid_2d]
+                if v.size == 0:
+                    continue
+                lo, hi = np.percentile(v, [0.5, 99.5])
+                result[:, :, c] = np.clip((ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0)
+            result[invalid] = 0.0
+            return (result * 255).astype(np.uint8)
+
+        def save_annotated(arr, rects, filepath):
+            """Save a uint8 RGB array with ROI rectangles overlaid."""
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=150)
+            fig.patch.set_facecolor('black')
+            ax.set_facecolor('black')
+            ax.imshow(arr)
+            ax.axis('off')
+            for i, (x, y, w, h) in enumerate(rects):
+                ax.add_patch(mpatches.Rectangle(
+                    (x, y), w, h,
+                    linewidth=1.5,
+                    edgecolor=mpl_colors[i % len(mpl_colors)],
+                    facecolor='none',
+                ))
+            fig.savefig(filepath, bbox_inches='tight', pad_inches=0, dpi=150)
+            plt.close(fig)
+
+        # Right ROIs are roi['roi'], left ROIs are roi['left_rect'].
+        right_rects = [(r['roi'])       for r in rois_data]
+        left_rects  = [(r['left_rect']) for r in rois_data]
+
+        # SEL file
+        export_sel(view, model, rois_data, color_names, color_manager,
+                   output_path=str(output_path / f"{scene_id}.sel"))
+
+        # Four annotated images
+        for camera, label, rects in (
+            ('right', 'right_rgb', right_rects),
+            ('left',  'left_rgb',  left_rects),
+            ('right', 'right_dcs', right_rects),
+            ('left',  'left_dcs',  left_rects),
+        ):
+            mode = 'DCS' if 'dcs' in label else 'RGB'
+            r, g, b = band_sets[camera][mode]
+            arr = render_to_numpy(r, g, b, dcs=(mode == 'DCS'))
+            if arr is not None:
+                save_annotated(arr, rects, output_path / f"{scene_id}_{label}.png")
+
+        # Spectra plot
+        from sparc.visualization.plotting import plot_spectra_with_error
+
+        spectra = np.array([r['spectrum'] for r in rois_data])
+        stds    = np.array([r['std']      for r in rois_data])
+        wls     = rois_data[0]['wavelengths']
+
+        fig = plot_spectra_with_error(
+            spectra, stds,
+            wavelengths = wls,
+            colors      = mpl_colors,
+            show        = False,
+        )
+        fig.savefig(output_path / f"{scene_id}_spectra.png",
+                    bbox_inches='tight', dpi=150)
+        plt.close(fig)
+
+        view.show_status_message(f"Context exported to {output_path}")
+
+    except Exception as e:
+        view.show_status_message(f"Context export failed: {e}")
+        import traceback; traceback.print_exc()
