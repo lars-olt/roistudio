@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPainter, QPixmap
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QTextEdit
 
 from colors import Colors
@@ -41,10 +41,15 @@ class StatusPanel(QWidget):
         )
 
         icon_size   = scaled(32)
-        logo_pixmap = QPixmap(_resource_path("graphics/mcz_logo.png")).scaled(
-            icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        self.logo_label.setPixmap(logo_pixmap)
+        pixmap      = QPixmap(icon_size, icon_size)
+        pixmap.fill(Qt.transparent)
+        from PyQt5.QtSvg import QSvgRenderer
+        renderer = QSvgRenderer(_resource_path("graphics/mcz_logo.svg"))
+        painter  = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        renderer.render(painter)
+        painter.end()
+        self.logo_label.setPixmap(pixmap)
         self.logo_label.setStyleSheet(f"padding: {scaled(8)}px;")
 
         self.status_bar.setStyleSheet(f"""

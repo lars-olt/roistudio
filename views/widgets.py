@@ -2,7 +2,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
-from PyQt5.QtGui import QIcon, QMovie, QDrag, QPainter, QPen, QColor
+from PyQt5.QtGui import QIcon, QMovie, QDrag, QPainter, QPen, QPixmap, QColor
 
 from colors import Colors
 from utils.paths import _resource_path
@@ -15,8 +15,9 @@ class LoadingIndicator(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.movie = QMovie(_resource_path("graphics/load.gif"))
-        self.setMovie(self.movie)
-        self.setScaledContents(True)
+        self.movie.frameChanged.connect(self._update_frame)
+        self.setAlignment(Qt.AlignCenter)
+        self.setScaledContents(False)
         sp = self.sizePolicy()
         sp.setRetainSizeWhenHidden(True)
         self.setSizePolicy(sp)
@@ -27,9 +28,17 @@ class LoadingIndicator(QLabel):
     def _apply_scale(self):
         sz = physical(22)
         self.setFixedSize(sz, sz)
+        self.movie.setScaledSize(QSize(sz, sz))
         self.setStyleSheet(
             "QLabel { background-color: transparent; border: none; padding: 0px; margin: 0px; }"
         )
+
+    def _update_frame(self):
+        sz     = self.width()
+        pixmap = self.movie.currentPixmap().scaled(
+            sz, sz, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self.setPixmap(pixmap)
 
     def start_loading(self):
         self.movie.start()
@@ -45,13 +54,13 @@ class ToolbarButton(QPushButton):
 
     def __init__(self, normal_icon_path, selected_icon_path, hover_icon_path=None, selected_hover_icon_path=None, parent=None):
         super().__init__(parent)
-        self.normal_icon         = QIcon(normal_icon_path)
-        self.selected_icon       = QIcon(selected_icon_path)
-        self.selected_hover_icon = QIcon(selected_hover_icon_path) if selected_hover_icon_path else None
         if hover_icon_path is None:
             stem, ext       = normal_icon_path.rsplit('.', 1)
             hover_icon_path = f"{stem}_hover.{ext}"
-        self.hover_icon  = QIcon(hover_icon_path)
+        self._path_normal        = normal_icon_path
+        self._path_selected      = selected_icon_path
+        self._path_hover         = hover_icon_path
+        self._path_selected_hover = selected_hover_icon_path
         self.is_selected = False
         self._hovered    = False
         self.setCheckable(True)
@@ -63,10 +72,35 @@ class ToolbarButton(QPushButton):
         self._apply_scale()
         Scale.changed.connect(self._apply_scale)
 
+    def _scaled_icon(self, path, w, h):
+        """Render an SVG or PNG to a crisp QIcon at exactly (w, h) pixels."""
+        pixmap = QPixmap(w, h)
+        pixmap.fill(Qt.transparent)
+        if path.lower().endswith('.svg'):
+            try:
+                from PyQt5.QtSvg import QSvgRenderer
+                renderer = QSvgRenderer(path)
+                painter  = QPainter(pixmap)
+                painter.setRenderHint(QPainter.Antialiasing)
+                renderer.render(painter)
+                painter.end()
+            except ImportError:
+                pixmap = QPixmap(path).scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        else:
+            pixmap = QPixmap(path).scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return QIcon(pixmap)
+
     def _apply_scale(self):
         w, h = physical(46), physical(38)
         self.setFixedSize(w, h)
         self.setIconSize(QSize(w, h))
+        self.normal_icon         = self._scaled_icon(self._path_normal,   w, h)
+        self.selected_icon       = self._scaled_icon(self._path_selected, w, h)
+        self.hover_icon          = self._scaled_icon(self._path_hover,    w, h)
+        self.selected_hover_icon = (
+            self._scaled_icon(self._path_selected_hover, w, h)
+            if self._path_selected_hover else None
+        )
         self.update_icon()
 
     def update_icon(self):

@@ -40,10 +40,8 @@ class _ActiveColorSwatch(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        bg = QPixmap(_resource_path("graphics/toolbar_blank.png")).scaled(
-            self.width(), self.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        painter.drawPixmap(0, 0, bg)
+        from PyQt5.QtSvg import QSvgRenderer
+        QSvgRenderer(_resource_path("graphics/toolbar_blank.svg")).render(painter)
 
         sz       = int(min(self.width(), self.height()) * 0.55)
         margin_x = (self.width()  - sz) // 2
@@ -131,8 +129,8 @@ class ImageEditingPanel(QWidget):
         self.toolbar.setLayout(t_layout)
 
         self.btn_selection = ToolbarButton(
-            _resource_path("graphics/toolbar_selection.png"),
-            _resource_path("graphics/toolbar_selection_selected.png")
+            _resource_path("graphics/toolbar_selection.svg"),
+            _resource_path("graphics/toolbar_selection_selected.svg")
         )
         self.btn_selection.setToolTip("Selection tool (V)")
         self.btn_selection.set_selected(True)
@@ -140,8 +138,8 @@ class ImageEditingPanel(QWidget):
         t_layout.addWidget(self.btn_selection)
 
         self.btn_rectangle = ToolbarButton(
-            _resource_path("graphics/toolbar_rectangle.png"),
-            _resource_path("graphics/toolbar_rectangle_selected.png")
+            _resource_path("graphics/toolbar_rectangle.svg"),
+            _resource_path("graphics/toolbar_rectangle_selected.svg")
         )
         self.btn_rectangle.setToolTip("Rectangle ROI tool (R)")
         self.btn_rectangle.clicked.connect(lambda: self.select_tool("rectangle"))
@@ -154,12 +152,12 @@ class ImageEditingPanel(QWidget):
         t_layout.addStretch()
 
         self.btn_split_screen = ToolbarButton(
-            _resource_path("graphics/toolbar_single_screen.png"),
-            _resource_path("graphics/toolbar_split_screen.png"),
-            hover_icon_path          = _resource_path("graphics/toolbar_single_screen_hover.png"),
-            selected_hover_icon_path = _resource_path("graphics/toolbar_split_screen_hover.png"),
+            _resource_path("graphics/toolbar_single_screen.svg"),
+            _resource_path("graphics/toolbar_split_screen.svg"),
+            hover_icon_path          = _resource_path("graphics/toolbar_single_screen_hover.svg"),
+            selected_hover_icon_path = _resource_path("graphics/toolbar_split_screen_hover.svg"),
         )
-        self.btn_split_screen.setToolTip("Toggle split screen")
+        self.btn_split_screen.setToolTip("Toggle split screen (S)")
         self.btn_split_screen.set_selected(False)
         self.btn_split_screen.clicked.connect(self._toggle_split_screen)
         t_layout.addWidget(self.btn_split_screen)
@@ -313,10 +311,14 @@ class ImageEditingPanel(QWidget):
 
     def update_cursor(self):
         if self.current_tool == "selection":
+            from PyQt5.QtSvg import QSvgRenderer
             size   = physical(_CURSOR_NATIVE_W)
-            pixmap = QPixmap(_resource_path("graphics/selection.png")).scaled(
-                size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            QSvgRenderer(_resource_path("graphics/selection.svg")).render(painter)
+            painter.end()
             self.canvas_container.set_tool_cursor(QCursor(pixmap, 0, 0))
         elif self.current_tool == "rectangle":
             self.canvas_container.set_tool_cursor(Qt.CrossCursor)
