@@ -589,8 +589,9 @@ class CanvasContainer(QWidget):
 
     def dropEvent(self, event):
         if event.mimeData().hasText():
+            scene_id = event.mimeData().text()
             event.acceptProposedAction()
-            QTimer.singleShot(0, lambda: self.scene_dropped.emit(event.mimeData().text()))
+            self.scene_dropped.emit(scene_id)
 
     def set_roi_labels_visible(self, visible: bool):
         self.roi_labels_visible = visible
@@ -628,8 +629,9 @@ class ImageCanvas(QWidget):
 
     def dropEvent(self, event):
         if event.mimeData().hasText():
+            scene_id = event.mimeData().text()
             event.acceptProposedAction()
-            QTimer.singleShot(0, lambda: self.scene_dropped.emit(event.mimeData().text()))
+            self.scene_dropped.emit(scene_id)
 
 
 class DualCanvasContainer(QWidget):
