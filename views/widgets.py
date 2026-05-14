@@ -1,8 +1,8 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QTimer, QMimeData
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
-from PyQt5.QtGui import QIcon, QMovie, QPainter, QPen, QPixmap, QColor
+from PyQt5.QtGui import QIcon, QMovie, QPainter, QPen, QPixmap, QColor, QDrag
 
 from colors import Colors
 from utils.paths import _resource_path
@@ -57,9 +57,9 @@ class ToolbarButton(QPushButton):
         if hover_icon_path is None:
             stem, ext       = normal_icon_path.rsplit('.', 1)
             hover_icon_path = f"{stem}_hover.{ext}"
-        self._path_normal        = normal_icon_path
-        self._path_selected      = selected_icon_path
-        self._path_hover         = hover_icon_path
+        self._path_normal         = normal_icon_path
+        self._path_selected       = selected_icon_path
+        self._path_hover          = hover_icon_path
         self._path_selected_hover = selected_hover_icon_path
         self.is_selected = False
         self._hovered    = False
@@ -129,7 +129,7 @@ class ToolbarButton(QPushButton):
 
 
 class ClickableLabel(QLabel):
-    """Label that emits click signals."""
+    """Label that emits click signals and supports drag-and-drop."""
 
     clicked        = pyqtSignal()
     double_clicked = pyqtSignal()
@@ -146,6 +146,25 @@ class ClickableLabel(QLabel):
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.double_clicked.emit()
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        if not (self.scene_id and self.thumbnail_pixmap):
+            return
+        # Defer exec_ to avoid a segfault on macOS where calling QDrag.exec_()
+        # synchronously from mouseMoveEvent causes a crash.
+        scene_id = self.scene_id
+        pixmap   = self.thumbnail_pixmap
+        def _start_drag():
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setText(scene_id)
+            drag.setMimeData(mime)
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
+            drag.exec_(Qt.CopyAction)
+        QTimer.singleShot(0, _start_drag)
 
     def set_scene_data(self, scene_id, pixmap):
         self.scene_id         = scene_id
@@ -354,9 +373,9 @@ class ColorSwatchButton(QWidget):
 
     clicked = pyqtSignal(tuple, str)  # (color, name)
 
-    _SWATCH_SIZE   = 18
-    _RADIUS        = 3
-    _BORDER_WIDTH  = 1
+    _SWATCH_SIZE  = 18
+    _RADIUS       = 3
+    _BORDER_WIDTH = 1
 
     def __init__(self, color, name, in_use=False, selected=False, parent=None):
         super().__init__(parent)
