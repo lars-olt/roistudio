@@ -118,8 +118,6 @@ class Controller(QObject):
     def _open_iof_folder(self):
         folder_path = self.scene_controller.open_folder_dialog(self._view)
         if folder_path:
-            import os
-            folder_path = os.path.normpath(os.path.expanduser(folder_path))
             self._model.iof_folder_path = folder_path
             self._view.clear_thumbnails()
             self.scene_controller.clear_cache()
@@ -295,6 +293,7 @@ class Controller(QObject):
                 old_color = self._current_colors[idx]
                 old_name  = self._current_color_names[idx]
                 self.color_manager.recycle(old_color, old_name)
+                self.color_manager.consume(name)
                 self._current_colors[idx]      = color
                 self._current_color_names[idx] = name
                 self._update_roi_view()

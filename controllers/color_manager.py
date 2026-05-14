@@ -22,6 +22,7 @@ class ColorManager:
         self._init_palette(instrument)
 
     def _init_palette(self, instrument):
+        from sparc.utils.sel_writer import _MASK_DEFAULTS, _normalize_instrument
         from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 
         merspect_order = [
@@ -112,6 +113,10 @@ class ColorManager:
             self._deque.appendleft((color, name))
         else:
             self._deque.append((color, name))
+
+    def consume(self, name: str):
+        """Remove a specific color from the deque - used when assigning it directly."""
+        self._deque = deque(e for e in self._deque if e[1] != name)
 
     def reset(self):
         self._reserved = set()
