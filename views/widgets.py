@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QTimer, QMimeData
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
@@ -152,19 +152,14 @@ class ClickableLabel(QLabel):
             return
         if not (self.scene_id and self.thumbnail_pixmap):
             return
-        # Defer exec_ to avoid a segfault on macOS where calling QDrag.exec_()
-        # synchronously from mouseMoveEvent causes a crash.
-        scene_id = self.scene_id
-        pixmap   = self.thumbnail_pixmap
-        def _start_drag():
-            drag = QDrag(self)
-            mime = QMimeData()
-            mime.setText(scene_id)
-            drag.setMimeData(mime)
-            drag.setPixmap(pixmap)
-            drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
-            drag.exec_(Qt.CopyAction)
-        QTimer.singleShot(0, _start_drag)
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setText(self.scene_id)
+        drag.setMimeData(mime)
+        drag.setPixmap(self.thumbnail_pixmap)
+        drag.setHotSpot(QPoint(self.thumbnail_pixmap.width() // 2,
+                               self.thumbnail_pixmap.height() // 2))
+        drag.exec_(Qt.CopyAction)
 
     def set_scene_data(self, scene_id, pixmap):
         self.scene_id         = scene_id
