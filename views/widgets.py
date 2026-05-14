@@ -1,9 +1,8 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
-from PyQt5.QtGui import (QIcon, QMovie, QDrag, QPainter, QPen, QPixmap,
-                         QColor)
+from PyQt5.QtGui import QIcon, QMovie, QPainter, QPen, QPixmap, QColor
 
 from colors import Colors
 from utils.paths import _resource_path
@@ -130,7 +129,7 @@ class ToolbarButton(QPushButton):
 
 
 class ClickableLabel(QLabel):
-    """Label that emits click signals and supports drag-and-drop."""
+    """Label that emits click signals."""
 
     clicked        = pyqtSignal()
     double_clicked = pyqtSignal()
@@ -139,37 +138,14 @@ class ClickableLabel(QLabel):
         super().__init__(parent)
         self.scene_id         = None
         self.thumbnail_pixmap = None
-        self._active_drag     = None
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
-            self.drag_start_pos = event.pos()
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.double_clicked.emit()
-
-    def mouseMoveEvent(self, event):
-        if not (event.buttons() & Qt.LeftButton) or not self.scene_id:
-            return
-        # Defer drag start off the mouse event stack - prevents macOS crash
-        # when the drag outlives the widget or the event loop reentrs.
-        QTimer.singleShot(0, self._start_drag)
-
-    def _start_drag(self):
-        if not self.scene_id or not self.thumbnail_pixmap:
-            return
-        # Keep a strong reference on self so the widget isn't GC'd mid-drag.
-        self._active_drag = QDrag(self)
-        mime = QMimeData()
-        mime.setText(self.scene_id)
-        self._active_drag.setMimeData(mime)
-        self._active_drag.setPixmap(self.thumbnail_pixmap)
-        self._active_drag.setHotSpot(QPoint(self.thumbnail_pixmap.width()  // 2,
-                                            self.thumbnail_pixmap.height() // 2))
-        self._active_drag.exec_(Qt.CopyAction)
-        self._active_drag = None
 
     def set_scene_data(self, scene_id, pixmap):
         self.scene_id         = scene_id
