@@ -130,7 +130,7 @@ hidden_imports += collect_submodules("asdf_settings")
 # Data files
 # ---------------------------------------------------------------------------
 
-datas = [('LICENSE', '.')]
+datas = []
 
 # ROIStudio assets - graphics/ is collected recursively, picking up logo/ too
 datas += [

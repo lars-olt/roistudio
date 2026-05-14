@@ -89,6 +89,15 @@ jobs:
         if: runner.os == 'macOS'
         run: .venv/bin/pyinstaller roistudio.spec --clean
 
+      - name: Copy LICENSE (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item LICENSE dist\ROIStudio\LICENSE
+
+      - name: Copy LICENSE (macOS)
+        if: runner.os == 'macOS'
+        run: cp LICENSE dist/ROIStudio.app/Contents/MacOS/LICENSE
+
       - name: Zip build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
