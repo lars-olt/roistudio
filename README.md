@@ -4,10 +4,28 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 
 ---
 
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `V` | Selection tool |
+| `R` | Rectangle tool |
+| `F` | Fit canvas to panel |
+| `S` | Toggle sync views |
+| `Escape` | Deselect ROI |
+| `Delete` / `Backspace` | Delete selected ROI |
+| `Ctrl+S` | Export SEL |
+| `Ctrl++` / `Ctrl+-` | Increase / decrease UI scale |
+| `Ctrl+Scroll` | Zoom canvas |
+
+> [!Note]
+> Trackpad users can pinch to zoom, and pan around a canvas with two fingers.
+
+---
+
 ## Table of Contents
 
 - [Installation](#installation)
-- [Getting Started](#getting-started)
 - [Interface Overview](#interface-overview)
 - [Loading Scenes](#loading-scenes)
 - [Running SPARC](#running-sparc)
@@ -15,7 +33,6 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 - [Spectral View](#spectral-view)
 - [Split Screen Mode](#split-screen-mode)
 - [Exporting and Loading SEL Files](#exporting-and-loading-sel-files)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
 
 ---
 
@@ -58,20 +75,6 @@ ROIStudio requires a SAM model checkpoint to run the SPARC pipeline. Download `s
 
 ---
 
-## Getting Started
-
-1. Activate the uv environment: `.venv\Scripts\activate`
-2. Launch ROIStudio: `python main.py`
-3. Go to **File > Open Folder** and select a folder containing IOF image files.
-4. ROIStudio will scan the folder and display thumbnails of all detected scenes.
-5. Double-click a thumbnail to load a scene.
-6. Press **Run** to execute the SPARC pipeline on the loaded scene.
-
-<img width="1602" height="923" alt="Screenshot of the scene thumbnail grid with several scenes visible" src="https://github.com/user-attachments/assets/b4a1e60f-695d-423a-8e06-70b959ba51d8" />
-
-
----
-
 ## Interface Overview
 
 ROIStudio is divided into three main areas:
@@ -100,17 +103,18 @@ The floating overlay at the bottom of the canvas lets you select which bands to 
 
 <img width="258" height="99" alt="Screenshot of the band selector overlay with the preset dropdown open" src="https://github.com/user-attachments/assets/7ddb14a5-a0ec-488a-9c26-7e91104a2c12" />
 
-The **View** menu also provides **Set all RGB** and **Set all DCS** options to apply a stretch to all visible canvases at once. (More on this later.)
+The **View** menu also provides **Set all RGB** and **Set all DCS** options to apply a stretch to all visible canvases at once.
 
 ---
 
 ## Running SPARC
 
-Switch to the **ROI Processing** panel via **Window > ROI Processing** to access the algorithm parameters.
+Switch to the **ROI Processing** panel via **Window > ROI Processing** to access the algorithm parameters for optional tuning.
 
 <img width="1602" height="923" alt="Screenshot of the ROI Processing parameter panel" src="https://github.com/user-attachments/assets/25728c21-ae4a-4682-b329-81df95e7d61e" />
 
-
+> [!Note]
+> For new users, we recommend leaving these as-is for now.
 
 ### Parameters
 
@@ -129,9 +133,12 @@ Switch to the **ROI Processing** panel via **Window > ROI Processing** to access
 - **Contamination** - expected fraction of outlier spectra.
 - **Max Clusters** - maximum number of spectral clusters the GMM may find.
 
-Press **Run** to start the pipeline. Progress is shown in the status bar at the bottom of the window. SPARC runs in a background thread and the interface remains responsive.
+Press **Run** to start the SPARC pipeline. Progress is shown in the status bar at the bottom of the window. SPARC runs in a background thread and the interface remains responsive.
+> [!Tip]
+> When any intensive code is running, a spinning filter wheel will appear next to the **Run** button.
 
 <img width="1602" height="923" alt="Screenshot of the canvas after SPARC has run, with colored ROI rectangles overlaid on the image" src="https://github.com/user-attachments/assets/5c788b53-92f4-4f95-93de-2852010b356e" />
+After running SPARC on a scene, you should see ROIs drawn on the canvas, and corresponding spectra plotted in the spectra view panel.
 
 ---
 
@@ -139,10 +146,10 @@ Press **Run** to start the pipeline. Progress is shown in the status bar at the 
 
 ### Tools
 
-| Tool | Shortcut | Description |
-|------|----------|-------------|
-| Selection | `V` | Select, move, and resize ROIs |
-| Rectangle | `R` | Draw a new ROI |
+| Icon | Name | Shortcut | Description |
+|------|------|----------|-------------|
+| <img width="46" height="38" alt="toolbar_selection" src="https://github.com/user-attachments/assets/53756e7e-03ff-4341-b457-7a8fa682981b" /> | Selection | `V` | Select, move, and resize ROIs |
+| <img width="46" height="38" alt="toolbar_rectangle (1)" src="https://github.com/user-attachments/assets/a04f7413-b98f-4fc8-87b1-d0179209545c" /> | Rectangle | `R` | Draw a new ROI |
 
 ### Drawing ROIs
 
@@ -186,11 +193,17 @@ In the **ROI Processing** panel, the **View Settings** section controls:
 
 Click the split screen button at the bottom of the toolbar to view left and right camera images side by side.
 
+| Icon | Description |
+|------|-------------|
+| <img width="46" height="38" alt="toolbar_single_screen (1)" src="https://github.com/user-attachments/assets/3891f9be-69fc-43fe-a342-bffa5c24817f" /> | In single screen mode - click to switch to split-screen. |
+| <img width="46" height="38" alt="toolbar_split_screen (1)" src="https://github.com/user-attachments/assets/685388b5-4a1d-4e42-8a26-650b52c983ab" /> | In split-screen mode - click to switch to single-screen.
+
 <img width="1602" height="923" alt="Screenshot of split screen mode with left and right images and ROIs on both sides" src="https://github.com/user-attachments/assets/66d00f65-8c3c-44cc-8047-dc8b98d9b8f5" />
 
 In split screen mode, ROIs are shown on both cameras simultaneously. Drawing or editing an ROI on one side updates both. Use **View > Sync Views** (or `S`) to lock location, pan, and zoom between the two canvases.
 
-Note: when you return to single screen mode, ROIs that were moved or resized in split screen will prompt a confirmation before redrawing.
+> [!Caution]
+> When you return to single screen mode, ROIs that were moved or resized in split screen will prompt a confirmation before redrawing.
 
 ---
 
@@ -200,21 +213,3 @@ ROIStudio exports ROIs as `.sel` files compatible with MERSpect.
 
 - **Export** - **File > Export sel** (or `Ctrl+S`) saves the current ROIs to a `.sel` file. ROI colors are encoded as MERSpect label indices so they round-trip correctly.
 - **Load** - **File > Load sel** imports ROIs from an existing `.sel` file into the current scene.
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `V` | Selection tool |
-| `R` | Rectangle tool |
-| `F` | Fit canvas to panel |
-| `S` | Toggle sync views |
-| `Escape` | Deselect ROI |
-| `Delete` / `Backspace` | Delete selected ROI |
-| `Ctrl+S` | Export SEL |
-| `Ctrl++` / `Ctrl+-` | Increase / decrease UI scale |
-| `Ctrl+Scroll` | Zoom canvas |
-
-Note: trackpad users can pinch to zoom, and pan around a canvas with two fingers.
