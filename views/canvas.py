@@ -14,6 +14,8 @@ _FRICTION        = 0.88
 _MIN_VELOCITY    = 0.5
 _MOMENTUM_HZ     = 60
 _VELOCITY_WINDOW = 5
+_ANGLE_TO_PIXELS = 8    # Qt angleDelta is in eights-of-a-degree; divide to get pixels
+_SCROLL_SPEED    = 0.5  # multiplier for mouse wheel vertical scroll
 
 
 class CanvasContainer(QWidget):
@@ -400,13 +402,12 @@ class CanvasContainer(QWidget):
             self._apply_zoom(factor, event.pos().x(), event.pos().y())
             return
         if is_trackpad:
-            # Prefer pixelDelta (macOS), fall back to angleDelta (Windows touchpad).
-            px = event.pixelDelta().x() or event.angleDelta().x() / 8
-            py = event.pixelDelta().y() or event.angleDelta().y() / 8
+            px = event.pixelDelta().x() or event.angleDelta().x() / _ANGLE_TO_PIXELS
+            py = event.pixelDelta().y() or event.angleDelta().y() / _ANGLE_TO_PIXELS
             self.pan_offset += QPointF(px, py)
             self._record_delta(px, py)
         else:
-            self.pan_offset.setY(self.pan_offset.y() + event.angleDelta().y() * 0.5)
+            self.pan_offset.setY(self.pan_offset.y() + event.angleDelta().y() * _SCROLL_SPEED)
         self.update()
         self._emit_sync()
 
