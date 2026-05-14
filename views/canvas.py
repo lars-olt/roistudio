@@ -394,16 +394,17 @@ class CanvasContainer(QWidget):
     def wheelEvent(self, event: QWheelEvent):
         self._stop_momentum()
         is_trackpad = event.source() in (Qt.MouseEventSynthesizedBySystem,
-                                         Qt.MouseEventSynthesizedByQt)
+                                        Qt.MouseEventSynthesizedByQt)
         if event.modifiers() & Qt.ControlModifier:
             factor = 1.1 if event.angleDelta().y() > 0 else 0.9
             self._apply_zoom(factor, event.pos().x(), event.pos().y())
             return
         if is_trackpad:
-            dx = event.pixelDelta().x() or event.angleDelta().x() / 8
-            dy = event.pixelDelta().y() or event.angleDelta().y() / 8
-            self.pan_offset += QPointF(dx, dy)
-            self._record_delta(dx, dy)
+            # Prefer pixelDelta (macOS), fall back to angleDelta (Windows touchpad).
+            px = event.pixelDelta().x() or event.angleDelta().x() / 8
+            py = event.pixelDelta().y() or event.angleDelta().y() / 8
+            self.pan_offset += QPointF(px, py)
+            self._record_delta(px, py)
         else:
             self.pan_offset.setY(self.pan_offset.y() + event.angleDelta().y() * 0.5)
         self.update()
