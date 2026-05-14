@@ -136,7 +136,6 @@ class Controller(QObject):
         self._split_screen_rois_dirty = False
         self._pending_recolor_index   = None
         self.color_manager.reset()
-        self._refresh_swatch()
 
     def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
         scene_callbacks.on_scene_found(scene_id, pixmap, filename, self._view)
@@ -152,6 +151,7 @@ class Controller(QObject):
             load_result, self._current_scene_id, self._model, self._view
         )
         self._render_current_images()
+        self._refresh_swatch()
 
     def _on_scene_load_error(self, error_msg):
         scene_callbacks.on_scene_load_error(error_msg, self._view)
@@ -177,6 +177,7 @@ class Controller(QObject):
             )
             if outcome is not None:
                 self._current_rois_data, self._current_colors, self._current_color_names = outcome
+                self._view.set_export_enabled(bool(self._current_rois_data))
                 self._refresh_swatch()
         except Exception as e:
             self._view.stop_loading()
