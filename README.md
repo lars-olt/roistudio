@@ -17,6 +17,7 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 | `Ctrl+S` | Export SEL |
 | `Ctrl++` / `Ctrl+-` | Increase / decrease UI scale |
 | `Ctrl+Scroll` | Zoom canvas |
+| `ScrollWheel+Drag` | Pan canvas |
 
 > [!Note]
 > Trackpad users can pinch to zoom, and pan around a canvas with two fingers.
