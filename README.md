@@ -133,7 +133,7 @@ Switch to the **ROI Processing** panel via **Window > ROI Processing** to access
 - **Contamination** - expected fraction of outlier spectra.
 - **Max Clusters** - maximum number of spectral clusters the GMM may find.
 
-Press **Run** to start the SPARC pipeline. Progress is shown in the status bar at the bottom of the window. SPARC runs in a background thread and the interface remains responsive.
+Press **Run** to start the SPARC pipeline. Progress is shown in the status bar at the bottom of the window.
 > [!Tip]
 > When any intensive code is running, a spinning filter wheel will appear next to the **Run** button.
 
