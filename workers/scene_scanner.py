@@ -160,45 +160,44 @@ class SceneScanThread(QThread):
         return scenes
 
     def _load_pcam_thumbnail(self, path, seq_id, obs_ix):
-        from sparc.utils.pancam_helpers import get_pcam_bandset
+        from sparc.utils.pancam_helpers import scan_pcam_files, get_pcam_bandset
         import pdr
 
-        bs = get_pcam_bandset(path, seq_id=seq_id, observation_ix=obs_ix, load=False)
+        # Build the metadata directly - we only need PATH, BAND, and scaling params.
+        # We bypass PcamBandSet.load() because it uses an internal file reference
+        # that doesn't respect our PATH normalization on lowercase-extension files.
+        products    = scan_pcam_files(path, seq_id=seq_id)
+        clusters    = {k: v for k, v in products.groupby('SEQ_ID')}
+        observation = list(clusters.values())[obs_ix]
 
         metadata = {}
-        if hasattr(bs, 'metadata') and bs.metadata is not None:
-            for field, key in (('SOL', 'sol'), ('SEQ_ID', 'sequence')):
-                if field in bs.metadata.columns:
-                    try:
-                        vals = bs.metadata[field].unique()
-                        if len(vals) > 0 and vals[0] is not None:
-                            metadata[key] = int(vals[0]) if key == 'sol' else str(vals[0])
-                    except Exception:
-                        pass
-        metadata.setdefault('sol', '?')
+        for field, key in (('SEQ_ID', 'sequence'),):
+            if field in observation.columns:
+                vals = observation[field].unique()
+                if len(vals) > 0:
+                    metadata[key] = str(vals[0])
         metadata.setdefault('sequence', seq_id or path.name)
-
-        if 'BAND' not in bs.metadata.columns:
-            return None, None
+        metadata['sol'] = '?'
 
         rgb_bands = ['L2', 'L5', 'L6']
-        if not all(b in bs.metadata['BAND'].tolist() for b in rgb_bands):
+        rows = observation[observation['BAND'].isin(rgb_bands)]
+        if len(rows) < len(rgb_bands):
             return None, None
 
-        bs.load(rgb_bands)
-
-        # Uppercase BAND after load so downstream key lookups work consistently.
-        bs.metadata['BAND'] = bs.metadata['BAND'].str.upper()
-
         bands = {}
-        for _, row in bs.metadata[bs.metadata['BAND'].isin(rgb_bands)].iterrows():
-            band    = row['BAND']
-            label   = pdr.Data(row['PATH']).metadata
-            scale   = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
-            offset  = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
-            dn      = bs.get_band(band).copy().astype(np.float32)
-            dn      = np.where((dn == 0) | (dn == 4095), np.nan, dn)
+        for _, row in rows.iterrows():
+            band   = row['BAND']
+            fpath  = row['PATH']
+            d      = pdr.Data(fpath)
+            label  = d.metadata
+            scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
+            offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
+            dn     = d['IMAGE'].copy().astype(np.float32)
+            dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
             bands[band] = dn * scale + offset
+
+        if not all(b in bands for b in rgb_bands):
+            return None, None
 
         rgb = np.stack([np.nan_to_num(bands[b], nan=0.0) for b in rgb_bands], axis=-1)
         return self._stretch_rgb(rgb), metadata
