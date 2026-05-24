@@ -53,7 +53,9 @@ class SceneScanThread(QThread):
                                 self._label(metadata, path, obs_ix),
                                 str(path), seq_id, obs_ix, 'PCAM',
                             )
-                    except Exception:
+                    except Exception as e:
+                        import traceback
+                        self.scan_error.emit(f"Thumbnail failed for {scene_id}: {e}\n{traceback.format_exc()}")
                         continue
             else:
                 scenes = self._find_zcam_scenes(self.folder_path)
@@ -184,6 +186,9 @@ class SceneScanThread(QThread):
             return None, None
 
         bs.load(rgb_bands)
+
+        # Uppercase BAND after load so downstream key lookups work consistently.
+        bs.metadata['BAND'] = bs.metadata['BAND'].str.upper()
 
         bands = {}
         for _, row in bs.metadata[bs.metadata['BAND'].isin(rgb_bands)].iterrows():
