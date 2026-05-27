@@ -152,6 +152,9 @@ class Controller(QObject):
         )
         self._render_current_images()
         self._refresh_swatch()
+        # enable crop tool now that a scene is loaded (single screen only)
+        if not self._is_split_screen:
+            self._view.panel_image_editing.set_crop_enabled(True)
 
     def _on_scene_load_error(self, error_msg):
         scene_callbacks.on_scene_load_error(error_msg, self._view)
@@ -167,17 +170,24 @@ class Controller(QObject):
             self._current_scene_id,
             self.config.get('sam_model_path', ''),
             self._view.panel_parameter_selection.get_parameters(),
+            crop_rect = self._view.panel_image_editing.get_crop_rect(),
         )
 
     def _on_sparc_complete(self, result):
         try:
+            # reserve colors already in use so new ROIs get distinct colors
+            self.color_manager.reserve(self._current_color_names)
             outcome = sparc_callbacks.on_sparc_complete(
                 result, self._model, self._view,
                 self.sparc_controller, self.color_manager,
             )
             if outcome is not None:
-                self._current_rois_data, self._current_colors, self._current_color_names = outcome
-                self._view.set_export_enabled(bool(self._current_rois_data))
+                new_rois, new_colors, new_names = outcome
+                self._current_rois_data   += new_rois
+                self._current_colors      += new_colors
+                self._current_color_names += new_names
+                self._update_roi_view()
+                self._view.set_export_enabled(True)
                 self._refresh_swatch()
         except Exception as e:
             self._view.stop_loading()
@@ -451,6 +461,8 @@ class Controller(QObject):
                 self._view.panel_spectral_view.plot_roi_spectra(
                     self._current_rois_data, self._current_colors
                 )
+            if not is_split:
+                self._view.panel_image_editing.set_crop_enabled(True)
         self._view.show_status_message(
             f"Switched to {'split-screen' if is_split else 'single'} mode"
         )

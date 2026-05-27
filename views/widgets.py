@@ -88,7 +88,10 @@ class ToolbarButton(QPushButton):
                 pixmap = QPixmap(path).scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         else:
             pixmap = QPixmap(path).scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return QIcon(pixmap)
+        icon = QIcon(pixmap)
+        # prevent Qt from auto-graying the icon when the button is disabled
+        icon.addPixmap(pixmap, QIcon.Disabled)
+        return icon
 
     def _apply_scale(self):
         w, h = physical(46), physical(38)
@@ -118,6 +121,12 @@ class ToolbarButton(QPushButton):
         self.is_selected = selected
         self.setChecked(selected)
         self.update_icon()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.EnabledChange:
+            self.setCursor(Qt.PointingHandCursor if self.isEnabled() else Qt.ArrowCursor)
 
     def enterEvent(self, event):
         self._hovered = True

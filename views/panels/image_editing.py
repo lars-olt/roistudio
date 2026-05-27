@@ -77,15 +77,17 @@ class ImageEditingPanel(QWidget):
     roi_created          = pyqtSignal(tuple, str)
     roi_too_small        = pyqtSignal()
     roi_right_clicked    = pyqtSignal(int, QPoint)  # roi_index, global pos
-    split_screen_toggled     = pyqtSignal(bool)
+    split_screen_toggled        = pyqtSignal(bool)
     split_screen_exit_requested = pyqtSignal()
-    canvas_focus_changed = pyqtSignal(str)   # 'single' | 'left' | 'right'
+    canvas_focus_changed        = pyqtSignal(str)   # 'single' | 'left' | 'right'
+    crop_changed                = pyqtSignal(tuple)  # (x, y, w, h)
 
     def __init__(self):
         super().__init__()
         self.current_tool    = 'selection'
         self._is_split       = False
         self._focused_camera = 'single'
+        self._crop_enabled   = False  # only true when scene loaded and single screen
         self._build_ui()
         self.canvas_container.installEventFilter(self)
         Scale.changed.connect(self._apply_scale)
@@ -111,7 +113,7 @@ class ImageEditingPanel(QWidget):
         tb_layout.addStretch()
         layout.addWidget(self.top_bar)
 
-        # Content area — side toolbar + canvas
+        # Content area - side toolbar + canvas
         content  = QWidget()
         c_layout = QHBoxLayout()
         c_layout.setContentsMargins(0, 0, 0, 0)
@@ -144,6 +146,17 @@ class ImageEditingPanel(QWidget):
         self.btn_rectangle.clicked.connect(lambda: self.select_tool("rectangle"))
         t_layout.addWidget(self.btn_rectangle)
 
+        self.btn_resize = ToolbarButton(
+            _resource_path("graphics/toolbar_resize.svg"),
+            _resource_path("graphics/toolbar_resize_selected.svg"),
+            hover_icon_path = _resource_path("graphics/toolbar_resize_hover.svg"),
+        )
+        self.btn_resize.setToolTip("Resize frame used for SPARC (single screen only)")
+        self.btn_resize.set_selected(False)
+        self.btn_resize.setEnabled(False)
+        self.btn_resize.clicked.connect(lambda: self.select_tool("crop"))
+        t_layout.addWidget(self.btn_resize)
+
         self._color_swatch = _ActiveColorSwatch()
         self._color_swatch.clicked.connect(self._on_active_color_clicked)
         t_layout.addWidget(self._color_swatch)
@@ -171,12 +184,13 @@ class ImageEditingPanel(QWidget):
         self.canvas_container.roi_too_small.connect(self.roi_too_small.emit)
         self.canvas_container.tool_shortcut.connect(self.select_tool)
         self.canvas_container.roi_right_clicked.connect(self.roi_right_clicked.emit)
+        self.canvas_container.crop_changed.connect(self.crop_changed.emit)
 
         self._swatch_grid = ColorSwatchGrid(self)
         c_layout.addWidget(self.canvas_container)
         layout.addWidget(content)
 
-        # Band selector overlays — one per camera, parented to their canvas
+        # Band selector overlays - one per camera, parented to their canvas
         self._overlay_single = StretchBar(self.canvas_container.canvas_single)
         self._overlay_right  = StretchBar(self.canvas_container.canvas_right)
         self._overlay_left   = StretchBar(self.canvas_container.canvas_left)
@@ -300,9 +314,13 @@ class ImageEditingPanel(QWidget):
     # ------------------------------------------------------------------
 
     def select_tool(self, tool_name):
+        # crop tool is only available when enabled
+        if tool_name == "crop" and not self._crop_enabled:
+            return
         self.current_tool = tool_name
         self.btn_selection.set_selected(tool_name == "selection")
         self.btn_rectangle.set_selected(tool_name == "rectangle")
+        self.btn_resize.set_selected(tool_name == "crop")
         self.canvas_container.set_tool(tool_name)
         self.canvas_container.set_hover_preview_enabled(tool_name == "rectangle")
         self.tool_changed_signal.emit(tool_name)
@@ -321,6 +339,28 @@ class ImageEditingPanel(QWidget):
             self.canvas_container.set_tool_cursor(QCursor(pixmap, 0, 0))
         elif self.current_tool == "rectangle":
             self.canvas_container.set_tool_cursor(Qt.CrossCursor)
+        elif self.current_tool == "crop":
+            self.canvas_container.set_tool_cursor(Qt.ArrowCursor)
+
+    def set_crop_enabled(self, enabled: bool):
+        """Enable or disable the crop tool - controlled by controller based on scene/split state."""
+        self._crop_enabled = enabled
+        self.btn_resize.setEnabled(enabled)
+        if not enabled and self.current_tool == "crop":
+            self.select_tool("selection")
+
+    def get_crop_rect(self):
+        """Return current crop rect as (x, y, w, h) ints, or None for full frame."""
+        r = self.canvas_container.get_crop_rect()
+        if r is None:
+            return None
+        iw = self.canvas_container.canvas.width()
+        ih = self.canvas_container.canvas.height()
+        x, y, w, h = int(r.x()), int(r.y()), int(r.width()), int(r.height())
+        # return None if the crop covers the full image - no crop needed
+        if x <= 0 and y <= 0 and w >= iw and h >= ih:
+            return None
+        return (x, y, w, h)
 
     # ------------------------------------------------------------------
     # Split screen
@@ -347,6 +387,9 @@ class ImageEditingPanel(QWidget):
         self._sync_focus()
         if not is_split:
             self.canvas_container.set_sync_enabled(False)
+        # crop tool only works in single screen
+        if is_split and self._crop_enabled:
+            self.set_crop_enabled(False)
         self.split_screen_toggled.emit(is_split)
         QTimer.singleShot(0, self._reposition_overlays)
 
