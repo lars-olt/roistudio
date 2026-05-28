@@ -129,7 +129,7 @@ class Controller(QObject):
         if not self.scene_controller.get_scene_info(scene_id):
             self._view.show_status_message(f"Error: scene {scene_id} not found in cache")
             return
-        self._view.show_status_message(f"Loading scene: {scene_id}")
+        self._view.show_status_message("Loading scene...")
         self._current_scene_id        = self.scene_controller.start_load(scene_id)
         self._current_rois_data       = []
         self._current_colors          = []

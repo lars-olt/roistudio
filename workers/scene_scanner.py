@@ -171,11 +171,6 @@ class SceneScanThread(QThread):
         observation = list(clusters.values())[obs_ix]
 
         metadata = {}
-        for field, key in (('SEQ_ID', 'sequence'),):
-            if field in observation.columns:
-                vals = observation[field].unique()
-                if len(vals) > 0:
-                    metadata[key] = str(vals[0])
         metadata.setdefault('sequence', seq_id or path.name)
         metadata['sol'] = '?'
 
@@ -185,16 +180,29 @@ class SceneScanThread(QThread):
             return None, None
 
         bands = {}
+        first_label = None
         for _, row in rows.iterrows():
             band   = row['BAND']
             fpath  = row['PATH']
             d      = pdr.Data(fpath)
             label  = d.metadata
+            if first_label is None:
+                first_label = label
             scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
             offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
             dn     = d['IMAGE'].copy().astype(np.float32)
             dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
             bands[band] = dn * scale + offset
+
+        if first_label is not None:
+            try:
+                metadata['sol'] = int(first_label['PLANET_DAY_NUMBER'])
+            except Exception:
+                pass
+            try:
+                metadata['sequence'] = str(first_label['SEQUENCE_ID']).strip()
+            except Exception:
+                pass
 
         if not all(b in bands for b in rgb_bands):
             return None, None
