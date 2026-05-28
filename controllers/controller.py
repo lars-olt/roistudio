@@ -78,6 +78,7 @@ class Controller(QObject):
         self._view.scene_double_clicked_signal.connect(self._load_scene_by_id)
         self._view.pixel_hover_callback = self._on_pixel_hover
         self._view.apply_stretch_mode_signal.connect(self._apply_stretch_mode)
+        self._view.delete_all_rois_signal.connect(self._delete_all_rois)
 
         panel = self._view.panel_image_editing
         panel.roi_changed.connect(self._on_roi_changed)
@@ -136,6 +137,10 @@ class Controller(QObject):
         self._split_screen_rois_dirty = False
         self._pending_recolor_index   = None
         self.color_manager.reset()
+        self._view.panel_image_editing.set_rois([], [], [])
+        self._view.panel_spectral_view.clear_roi_spectra()
+        self._view.panel_spectral_view.clear_plot()
+        self._view.set_export_enabled(False)
 
     def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
         scene_callbacks.on_scene_found(scene_id, pixmap, filename, self._view)
@@ -454,10 +459,10 @@ class Controller(QObject):
 
         if self._model.sparc_load_result is not None:
             self._render_current_images()
+            self._view.panel_image_editing.set_rois(
+                self._current_rois_data, self._current_colors, self._current_color_names
+            )
             if self._current_rois_data:
-                self._view.panel_image_editing.set_rois(
-                    self._current_rois_data, self._current_colors, self._current_color_names
-                )
                 self._view.panel_spectral_view.plot_roi_spectra(
                     self._current_rois_data, self._current_colors
                 )
@@ -470,6 +475,16 @@ class Controller(QObject):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _delete_all_rois(self):
+        for color, name in zip(self._current_colors, self._current_color_names):
+            self.color_manager.recycle(color, name)
+        self._current_rois_data   = []
+        self._current_colors      = []
+        self._current_color_names = []
+        self._update_roi_view()
+        self._view.set_export_enabled(False)
+        self._view.show_status_message("All ROIs deleted")
 
     def _get_instrument_config(self):
         load_result = self._model.sparc_load_result

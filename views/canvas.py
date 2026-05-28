@@ -919,12 +919,6 @@ class DualCanvasContainer(QWidget):
             self.canvas_single.show()
             if self.canvas_right.canvas.image is not None:
                 self.canvas_single.set_image(self.canvas_right.canvas.image)
-            if self.canvas_right.rois:
-                self.canvas_single.set_rois(
-                    [{'roi': r} for r in self.canvas_right.rois],
-                    self.canvas_right.roi_colors,
-                    self.canvas_right.roi_names,
-                )
 
     def set_homography_matrix(self, homography_matrix):
         self.homography_matrix = homography_matrix

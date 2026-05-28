@@ -44,13 +44,14 @@ class View(QWidget):
 
     set_sam_path_signal         = pyqtSignal()
     open_folder_signal          = pyqtSignal()
-    load_sel_signal = pyqtSignal()
-    export_sel_signal             = pyqtSignal()
-    export_context_signal         = pyqtSignal()
+    load_sel_signal             = pyqtSignal()
+    export_sel_signal           = pyqtSignal()
+    export_context_signal       = pyqtSignal()
     run_algorithm_signal        = pyqtSignal()
     scene_dropped_signal        = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
-    apply_stretch_mode_signal       = pyqtSignal(str)
+    apply_stretch_mode_signal   = pyqtSignal(str)
+    delete_all_rois_signal      = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -177,6 +178,12 @@ class View(QWidget):
         self.action_sync_views.setEnabled(False)
         self.action_sync_views.triggered.connect(self._on_sync_views_toggled)
         self.menu_view.addAction(self.action_sync_views)
+
+        self.menu_view.addSeparator()
+        self.action_delete_all_rois = QAction("Delete All ROIs", self)
+        self.action_delete_all_rois.triggered.connect(self.delete_all_rois_signal.emit)
+        self.action_delete_all_rois.setEnabled(False)
+        self.menu_view.addAction(self.action_delete_all_rois)
 
         self.menu_view.addSeparator()
         for mode, label in (("RGB", "Set all RGB"), ("DCS", "Set all DCS")):
@@ -329,6 +336,7 @@ class View(QWidget):
         """Enable or disable both export actions together."""
         self.action_export_sel.setEnabled(enabled)
         self.action_export_context.setEnabled(enabled)
+        self.action_delete_all_rois.setEnabled(enabled)
 
     def enable_presets(self, enabled: bool):
         for action, _ in self._preset_actions:
