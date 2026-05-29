@@ -55,8 +55,6 @@ class SpectralViewPanel(QWidget):
 
         self.ax.set_xlabel('Wavelength (nm)', color=Colors.TEXT_PRIMARY,
                            fontsize=scaled_font(10))
-        self.ax.set_ylabel('R* = IOF/cos(θ)',  color=Colors.TEXT_PRIMARY,
-                           fontsize=scaled_font(10))
 
         self.ax.set_ylim(self.y_min, self.y_max)
         self.ax.tick_params(colors=Colors.TEXT_PRIMARY, labelsize=scaled_font(9))
