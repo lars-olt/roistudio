@@ -308,6 +308,8 @@ class CanvasContainer(QWidget):
                 return mode
 
         return self.MODE_NONE
+
+    def _draw_roi_label(self, painter, rect, name, color):
         pt_size = max(1, round(scaled_font(8) / self.zoom_level))
         padding = 2 / self.zoom_level
 
