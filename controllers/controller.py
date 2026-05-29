@@ -477,11 +477,10 @@ class Controller(QObject):
     # ------------------------------------------------------------------
 
     def _delete_all_rois(self):
-        for color, name in zip(self._current_colors, self._current_color_names):
-            self.color_manager.recycle(color, name)
         self._current_rois_data   = []
         self._current_colors      = []
         self._current_color_names = []
+        self.color_manager.reset()
         self._update_roi_view()
         self._view.set_export_enabled(False)
         self._view.show_status_message("All ROIs deleted")
