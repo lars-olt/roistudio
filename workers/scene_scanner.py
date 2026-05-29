@@ -174,7 +174,7 @@ class SceneScanThread(QThread):
         metadata.setdefault('sequence', seq_id or path.name)
         metadata['sol'] = '?'
 
-        rgb_bands = ['L2', 'L5', 'L6']
+        rgb_bands = ['L4', 'L5', 'L6']
         rows = observation[observation['BAND'].isin(rgb_bands)]
         if len(rows) < len(rgb_bands):
             return None, None
