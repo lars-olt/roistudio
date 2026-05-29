@@ -278,31 +278,28 @@ class CanvasContainer(QWidget):
                                     pt.y() - handle_sz / 2,
                                     handle_sz, handle_sz))
 
-    def _crop_handle_hit_test(self, img_x, img_y):
-        """Return a MODE_RESIZE_* constant if the cursor is on a crop handle, else MODE_NONE."""
-        if self.crop_rect is None:
-            return self.MODE_NONE
-        r         = self.crop_rect
+    def _rect_handle_hit_test(self, rect: QRectF, img_x, img_y):
+        """Return a MODE_RESIZE_* constant if the cursor is on a handle of rect, else MODE_NONE."""
         handle_sz = self.HANDLE_SIZE * 3 / self.zoom_level
         edge_sz   = handle_sz * 2
 
         for pt, mode in (
-            (r.topLeft(),     self.MODE_RESIZE_TL),
-            (r.topRight(),    self.MODE_RESIZE_TR),
-            (r.bottomLeft(),  self.MODE_RESIZE_BL),
-            (r.bottomRight(), self.MODE_RESIZE_BR),
+            (rect.topLeft(),     self.MODE_RESIZE_TL),
+            (rect.topRight(),    self.MODE_RESIZE_TR),
+            (rect.bottomLeft(),  self.MODE_RESIZE_BL),
+            (rect.bottomRight(), self.MODE_RESIZE_BR),
         ):
             if QRectF(pt.x() - handle_sz, pt.y() - handle_sz,
                       handle_sz * 2, handle_sz * 2).contains(img_x, img_y):
                 return mode
 
-        ix0, ix1 = r.left() + edge_sz, r.right()  - edge_sz
-        iy0, iy1 = r.top()  + edge_sz, r.bottom() - edge_sz
+        ix0, ix1 = rect.left() + edge_sz, rect.right()  - edge_sz
+        iy0, iy1 = rect.top()  + edge_sz, rect.bottom() - edge_sz
         for edge, proximity, span, span_min, span_max, mode in (
-            (r.top(),    img_y, img_x, ix0, ix1, self.MODE_RESIZE_T),
-            (r.bottom(), img_y, img_x, ix0, ix1, self.MODE_RESIZE_B),
-            (r.left(),   img_x, img_y, iy0, iy1, self.MODE_RESIZE_L),
-            (r.right(),  img_x, img_y, iy0, iy1, self.MODE_RESIZE_R),
+            (rect.top(),    img_y, img_x, ix0, ix1, self.MODE_RESIZE_T),
+            (rect.bottom(), img_y, img_x, ix0, ix1, self.MODE_RESIZE_B),
+            (rect.left(),   img_x, img_y, iy0, iy1, self.MODE_RESIZE_L),
+            (rect.right(),  img_x, img_y, iy0, iy1, self.MODE_RESIZE_R),
         ):
             if abs(proximity - edge) <= edge_sz and span_min < span < span_max:
                 return mode
@@ -358,35 +355,11 @@ class CanvasContainer(QWidget):
         if self.interaction_tool != "selection":
             return -1, self.MODE_NONE
 
-        handle_sz = self.HANDLE_SIZE / self.zoom_level
-        edge_sz   = handle_sz * 2
-
         if self.selected_roi_index != -1:
             rect = QRectF(*self.rois[self.selected_roi_index])
-
-            # Corner handles take priority over sides.
-            for pt, mode in (
-                (rect.topLeft(),     self.MODE_RESIZE_TL),
-                (rect.topRight(),    self.MODE_RESIZE_TR),
-                (rect.bottomLeft(),  self.MODE_RESIZE_BL),
-                (rect.bottomRight(), self.MODE_RESIZE_BR),
-            ):
-                if QRectF(pt.x() - handle_sz, pt.y() - handle_sz,
-                          handle_sz * 2, handle_sz * 2).contains(img_x, img_y):
-                    return self.selected_roi_index, mode
-
-            # Side edges: proximity checks closeness to edge, span checks between corners.
-            ix0, ix1 = rect.left() + edge_sz, rect.right()  - edge_sz
-            iy0, iy1 = rect.top()  + edge_sz, rect.bottom() - edge_sz
-            for edge, proximity, span, span_min, span_max, mode in (
-                (rect.top(),    img_y, img_x, ix0, ix1, self.MODE_RESIZE_T),
-                (rect.bottom(), img_y, img_x, ix0, ix1, self.MODE_RESIZE_B),
-                (rect.left(),   img_x, img_y, iy0, iy1, self.MODE_RESIZE_L),
-                (rect.right(),  img_x, img_y, iy0, iy1, self.MODE_RESIZE_R),
-            ):
-                if abs(proximity - edge) <= edge_sz and span_min < span < span_max:
-                    return self.selected_roi_index, mode
-
+            mode = self._rect_handle_hit_test(rect, img_x, img_y)
+            if mode != self.MODE_NONE:
+                return self.selected_roi_index, mode
             if rect.contains(img_x, img_y):
                 return self.selected_roi_index, self.MODE_MOVE
 
@@ -526,7 +499,7 @@ class CanvasContainer(QWidget):
                 self.update()
 
         elif self.interaction_tool == "crop" and event.button() == Qt.LeftButton:
-            mode = self._crop_handle_hit_test(img_x, img_y)
+            mode = self._rect_handle_hit_test(self.crop_rect, img_x, img_y) if self.crop_rect is not None else self.MODE_NONE
             if mode == self.MODE_NONE and self.crop_rect is not None:
                 if self.crop_rect.contains(img_x, img_y):
                     mode = self.MODE_MOVE
@@ -650,7 +623,7 @@ class CanvasContainer(QWidget):
             }.get(mode, self.tool_cursor))
 
         elif self.interaction_tool == "crop":
-            mode = self._crop_handle_hit_test(img_x, img_y)
+            mode = self._rect_handle_hit_test(self.crop_rect, img_x, img_y) if self.crop_rect is not None else self.MODE_NONE
             if mode == self.MODE_NONE and self.crop_rect is not None:
                 if self.crop_rect.contains(img_x, img_y):
                     mode = self.MODE_MOVE
