@@ -45,11 +45,10 @@ class SceneScanThread(QThread):
                 scenes = self._find_pcam_scenes(self.folder_path)
                 for scene_id, (path, seq_id, obs_ix) in scenes.items():
                     try:
-                        rgb_img, metadata = self._load_pcam_thumbnail(path, seq_id, obs_ix)
-                        if rgb_img is not None:
+                        pixmap, metadata = self._load_pcam_thumbnail(path, seq_id, obs_ix)
+                        if pixmap is not None:
                             self.scene_found.emit(
-                                scene_id,
-                                self._to_pixmap(rgb_img),
+                                scene_id, pixmap,
                                 self._label(metadata, path, obs_ix),
                                 str(path), seq_id, obs_ix, 'PCAM',
                             )
@@ -61,11 +60,10 @@ class SceneScanThread(QThread):
                 scenes = self._find_zcam_scenes(self.folder_path)
                 for scene_id, (path, seq_id, obs_ix) in scenes.items():
                     try:
-                        rgb_img, metadata = self._load_zcam_thumbnail(path, seq_id, obs_ix)
-                        if rgb_img is not None:
+                        pixmap, metadata = self._load_zcam_thumbnail(path, seq_id, obs_ix)
+                        if pixmap is not None:
                             self.scene_found.emit(
-                                scene_id,
-                                self._to_pixmap(rgb_img),
+                                scene_id, pixmap,
                                 self._label(metadata, path, obs_ix),
                                 str(path), seq_id, obs_ix, 'ZCAM',
                             )
@@ -111,20 +109,17 @@ class SceneScanThread(QThread):
             return None, None
 
         available = bs.metadata['BAND'].tolist()
-        for candidate in (['R1', 'G1', 'B1'], ['R0R', 'R0G', 'R0B'], ['L0R', 'L0G', 'L0B']):
-            if all(b in available for b in candidate):
-                rgb_bands = candidate
-                break
-        else:
+        band = next((b for b in ('R1', 'L1', 'R0R', 'L0R') if b in available), None)
+        if band is None:
             return None, None
 
-        bs.load(rgb_bands)
-        if any('0' in b for b in rgb_bands):
-            bs.bulk_debayer(rgb_bands)
+        bs.load([band])
+        if '0' in band:
+            bs.bulk_debayer([band])
 
         crop_settings = rapidlooks.CROP_SETTINGS["crop"]
-        bands = [crop(bs.get_band(b), crop_settings) for b in rgb_bands]
-        return self._stretch_rgb(np.stack(bands, axis=-1)), metadata
+        gray = crop(bs.get_band(band), crop_settings).astype(np.float32)
+        return self._to_grayscale_pixmap(gray), metadata
 
     def _zcam_metadata(self, bs, seq_id, path):
         metadata = {}
@@ -174,41 +169,31 @@ class SceneScanThread(QThread):
         metadata.setdefault('sequence', seq_id or path.name)
         metadata['sol'] = '?'
 
-        rgb_bands = ['L4', 'L5', 'L6']
-        rows = observation[observation['BAND'].isin(rgb_bands)]
-        if len(rows) < len(rgb_bands):
+        band = next((b for b in ('L5', 'L4', 'L6', 'L3') if b in observation['BAND'].tolist()), None)
+        if band is None:
             return None, None
 
-        bands = {}
-        first_label = None
-        for _, row in rows.iterrows():
-            band   = row['BAND']
-            fpath  = row['PATH']
-            d      = pdr.Data(fpath)
-            label  = d.metadata
-            if first_label is None:
-                first_label = label
-            scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
-            offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
-            dn     = d['IMAGE'].copy().astype(np.float32)
-            dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
-            bands[band] = dn * scale + offset
+        row   = observation[observation['BAND'] == band].iloc[0]
+        fpath = row['PATH']
+        d     = pdr.Data(fpath)
+        label = d.metadata
 
-        if first_label is not None:
-            try:
-                metadata['sol'] = int(first_label['PLANET_DAY_NUMBER'])
-            except Exception:
-                pass
-            try:
-                metadata['sequence'] = str(first_label['SEQUENCE_ID']).strip()
-            except Exception:
-                pass
+        try:
+            metadata['sol'] = int(label['PLANET_DAY_NUMBER'])
+        except Exception:
+            pass
+        try:
+            metadata['sequence'] = str(label['SEQUENCE_ID']).strip()
+        except Exception:
+            pass
 
-        if not all(b in bands for b in rgb_bands):
-            return None, None
+        scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
+        offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
+        dn     = d['IMAGE'].copy().astype(np.float32)
+        dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
+        gray   = dn * scale + offset
 
-        rgb = np.stack([np.nan_to_num(bands[b], nan=0.0) for b in rgb_bands], axis=-1)
-        return self._stretch_rgb(rgb), metadata
+        return self._to_grayscale_pixmap(gray), metadata
 
     # ------------------------------------------------------------------
     # Utilities
@@ -221,14 +206,15 @@ class SceneScanThread(QThread):
                 f"Obs {obs_ix:03d}")
 
     @staticmethod
-    def _stretch_rgb(rgb):
-        rgb    = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
-        lo, hi = (np.percentile(rgb[rgb > 0], [1, 98]) if np.any(rgb > 0) else (0, 1))
-        rgb    = np.clip((rgb - lo) / (hi - lo) if hi > lo else rgb, 0, 1)
-        return (rgb * 255).astype(np.uint8)
-
-    @staticmethod
-    def _to_pixmap(img_array):
-        img_array = np.ascontiguousarray(img_array)
-        h, w      = img_array.shape[:2]
-        return QPixmap.fromImage(QImage(img_array.data, w, h, 3 * w, QImage.Format_RGB888).copy())
+    def _to_grayscale_pixmap(gray: np.ndarray) -> QPixmap:
+        """Percentile-stretch a single-band float array and return a grayscale QPixmap."""
+        gray  = np.ma.filled(gray, np.nan) if np.ma.is_masked(gray) else np.asarray(gray)
+        gray  = np.nan_to_num(gray, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+        valid = gray[gray > 0]
+        if valid.size > 0:
+            lo, hi = np.percentile(valid, [1, 98])
+            gray   = np.clip((gray - lo) / (hi - lo) if hi > lo else gray, 0.0, 1.0)
+        img = (np.stack([gray] * 3, axis=-1) * 255).astype(np.uint8)
+        img = np.ascontiguousarray(img)
+        h, w = img.shape[:2]
+        return QPixmap.fromImage(QImage(img.data, w, h, 3 * w, QImage.Format_RGB888).copy())
