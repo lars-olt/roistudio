@@ -47,8 +47,15 @@ class SceneScanThread(QThread):
                     try:
                         pixmap, metadata = self._load_pcam_thumbnail(path, seq_id, obs_ix)
                         if pixmap is not None:
+                            # build a unique key that includes PMA for mosaic disambiguation
+                            pma = metadata.get('pma')
+                            sol = metadata.get('sol', '?')
+                            seq = metadata.get('sequence', scene_id)
+                            full_id = (f"Sol{sol:04d}_{seq}_PMA{pma}"
+                                       if isinstance(sol, int) and pma is not None
+                                       else scene_id)
                             self.scene_found.emit(
-                                scene_id, pixmap,
+                                full_id, pixmap,
                                 self._label(metadata, path, obs_ix),
                                 str(path), seq_id, obs_ix, 'PCAM',
                             )
@@ -87,7 +94,8 @@ class SceneScanThread(QThread):
                     try:
                         bs = _bandset_from_group(group)
                         if len(bs.metadata) >= 3:
-                            scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, None, obs_ix)
+                            scene_id = bs.name or f"{parent_dir.name}_{obs_ix:03d}"
+                            scenes[scene_id] = (parent_dir, None, obs_ix)
                     except Exception:
                         continue
             except Exception:
@@ -132,6 +140,11 @@ class SceneScanThread(QThread):
                             metadata[key] = int(vals[0]) if key == 'sol' else str(vals[0])
                     except Exception:
                         pass
+            if 'RSM' in bs.metadata.columns:
+                try:
+                    metadata['rsm'] = int(bs.metadata['RSM'].min())
+                except Exception:
+                    pass
         metadata.setdefault('sol', '?')
         metadata.setdefault('sequence', seq_id or path.name)
         return metadata
@@ -141,29 +154,38 @@ class SceneScanThread(QThread):
     # ------------------------------------------------------------------
 
     def _find_pcam_scenes(self, folder_path):
-        from sparc.utils.pancam_helpers import scan_pcam_files
+        from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
 
         scenes = {}
         for parent_dir in {f.parent for f in Path(folder_path).rglob('*')
                            if f.suffix.upper() in ('.IMG', '.IMQ')}:
             try:
                 products = scan_pcam_files(parent_dir)
-                for obs_ix, (seq_id, _) in enumerate(products.groupby('SEQ_ID')):
-                    scenes[f"{parent_dir.name}_{obs_ix:03d}"] = (parent_dir, seq_id, obs_ix)
+                obs_ix   = 0
+                for _, group in products.groupby('SEQ_ID'):
+                    for obs in split_pcam_observations(group):
+                        seq_id   = obs['SEQ_ID'].iloc[0]
+                        scene_id = f"{seq_id}_{obs_ix:03d}"
+                        scenes[scene_id] = (parent_dir, seq_id, obs_ix)
+                        obs_ix  += 1
             except Exception:
                 continue
         return scenes
 
     def _load_pcam_thumbnail(self, path, seq_id, obs_ix):
-        from sparc.utils.pancam_helpers import scan_pcam_files, get_pcam_bandset
+        from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
         import pdr
 
-        # Build the metadata directly - we only need PATH, BAND, and scaling params.
-        # We bypass PcamBandSet.load() because it uses an internal file reference
-        # that doesn't respect our PATH normalization on lowercase-extension files.
-        products    = scan_pcam_files(path, seq_id=seq_id)
-        clusters    = {k: v for k, v in products.groupby('SEQ_ID')}
-        observation = list(clusters.values())[obs_ix]
+        # bypass PcamBandSet.load() - read image data directly via pdr so PATH
+        # normalization works correctly for lowercase-extension files.
+        products     = scan_pcam_files(path, seq_id=seq_id)
+        observations = []
+        for _, group in products.groupby('SEQ_ID'):
+            observations.extend(split_pcam_observations(group))
+
+        if obs_ix >= len(observations):
+            return None, None
+        observation = observations[obs_ix]
 
         metadata = {}
         metadata.setdefault('sequence', seq_id or path.name)
@@ -186,6 +208,11 @@ class SceneScanThread(QThread):
             metadata['sequence'] = str(label['SEQUENCE_ID']).strip()
         except Exception:
             pass
+        try:
+            rmc = label['ROVER_MOTION_COUNTER']
+            metadata['pma'] = int(rmc[3])  # PMA is index 3: (SITE, DRIVE, IDD, PMA, HGA)
+        except Exception:
+            pass
 
         scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
         offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
@@ -201,9 +228,13 @@ class SceneScanThread(QThread):
 
     @staticmethod
     def _label(metadata, path, obs_ix):
-        return (f"Sol {metadata.get('sol', '?')} | "
-                f"{metadata.get('sequence', path.name)} | "
-                f"Obs {obs_ix:03d}")
+        sol      = metadata.get('sol', '?')
+        sequence = metadata.get('sequence', path.name)
+        if 'rsm' in metadata:
+            return f"Sol {sol} | {sequence} | RSM{metadata['rsm']}"
+        if 'pma' in metadata:
+            return f"Sol {sol} | {sequence} | PMA{metadata['pma']}"
+        return f"Sol {sol} | {sequence} | Obs {obs_ix:03d}"
 
     @staticmethod
     def _to_grayscale_pixmap(gray: np.ndarray) -> QPixmap:
