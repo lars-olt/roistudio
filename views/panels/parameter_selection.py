@@ -72,11 +72,15 @@ class ParameterSelectionPanel(QFrame):
         ]))
 
         # Segmentation
+        self.chk_use_dcs     = self._chk(False)
         self.chk_preserve_bg = self._chk(True)
         self.spin_points     = self._int(16, 64,  32)
         self.spin_iou        = self._dbl(0.0, 1.0, 0.88, 0.01)
 
         self._add_section("Segmentation", self._form([
+            ("Use DCS",      self.chk_use_dcs,
+             "Apply decorrelation stretch to the input image before segmentation. "
+             "Enhances spectral contrast. On by default for Pancam."),
             ("Preserve Bg",  self.chk_preserve_bg,
              "Keep background pixels instead of masking them black."),
             ("Points/Side",  self.spin_points,
@@ -202,7 +206,7 @@ class ParameterSelectionPanel(QFrame):
                 background: {Colors.ACCENT}; border: 1px solid {Colors.ACCENT};
             }}
         """
-        for chk in (self.chk_preserve_bg, self.chk_merge_spectra):
+        for chk in (self.chk_use_dcs, self.chk_preserve_bg, self.chk_merge_spectra):
             chk.setStyleSheet(chk_style)
 
         self.setStyleSheet(f"""
@@ -271,9 +275,13 @@ class ParameterSelectionPanel(QFrame):
     def _emit_view_settings(self):
         self.view_settings_changed.emit(self.spin_y_min.value(), self.spin_y_max.value())
 
+    def set_use_dcs(self, enabled: bool):
+        self.chk_use_dcs.setChecked(enabled)
+
     def get_parameters(self):
         return {
             'segment': {
+                'use_dcs':             self.chk_use_dcs.isChecked(),
                 'preserve_background': self.chk_preserve_bg.isChecked(),
                 'points_per_side':     self.spin_points.value(),
                 'pred_iou_thresh':     self.spin_iou.value(),

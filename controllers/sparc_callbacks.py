@@ -31,6 +31,13 @@ def run_algorithm(model, view, scene_controller, sparc_controller, current_scene
     load_result = model.sparc_load_result
     if crop_rect is not None:
         load_result = _apply_crop(load_result, crop_rect)
+
+    if params.get('segment', {}).get('use_dcs', False):
+        from sparc.data.loading import make_dcs_rgb
+        load_result = dict(load_result)
+        load_result['rgb_img'] = make_dcs_rgb(load_result)
+        view.show_status_message("Starting SPARC pipeline (DCS)...")
+    elif crop_rect is not None:
         view.show_status_message("Starting SPARC pipeline (cropped frame)...")
     else:
         view.show_status_message("Starting SPARC pipeline...")

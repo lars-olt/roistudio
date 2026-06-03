@@ -37,12 +37,12 @@ def on_scene_load_complete(load_result, scene_id, model, view):
     instrument = load_result.get('instrument', 'ZCAM')
     _set_band_names(load_result, view, instrument)
     view.set_instrument_presets(instrument)
+    view.panel_parameter_selection.set_use_dcs(instrument == 'PCAM')
     view.panel_image_editing.set_rois([], [], [])
     view.panel_spectral_view.clear_roi_spectra()
     view.panel_spectral_view.clear_plot()
     view.stop_loading()
     view.show_status_message(f"Scene loaded: {load_result['id']}")
-
 
 def on_scene_load_error(error_msg, view):
     view.stop_loading()
@@ -61,13 +61,15 @@ def _set_band_names(load_result, view, instrument):
     right_bands = [b for b in band_names if b.startswith('R')] or band_names
     left_bands  = [b for b in band_names if b.startswith('L')] or band_names
 
-    # Pull default RGB band names from INSTRUMENT_PRESETS - single source of truth.
+    # For PCAM the right camera has no visible-range bands - use left bands for both overlays.
+    right_overlay_bands = left_bands if instrument == 'PCAM' else right_bands
+
     presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
     right   = presets['right']['RGB']
     left    = presets['left']['RGB']
 
     view.panel_image_editing.set_band_names(
-        right_bands, left_bands,
+        right_overlay_bands, left_bands,
         right['r'], right['g'], right['b'],
         left['r'],  left['g'],  left['b'],
     )
