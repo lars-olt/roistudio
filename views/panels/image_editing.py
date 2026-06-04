@@ -151,7 +151,7 @@ class ImageEditingPanel(QWidget):
             _resource_path("graphics/toolbar_resize_selected.svg"),
             hover_icon_path = _resource_path("graphics/toolbar_resize_hover.svg"),
         )
-        self.btn_resize.setToolTip("Resize frame used for SPARC (single screen only)")
+        self.btn_resize.setToolTip("Resize frame (single screen only)")
         self.btn_resize.set_selected(False)
         self.btn_resize.setEnabled(False)
         self.btn_resize.clicked.connect(lambda: self.select_tool("crop"))
@@ -354,13 +354,7 @@ class ImageEditingPanel(QWidget):
         r = self.canvas_container.get_crop_rect()
         if r is None:
             return None
-        iw = self.canvas_container.canvas.width()
-        ih = self.canvas_container.canvas.height()
-        x, y, w, h = int(r.x()), int(r.y()), int(r.width()), int(r.height())
-        # return None if the crop covers the full image - no crop needed
-        if x <= 0 and y <= 0 and w >= iw and h >= ih:
-            return None
-        return (x, y, w, h)
+        return (int(r.x()), int(r.y()), int(r.width()), int(r.height()))
 
     # ------------------------------------------------------------------
     # Split screen

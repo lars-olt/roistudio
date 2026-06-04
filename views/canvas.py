@@ -108,10 +108,13 @@ class CanvasContainer(QWidget):
 
     def set_image(self, pixmap):
         self.canvas.set_image(pixmap)
-        # reset crop to full frame whenever a new image arrives
         if pixmap is not None:
+            self._full_w = pixmap.width()
+            self._full_h = pixmap.height()
             self.crop_rect = QRectF(0, 0, pixmap.width(), pixmap.height())
         else:
+            self._full_w = 0
+            self._full_h = 0
             self.crop_rect = None
         self.update()
 
@@ -948,9 +951,18 @@ class DualCanvasContainer(QWidget):
         target.set_crop_rect(rect)
 
     def get_crop_rect(self):
-        """Return current crop rect from the active single/right canvas, or None."""
+        """Return crop rect from the active canvas, or None if full frame."""
         target = self.canvas_right if self.is_split_mode else self.canvas_single
-        return target.crop_rect
+        r = target.crop_rect
+        if r is None:
+            return None
+        fw = getattr(target, '_full_w', 0)
+        fh = getattr(target, '_full_h', 0)
+        if (fw > 0 and fh > 0
+                and int(r.x()) <= 0 and int(r.y()) <= 0
+                and int(r.width()) >= fw and int(r.height()) >= fh):
+            return None
+        return r
 
     def set_tool(self, tool_name):
         for c in self._active_canvases():

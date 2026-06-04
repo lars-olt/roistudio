@@ -15,16 +15,16 @@ class SparcRunThread(QThread):
     sparc_error    = pyqtSignal(str)
 
     def __init__(self, sam_path, folder_path, seq_id, obs_ix, instrument,
-                 params=None, load_result=None):
+                 params=None, load_result=None, presegmented=None):
         super().__init__()
-        self.sam_path    = sam_path
-        self.folder_path = folder_path
-        self.seq_id      = seq_id
-        self.obs_ix      = obs_ix
-        self.instrument  = instrument
-        self.params      = params or {}
-        # pre-loaded by the GUI - skips load_step if provided
-        self.load_result = load_result
+        self.sam_path      = sam_path
+        self.folder_path   = folder_path
+        self.seq_id        = seq_id
+        self.obs_ix        = obs_ix
+        self.instrument    = instrument
+        self.params        = params or {}
+        self.load_result   = load_result
+        self.presegmented  = presegmented
 
     def run(self):
         try:
@@ -69,7 +69,10 @@ class SparcRunThread(QThread):
             self.status_update.emit("Running SPARC pipeline...")
 
             if self.load_result is not None:
-                result = run_sparc_from_load_result(self.load_result, config)
+                result = run_sparc_from_load_result(
+                    self.load_result, config,
+                    presegmented=self.presegmented,
+                )
             else:
                 self.status_update.emit("Loading scene...")
                 result = run_sparc(

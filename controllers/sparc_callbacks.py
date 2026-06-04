@@ -1,6 +1,8 @@
 """SPARC pipeline trigger and result handling."""
 
 import traceback
+
+import numpy as np
 from sparc.core.constants import get_instrument_config
 
 
@@ -32,20 +34,40 @@ def run_algorithm(model, view, scene_controller, sparc_controller, current_scene
     if crop_rect is not None:
         load_result = _apply_crop(load_result, crop_rect)
 
-    if params.get('segment', {}).get('use_dcs', False):
+    use_dcs = params.get('segment', {}).get('use_dcs', False)
+    if use_dcs:
         from sparc.data.loading import make_dcs_rgb
         load_result = dict(load_result)
         load_result['rgb_img'] = make_dcs_rgb(load_result)
-        view.show_status_message("Starting SPARC pipeline (DCS)...")
-    elif crop_rect is not None:
-        view.show_status_message("Starting SPARC pipeline (cropped frame)...")
-    else:
-        view.show_status_message("Starting SPARC pipeline...")
+
+    # check for a pre-segmented NPZ file matching the current DCS setting
+    from pathlib import Path
+    scene_id = model.sparc_load_result.get('id', '')
+    suffix   = '_dcs' if use_dcs else ''
+    npz_path = Path(folder_path) / f"{scene_id}{suffix}.npz"
+
+    presegmented = None
+    if npz_path.exists():
+        try:
+            presegmented = np.load(str(npz_path))['segments']
+            if crop_rect is not None:
+                x, y, w, h  = (int(v) for v in crop_rect)
+                presegmented = presegmented[y:y+h, x:x+w]
+            dcs_label = '(DCS, pre-segmented)' if use_dcs else '(pre-segmented)'
+            view.show_status_message(f"Starting SPARC pipeline {dcs_label}...")
+        except Exception as e:
+            presegmented = None
+            view.show_status_message(f"Warning: could not load {npz_path.name}: {e}")
+
+    if presegmented is None:
+        dcs_label = ' (DCS)' if use_dcs else ''
+        view.show_status_message(f"Starting SPARC pipeline{dcs_label}...")
 
     sparc_controller.start_sparc(
         sam_path, folder_path, seq_id, obs_ix, instrument,
-        params      = params,
-        load_result = load_result,
+        params       = params,
+        load_result  = load_result,
+        presegmented = presegmented,
     )
 
 
@@ -79,25 +101,15 @@ def _apply_crop(load_result: dict, crop_rect: tuple) -> dict:
         k: v[y:y+h, x:x+w] for k, v in load_result['base_bands'].items()
     }
 
-    # recompute homography on the cropped shared bands
-    from sparc.core.constants import SHARED_BANDS
-    instrument = load_result.get('instrument', 'ZCAM')
-    if instrument == 'ZCAM':
-        l_key, r_key = SHARED_BANDS['L'], SHARED_BANDS['R']
-    else:
-        l_key, r_key = 'L7', 'R1'
-
-    l_band = result['base_bands'].get(l_key)
-    r_band = result['base_bands'].get(r_key)
-    if l_band is not None and r_band is not None:
-        try:
-            H = compute_homography(
-                np.where(np.isfinite(l_band), l_band, 0.0),
-                np.where(np.isfinite(r_band), r_band, 0.0),
-            )
-            result['homography_matrix'] = H
-        except Exception:
-            pass  # keep original homography if recompute fails
+    # derive the crop-adjusted homography from the original via coordinate translation.
+    # if H maps right→left in full-frame coords, then in crop coords:
+    #   H_crop = T_inv @ H @ T
+    # where T shifts from crop coords back to full-frame coords.
+    orig_H = load_result.get('homography_matrix')
+    if orig_H is not None:
+        T     = np.array([[1, 0, x], [0, 1, y], [0, 0, 1]], dtype=np.float64)
+        T_inv = np.array([[1, 0, -x], [0, 1, -y], [0, 0, 1]], dtype=np.float64)
+        result['homography_matrix'] = T_inv @ orig_H @ T
 
     return result
 
