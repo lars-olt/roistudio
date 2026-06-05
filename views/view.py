@@ -351,8 +351,8 @@ class View(QWidget):
     def show_status_message(self, message):
         self.panel_status.show_status_message(message)
 
-    def add_scene_thumbnail(self, scene_id, pixmap, filename):
-        self.panel_image_selection.add_thumbnail(scene_id, pixmap, filename)
+    def add_scene_thumbnail(self, scene_id, pixmap, filename, complete=False, sort_key=None):
+        self.panel_image_selection.add_thumbnail(scene_id, pixmap, filename, complete, sort_key)
 
     def clear_thumbnails(self):
         self.panel_image_selection.clear_thumbnails()

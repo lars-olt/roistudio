@@ -8,9 +8,9 @@ from workers.scene_loader import SceneLoadThread
 class SceneController(QObject):
     """Handles scene scanning and loading operations."""
 
-    scan_started = pyqtSignal()
-    scan_stopped = pyqtSignal()
-    scene_found  = pyqtSignal(str, object, str, str, object, int, str)
+    scan_started  = pyqtSignal()
+    scan_stopped  = pyqtSignal()
+    scene_found   = pyqtSignal(str, object, str, str, object, int, str, bool, object)
     scan_complete = pyqtSignal(int)
     scan_error    = pyqtSignal(str)
 
@@ -43,9 +43,9 @@ class SceneController(QObject):
 
         self.scan_started.emit()
 
-    def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
+    def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument, complete, sort_key):
         self._scene_cache[scene_id] = (folder_path, seq_id, obs_ix, instrument)
-        self.scene_found.emit(scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument)
+        self.scene_found.emit(scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument, complete, sort_key)
 
     def start_load(self, scene_id):
         if scene_id not in self._scene_cache:

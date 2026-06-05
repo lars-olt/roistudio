@@ -142,8 +142,8 @@ class Controller(QObject):
         self._view.panel_spectral_view.clear_plot()
         self._view.set_export_enabled(False)
 
-    def _on_scene_found(self, scene_id, pixmap, filename, folder_path, seq_id, obs_ix, instrument):
-        scene_callbacks.on_scene_found(scene_id, pixmap, filename, self._view)
+    def _on_scene_found(self, scene_id, pixmap, filename, _folder, _seq_id, _obs_ix, _instrument, complete, sort_key):
+        scene_callbacks.on_scene_found(scene_id, pixmap, filename, self._view, complete, sort_key)
 
     def _on_scan_complete(self, total_scenes):
         scene_callbacks.on_scan_complete(total_scenes, self._view)

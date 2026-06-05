@@ -28,9 +28,11 @@ class SceneScanThread(QThread):
     """Scans an IOF folder and emits thumbnails as scenes are found.
 
     Auto-detects instrument from filename patterns.
+    complete is True when all expected bands are present.
+    sort_key is (sol, sequence, pointing) for ordering in the panel.
     """
 
-    scene_found   = pyqtSignal(str, object, str, str, object, int, str)
+    scene_found   = pyqtSignal(str, object, str, str, object, int, str, bool, object)
     scan_complete = pyqtSignal(int)
     scan_error    = pyqtSignal(str)
 
@@ -45,12 +47,11 @@ class SceneScanThread(QThread):
                 scenes = self._find_pcam_scenes(self.folder_path)
                 for scene_id, (path, seq_id, obs_ix) in scenes.items():
                     try:
-                        pixmap, metadata = self._load_pcam_thumbnail(path, seq_id, obs_ix)
+                        pixmap, metadata, complete = self._load_pcam_thumbnail(path, seq_id, obs_ix)
                         if pixmap is not None:
-                            # build a unique key that includes PMA for mosaic disambiguation
-                            pma = metadata.get('pma')
-                            sol = metadata.get('sol', '?')
-                            seq = metadata.get('sequence', scene_id)
+                            pma     = metadata.get('pma')
+                            sol     = metadata.get('sol', '?')
+                            seq     = metadata.get('sequence', scene_id)
                             full_id = (f"Sol{sol:04d}_{seq}_PMA{pma}"
                                        if isinstance(sol, int) and pma is not None
                                        else scene_id)
@@ -58,6 +59,7 @@ class SceneScanThread(QThread):
                                 full_id, pixmap,
                                 self._label(metadata, path, obs_ix),
                                 str(path), seq_id, obs_ix, 'PCAM',
+                                complete, self._sort_key(metadata),
                             )
                     except Exception as e:
                         import traceback
@@ -67,12 +69,13 @@ class SceneScanThread(QThread):
                 scenes = self._find_zcam_scenes(self.folder_path)
                 for scene_id, (path, seq_id, obs_ix) in scenes.items():
                     try:
-                        pixmap, metadata = self._load_zcam_thumbnail(path, seq_id, obs_ix)
+                        pixmap, metadata, complete = self._load_zcam_thumbnail(path, seq_id, obs_ix)
                         if pixmap is not None:
                             self.scene_found.emit(
                                 scene_id, pixmap,
                                 self._label(metadata, path, obs_ix),
                                 str(path), seq_id, obs_ix, 'ZCAM',
+                                complete, self._sort_key(metadata),
                             )
                     except Exception:
                         continue
@@ -108,18 +111,23 @@ class SceneScanThread(QThread):
 
         groups = _scan_and_split(path, seq_id)
         if obs_ix >= len(groups):
-            return None, None
+            return None, None, False
 
         bs       = _bandset_from_group(groups[obs_ix])
         metadata = self._zcam_metadata(bs, seq_id, path)
 
         if 'BAND' not in bs.metadata.columns:
-            return None, None
+            return None, None, False
 
         available = bs.metadata['BAND'].tolist()
+
+        from sparc.core.constants import get_instrument_config
+        n_expected = len(get_instrument_config('ZCAM')['wavelengths'])
+        complete   = len(available) >= n_expected
+
         band = next((b for b in ('R1', 'L1', 'R0R', 'L0R') if b in available), None)
         if band is None:
-            return None, None
+            return None, None, False
 
         bs.load([band])
         if '0' in band:
@@ -127,7 +135,7 @@ class SceneScanThread(QThread):
 
         crop_settings = rapidlooks.CROP_SETTINGS["crop"]
         gray = crop(bs.get_band(band), crop_settings).astype(np.float32)
-        return self._to_grayscale_pixmap(gray), metadata
+        return self._to_grayscale_pixmap(gray), metadata, complete
 
     def _zcam_metadata(self, bs, seq_id, path):
         metadata = {}
@@ -176,24 +184,28 @@ class SceneScanThread(QThread):
         from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
         import pdr
 
-        # bypass PcamBandSet.load() - read image data directly via pdr so PATH
-        # normalization works correctly for lowercase-extension files.
         products     = scan_pcam_files(path, seq_id=seq_id)
         observations = []
         for _, group in products.groupby('SEQ_ID'):
             observations.extend(split_pcam_observations(group))
 
         if obs_ix >= len(observations):
-            return None, None
+            return None, None, False
         observation = observations[obs_ix]
+
+        available = set(observation['BAND'].tolist())
+
+        from sparc.core.constants import get_instrument_config
+        n_expected = len(get_instrument_config('PCAM')['wavelengths'])
+        complete   = len(available) >= n_expected
 
         metadata = {}
         metadata.setdefault('sequence', seq_id or path.name)
         metadata['sol'] = '?'
 
-        band = next((b for b in ('L5', 'L4', 'L6', 'L3') if b in observation['BAND'].tolist()), None)
+        band = next((b for b in ('L5', 'L4', 'L6', 'L3') if b in available), None)
         if band is None:
-            return None, None
+            return None, None, False
 
         row   = observation[observation['BAND'] == band].iloc[0]
         fpath = row['PATH']
@@ -220,11 +232,23 @@ class SceneScanThread(QThread):
         dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
         gray   = dn * scale + offset
 
-        return self._to_grayscale_pixmap(gray), metadata
+        return self._to_grayscale_pixmap(gray), metadata, complete
 
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _sort_key(metadata):
+        """Return (sol, sequence, pointing) for panel ordering.
+
+        Unknown sol sorts to the end. pointing is rsm for ZCAM, pma for PCAM.
+        """
+        sol      = metadata.get('sol', '?')
+        sol      = sol if isinstance(sol, int) else float('inf')
+        sequence = metadata.get('sequence', '')
+        pointing = metadata.get('rsm', metadata.get('pma', float('inf')))
+        return (sol, sequence, pointing)
 
     @staticmethod
     def _label(metadata, path, obs_ix):

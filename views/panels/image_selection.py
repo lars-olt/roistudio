@@ -1,14 +1,42 @@
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QGridLayout, QLabel)
+from PyQt5.QtGui import QPainter, QPen, QColor
 
 from colors import Colors
 from utils.scale import Scale, physical, scaled, scaled_font
 from ..widgets import ClickableLabel
 
 
-_THUMB_BASE = 250   # reference thumbnail size in logical pixels
-_SPACING    = 10    # gap between thumbnails in reference pixels
+_THUMB_BASE          = 250  # reference thumbnail size in logical pixels
+_SPACING             = 10   # gap between thumbnails in reference pixels
+_DOT_RADIUS_DIVISOR  = 45   # dot radius = widget width / this
+_DOT_MARGIN_DIVISOR  = 22   # dot margin = widget width / this
+_DOT_OUTLINE_DIVISOR = 3    # outline width = dot radius / this
+
+
+class ThumbnailLabel(ClickableLabel):
+    """ClickableLabel that optionally paints a completion dot as a widget overlay."""
+
+    def __init__(self, complete=False, parent=None):
+        super().__init__(parent)
+        self._complete = complete
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._complete:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w      = self.width()
+        r      = w / _DOT_RADIUS_DIVISOR
+        margin = w / _DOT_MARGIN_DIVISOR
+        x      = w - r * 2 - margin
+        y      = margin
+        painter.setPen(QPen(QColor("white"), max(1.0, r / _DOT_OUTLINE_DIVISOR)))
+        painter.setBrush(QColor(Colors.ACCENT))
+        painter.drawEllipse(QRectF(x, y, r * 2, r * 2))
+        painter.end()
 
 
 class ImageSelectionPanel(QFrame):
@@ -21,6 +49,8 @@ class ImageSelectionPanel(QFrame):
         self.scene_thumbnails    = {}
         self.thumbnail_pixmaps   = {}
         self.thumbnail_filenames = {}
+        self.thumbnail_complete  = {}  # scene_id -> bool
+        self.thumbnail_sort_keys = {}  # scene_id -> (sol, sequence, pointing)
         self.selected_scene_id   = None
         self._current_cols       = 0
         self._build_ui()
@@ -104,7 +134,7 @@ class ImageSelectionPanel(QFrame):
     def _name_style(self):
         return f"QLabel {{ color: {Colors.TEXT_PRIMARY}; font-size: {scaled_font(9)}pt; }}"
 
-    def _build_thumb_widget(self, scene_id, pixmap, filename, thumb_size):
+    def _build_thumb_widget(self, scene_id, pixmap, filename, thumb_size, complete):
         label_h = scaled(40)
 
         container = QWidget()
@@ -115,9 +145,10 @@ class ImageSelectionPanel(QFrame):
         v.setSpacing(scaled(4))
         container.setLayout(v)
 
-        thumb_label = ClickableLabel()
         scaled_pix  = pixmap.scaled(thumb_size, thumb_size,
                                     Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        thumb_label = ThumbnailLabel(complete=complete)
         thumb_label.setPixmap(scaled_pix)
         thumb_label.setFixedSize(thumb_size, thumb_size)
         thumb_label.setAlignment(Qt.AlignCenter)
@@ -141,9 +172,14 @@ class ImageSelectionPanel(QFrame):
     # Grid management
     # ------------------------------------------------------------------
 
-    def add_thumbnail(self, scene_id, pixmap, filename):
+    def add_thumbnail(self, scene_id, pixmap, filename, complete=False, sort_key=None):
         self.thumbnail_pixmaps[scene_id]   = pixmap
         self.thumbnail_filenames[scene_id] = filename
+        self.thumbnail_complete[scene_id]  = complete
+        self.thumbnail_sort_keys[scene_id] = sort_key or (float('inf'), '', float('inf'))
+
+    def flush_thumbnails(self):
+        """Rebuild the grid from all accumulated thumbnails. Call once after scanning is done."""
         self._rebuild_grid()
 
     def _rebuild_grid(self):
@@ -164,12 +200,19 @@ class ImageSelectionPanel(QFrame):
         self.thumbnail_layout.setSpacing(spacing)
         self.thumbnail_layout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(10))
 
-        for idx, scene_id in enumerate(self.thumbnail_pixmaps):
+        ordered = sorted(
+            self.thumbnail_pixmaps,
+            key=lambda sid: (not self.thumbnail_complete.get(sid, False),
+                             self.thumbnail_sort_keys.get(sid, (float('inf'), '', float('inf'))))
+        )
+
+        for idx, scene_id in enumerate(ordered):
             widget, label = self._build_thumb_widget(
                 scene_id,
                 self.thumbnail_pixmaps[scene_id],
                 self.thumbnail_filenames[scene_id],
                 thumb_size,
+                self.thumbnail_complete.get(scene_id, False),
             )
             self.scene_thumbnails[scene_id] = label
             self.thumbnail_layout.addWidget(widget, idx // cols, idx % cols, Qt.AlignTop)
@@ -197,4 +240,6 @@ class ImageSelectionPanel(QFrame):
         self.scene_thumbnails.clear()
         self.thumbnail_pixmaps.clear()
         self.thumbnail_filenames.clear()
+        self.thumbnail_complete.clear()
+        self.thumbnail_sort_keys.clear()
         self.selected_scene_id = None

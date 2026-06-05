@@ -1,11 +1,12 @@
 """Scene scan and load callback handlers."""
 
 
-def on_scene_found(scene_id, pixmap, filename, view):
-    view.add_scene_thumbnail(scene_id, pixmap, filename)
+def on_scene_found(scene_id, pixmap, filename, view, complete, sort_key):
+    view.add_scene_thumbnail(scene_id, pixmap, filename, complete, sort_key)
 
 
 def on_scan_complete(total_scenes, view):
+    view.panel_image_selection.flush_thumbnails()
     view.stop_loading()
     view.show_status_message(f"Scan complete. Found {total_scenes} scene(s).")
 
