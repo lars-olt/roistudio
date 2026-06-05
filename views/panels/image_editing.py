@@ -428,6 +428,13 @@ class ImageEditingPanel(QWidget):
         self._overlay_single.set_presets('right', presets)
         self._overlay_right.set_presets('right', presets)
         self._overlay_left.set_presets('left', presets)
+    
+    def set_stretch_enabled(self, camera: str, enabled: bool):
+        """Enable or disable the stretch bar overlay for the given camera side."""
+        overlay = {'single': self._overlay_single,
+                'right':  self._overlay_right,
+                'left':   self._overlay_left}[camera]
+        overlay.set_loaded(enabled)
 
     def set_image(self, pixmap):
         self.canvas_container.set_image(pixmap)

@@ -62,6 +62,10 @@ def _set_band_names(load_result, view, instrument):
     right_bands = [b for b in band_names if b.startswith('R')] or band_names
     left_bands  = [b for b in band_names if b.startswith('L')] or band_names
 
+    # stretch_bands flags whether the preferred RGB bands were all present - if not,
+    # the overlay is populated but disabled so the user knows it's a degraded scene.
+    stretch = load_result.get('stretch_bands', {'left': True, 'right': True})
+
     presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
     right   = presets['right']['RGB']
     left    = presets['left']['RGB']
@@ -71,3 +75,9 @@ def _set_band_names(load_result, view, instrument):
         right['r'], right['g'], right['b'],
         left['r'],  left['g'],  left['b'],
     )
+
+    if not stretch['right']:
+        view.panel_image_editing.set_stretch_enabled('single', False)
+        view.panel_image_editing.set_stretch_enabled('right',  False)
+    if not stretch['left']:
+        view.panel_image_editing.set_stretch_enabled('left', False)
