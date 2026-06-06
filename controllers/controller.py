@@ -87,6 +87,9 @@ class Controller(QObject):
         panel.roi_too_small.connect(
             lambda: self._view.show_status_message("ROI too small - draw a larger rectangle.")
         )
+        panel.split_screen_unavailable.connect(
+            lambda: self._view.show_status_message("Split screen unavailable - scene has only one camera side.")
+        )
         panel.split_screen_exit_requested.connect(self._on_split_screen_exit_requested)
         panel.split_screen_toggled.connect(self._on_split_screen_toggled)
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)

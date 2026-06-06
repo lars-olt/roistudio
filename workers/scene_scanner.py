@@ -15,6 +15,11 @@ _PCAM_FILENAME_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+# Complete band sets per instrument. A scene is considered full when all are present.
+# PCAM: L2-L7 + R1-R7 (13 bands). ZCAM completeness uses the marslab filter dict.
+_PCAM_BANDS = frozenset({'L2', 'L3', 'L4', 'L5', 'L6', 'L7',
+                          'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7'})
+
 
 def detect_instrument(folder_path):
     """Return 'PCAM' if Pancam filenames are found in the folder, 'ZCAM' otherwise."""
@@ -122,8 +127,7 @@ class SceneScanThread(QThread):
         available = bs.metadata['BAND'].tolist()
 
         from sparc.core.constants import get_instrument_config
-        n_expected = len(get_instrument_config('ZCAM')['wavelengths'])
-        complete   = len(available) >= n_expected
+        complete  = len(available) >= len(get_instrument_config('ZCAM')['filters'])
 
         band = next((b for b in ('R1', 'L1', 'R0R', 'L0R') if b in available), None)
         if band is None:
@@ -169,13 +173,10 @@ class SceneScanThread(QThread):
                            if f.suffix.upper() in ('.IMG', '.IMQ')}:
             try:
                 products = scan_pcam_files(parent_dir)
-                obs_ix   = 0
-                for _, group in products.groupby('SEQ_ID'):
-                    for obs in split_pcam_observations(group):
-                        seq_id   = obs['SEQ_ID'].iloc[0]
+                for seq_id, group in products.groupby('SEQ_ID'):
+                    for obs_ix, obs in enumerate(split_pcam_observations(group)):
                         scene_id = f"{seq_id}_{obs_ix:03d}"
                         scenes[scene_id] = (parent_dir, seq_id, obs_ix)
-                        obs_ix  += 1
             except Exception:
                 continue
         return scenes
@@ -193,11 +194,23 @@ class SceneScanThread(QThread):
             return None, None, False
         observation = observations[obs_ix]
 
-        available = set(observation['BAND'].tolist())
+        # Read each band's frame size and keep only the largest - matches ZCAM subframe filtering.
+        band_shapes = {}
+        for _, row in observation.iterrows():
+            try:
+                d = pdr.Data(row['PATH'])
+                img_key = 'IMAGE' if 'IMAGE' in d.keys() else 'Image_Object'
+                band_shapes[row['BAND']] = np.array(d[img_key]).shape
+            except Exception:
+                continue
 
-        from sparc.core.constants import get_instrument_config
-        n_expected = len(get_instrument_config('PCAM')['wavelengths'])
-        complete   = len(available) >= n_expected
+        if not band_shapes:
+            return None, None, False
+
+        max_shape   = max(set(band_shapes.values()), key=list(band_shapes.values()).count)
+        full_bands  = {b for b, s in band_shapes.items() if s == max_shape}
+        available   = full_bands
+        complete  = _PCAM_BANDS.issubset(available)
 
         metadata = {}
         metadata.setdefault('sequence', seq_id or path.name)
@@ -212,25 +225,27 @@ class SceneScanThread(QThread):
         d     = pdr.Data(fpath)
         label = d.metadata
 
+        from sparc.data.loading import _normalise_pcam_label, _pcam_calibration
+        norm = _normalise_pcam_label(label)
+
         try:
-            metadata['sol'] = int(label['PLANET_DAY_NUMBER'])
+            metadata['sol'] = int(norm['PLANET_DAY_NUMBER'])
         except Exception:
             pass
         try:
-            metadata['sequence'] = str(label['SEQUENCE_ID']).strip()
+            metadata['sequence'] = str(norm['SEQUENCE_ID']).strip()
         except Exception:
             pass
         try:
-            rmc = label['ROVER_MOTION_COUNTER']
-            metadata['pma'] = int(rmc[3])  # PMA is index 3: (SITE, DRIVE, IDD, PMA, HGA)
+            metadata['pma'] = int(norm['ROVER_MOTION_COUNTER'][3])  # PMA is index 3: (SITE, DRIVE, IDD, PMA, HGA)
         except Exception:
             pass
 
-        scale  = label['DERIVED_IMAGE_PARMS']['RADIANCE_SCALING_FACTOR']
-        offset = label['DERIVED_IMAGE_PARMS']['RADIANCE_OFFSET']
-        dn     = d['IMAGE'].copy().astype(np.float32)
-        dn     = np.where((dn == 0) | (dn == 4095), np.nan, dn)
-        gray   = dn * scale + offset
+        scale, offset = _pcam_calibration(label)
+        img_key = 'IMAGE' if 'IMAGE' in d.keys() else 'Image_Object'
+        dn      = np.array(d[img_key]).astype(np.float32)
+        dn      = np.where((dn == 0) | (dn == 4095), np.nan, dn)
+        gray    = dn * scale + offset
 
         return self._to_grayscale_pixmap(gray), metadata, complete
 

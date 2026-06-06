@@ -35,6 +35,9 @@ def on_scene_load_complete(load_result, scene_id, model, view):
             load_result['homography_matrix']
         )
 
+    has_stereo = bool(load_result.get('left_band_keys')) and bool(load_result.get('right_band_keys'))
+    view.panel_image_editing.set_split_screen_enabled(has_stereo)
+
     instrument = load_result.get('instrument', 'ZCAM')
     _set_band_names(load_result, view, instrument)
     view.set_instrument_presets(instrument)

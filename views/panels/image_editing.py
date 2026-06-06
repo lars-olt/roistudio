@@ -79,6 +79,7 @@ class ImageEditingPanel(QWidget):
     roi_right_clicked    = pyqtSignal(int, QPoint)  # roi_index, global pos
     split_screen_toggled        = pyqtSignal(bool)
     split_screen_exit_requested = pyqtSignal()
+    split_screen_unavailable    = pyqtSignal()
     canvas_focus_changed        = pyqtSignal(str)   # 'single' | 'left' | 'right'
     crop_changed                = pyqtSignal(tuple)  # (x, y, w, h)
 
@@ -363,8 +364,11 @@ class ImageEditingPanel(QWidget):
     def _toggle_split_screen(self):
         entering_split = not self.btn_split_screen.is_selected
         if not entering_split:
-            # Let the controller decide whether to proceed (may show a confirmation dialog).
             self.split_screen_exit_requested.emit()
+            return
+        if not getattr(self, '_split_screen_enabled', True):
+            self.btn_split_screen.set_selected(False)
+            self.split_screen_unavailable.emit()
             return
         self._apply_split_screen(True)
 
@@ -435,6 +439,16 @@ class ImageEditingPanel(QWidget):
                 'right':  self._overlay_right,
                 'left':   self._overlay_left}[camera]
         overlay.set_loaded(enabled)
+    
+    def set_split_screen_enabled(self, enabled: bool):
+        """Mark split screen as available or not for the current scene."""
+        self._split_screen_enabled = enabled
+        self.btn_split_screen.setToolTip(
+            "Toggle split screen (S)" if enabled
+            else "Split screen unavailable - scene only has images from one camera"
+        )
+        if not enabled and self._is_split:
+            self._apply_split_screen(False)
 
     def set_image(self, pixmap):
         self.canvas_container.set_image(pixmap)
