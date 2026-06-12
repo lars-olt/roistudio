@@ -27,4 +27,6 @@ class SceneLoadThread(QThread):
             )
             self.load_complete.emit(load_result)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.load_error.emit(str(e))

@@ -167,6 +167,22 @@ class SceneScanThread(QThread):
 
     def _find_pcam_scenes(self, folder_path):
         from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
+        import pdr as _pdr
+
+        def _band_area(path):
+            try:
+                d       = _pdr.Data(path)
+                img_key = 'IMAGE' if 'IMAGE' in d.keys() else 'Image_Object'
+                arr     = d[img_key]
+                return arr.shape[0] * arr.shape[1]
+            except Exception:
+                return 0
+
+        def _frame_areas(group):
+            representatives = group.drop_duplicates('SCLK')
+            areas = representatives['PATH'].map(_band_area)
+            areas.index = representatives.index
+            return group['PATH'].map(lambda _: areas.max())
 
         scenes = {}
         for parent_dir in {f.parent for f in Path(folder_path).rglob('*')
@@ -174,7 +190,12 @@ class SceneScanThread(QThread):
             try:
                 products = scan_pcam_files(parent_dir)
                 for seq_id, group in products.groupby('SEQ_ID'):
-                    for obs_ix, obs in enumerate(split_pcam_observations(group)):
+                    areas    = _frame_areas(group)
+                    max_area = areas.max()
+                    if max_area == 0:
+                        continue
+                    full_frame = group[areas == max_area]
+                    for obs_ix, obs in enumerate(split_pcam_observations(full_frame)):
                         scene_id = f"{seq_id}_{obs_ix:03d}"
                         scenes[scene_id] = (parent_dir, seq_id, obs_ix)
             except Exception:
@@ -194,22 +215,7 @@ class SceneScanThread(QThread):
             return None, None, False
         observation = observations[obs_ix]
 
-        # Read each band's frame size and keep only the largest - matches ZCAM subframe filtering.
-        band_shapes = {}
-        for _, row in observation.iterrows():
-            try:
-                d = pdr.Data(row['PATH'])
-                img_key = 'IMAGE' if 'IMAGE' in d.keys() else 'Image_Object'
-                band_shapes[row['BAND']] = np.array(d[img_key]).shape
-            except Exception:
-                continue
-
-        if not band_shapes:
-            return None, None, False
-
-        max_shape   = max(set(band_shapes.values()), key=list(band_shapes.values()).count)
-        full_bands  = {b for b, s in band_shapes.items() if s == max_shape}
-        available   = full_bands
+        available = set(observation['BAND'].tolist())
         complete  = _PCAM_BANDS.issubset(available)
 
         metadata = {}
