@@ -74,14 +74,21 @@ def _set_band_names(load_result, view, instrument):
     right   = presets['right']['RGB']
     left    = presets['left']['RGB']
 
+    # PCAM single screen shows the left camera; ZCAM shows the right.
+    single_bands   = left_bands  if instrument == 'PCAM' else right_bands
+    single_presets = left        if instrument == 'PCAM' else right
+    single_stretch = 'left'      if instrument == 'PCAM' else 'right'
+
     view.panel_image_editing.set_band_names(
-        right_bands, left_bands,
+        single_bands, right_bands, left_bands,
+        single_presets['r'], single_presets['g'], single_presets['b'],
         right['r'], right['g'], right['b'],
         left['r'],  left['g'],  left['b'],
     )
 
-    if not stretch['right']:
+    if not stretch[single_stretch]:
         view.panel_image_editing.set_stretch_enabled('single', False)
-        view.panel_image_editing.set_stretch_enabled('right',  False)
+    if not stretch['right']:
+        view.panel_image_editing.set_stretch_enabled('right', False)
     if not stretch['left']:
         view.panel_image_editing.set_stretch_enabled('left', False)

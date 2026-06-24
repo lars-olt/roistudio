@@ -287,12 +287,13 @@ class ImageEditingPanel(QWidget):
         for o in (self._overlay_single, self._overlay_right, self._overlay_left):
             o._reposition()
 
-    def set_band_names(self, right_bands, left_bands,
-                       r_right=None, g_right=None, b_right=None,
-                       r_left=None,  g_left=None,  b_left=None):
-        self._overlay_single.populate(right_bands, r_right, g_right, b_right)
-        self._overlay_right.populate(right_bands,  r_right, g_right, b_right)
-        self._overlay_left.populate(left_bands,    r_left,  g_left,  b_left)
+    def set_band_names(self, single_bands, right_bands, left_bands,
+                        r_single=None, g_single=None, b_single=None,
+                        r_right=None,  g_right=None,  b_right=None,
+                        r_left=None,   g_left=None,   b_left=None):
+        self._overlay_single.populate(single_bands, r_single, g_single, b_single)
+        self._overlay_right.populate(right_bands,   r_right,  g_right,  b_right)
+        self._overlay_left.populate(left_bands,     r_left,   g_left,   b_left)
 
     def get_selected_bands(self, camera='single'):
         return {'single': self._overlay_single,
