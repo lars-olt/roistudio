@@ -119,7 +119,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
                     load_result, left_rect, right_rect, instrument_config
                 ) if has_dual_cubes else
                 sparc_controller.update_roi_spectrum(
-                    load_result['cube'], right_rect, instrument_config
+                    load_result['cube'], left_rect if instrument == 'PCAM' else right_rect, instrument_config
                 )
             )
 
@@ -130,8 +130,9 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
             else:
                 color, name = color_manager.next()
 
+            canvas_rect = left_rect if instrument == 'PCAM' else right_rect
             rois_data.append({
-                'roi':        right_rect,
+                'roi':        canvas_rect,
                 'right_rect': right_rect,
                 'left_rect':  left_rect,
                 'mineral':    'Loaded ROI',

@@ -459,6 +459,9 @@ class Controller(QObject):
                     instrument_config,
                 )
                 self._current_rois_data[i] = {**roi, **spec_data}
+            if self._model.instrument == 'PCAM':
+                for roi in self._current_rois_data:
+                    roi['roi'] = roi['left_rect']
 
         if self._model.sparc_load_result is not None:
             self._render_current_images()

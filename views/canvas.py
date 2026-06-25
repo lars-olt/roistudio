@@ -914,24 +914,29 @@ class DualCanvasContainer(QWidget):
         if not self.is_split_mode:
             self.canvas_single.set_rois(rois, colors, names)
             return
-        self.canvas_right.set_rois(rois, colors, names)
+
+        # right canvas always draws right_rect, left canvas always left_rect -
+        # roi_data['roi'] tracks the single-screen camera and can't be used here
+        right_rois = [{'roi': r.get('right_rect', r['roi'])} for r in rois]
+        self.canvas_right.set_rois(right_rois, colors, names)
+
         left_rois = []
         for roi_data in rois:
             if 'left_rect' in roi_data:
                 left_rois.append({'roi': roi_data['left_rect']})
             elif self.inverse_homography_matrix is not None:
-                x, y, w, h = map(float, roi_data['roi'])
+                x, y, w, h = map(float, roi_data['right_rect'] if 'right_rect' in roi_data else roi_data['roi'])
                 corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]],
-                                   dtype=np.float32).reshape(-1, 1, 2)
+                                dtype=np.float32).reshape(-1, 1, 2)
                 tc = cv2.perspectiveTransform(
                     corners, self.inverse_homography_matrix
                 ).reshape(-1, 2)
                 xl, yl = tc[:, 0].min(), tc[:, 1].min()
                 left_rois.append({'roi': (xl, yl,
-                                          tc[:, 0].max() - xl,
-                                          tc[:, 1].max() - yl)})
+                                        tc[:, 0].max() - xl,
+                                        tc[:, 1].max() - yl)})
             else:
-                left_rois.append({'roi': roi_data['roi']})
+                left_rois.append({'roi': roi_data['right_rect'] if 'right_rect' in roi_data else roi_data['roi']})
         self.canvas_left.set_rois(left_rois, colors, names)
 
     def set_tool_cursor(self, cursor):

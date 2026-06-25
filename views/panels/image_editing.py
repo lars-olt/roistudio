@@ -170,7 +170,7 @@ class ImageEditingPanel(QWidget):
             hover_icon_path          = _resource_path("graphics/toolbar_single_screen_hover.svg"),
             selected_hover_icon_path = _resource_path("graphics/toolbar_split_screen_hover.svg"),
         )
-        self.btn_split_screen.setToolTip("Toggle split screen (S)")
+        self.btn_split_screen.setToolTip("Toggle split screen")
         self.btn_split_screen.set_selected(False)
         self.btn_split_screen.clicked.connect(self._toggle_split_screen)
         t_layout.addWidget(self.btn_split_screen)
@@ -445,7 +445,7 @@ class ImageEditingPanel(QWidget):
         """Mark split screen as available or not for the current scene."""
         self._split_screen_enabled = enabled
         self.btn_split_screen.setToolTip(
-            "Toggle split screen (S)" if enabled
+            "Toggle split screen" if enabled
             else "Split screen unavailable - scene only has images from one camera"
         )
         if not enabled and self._is_split:

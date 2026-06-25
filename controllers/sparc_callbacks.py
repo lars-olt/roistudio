@@ -144,6 +144,10 @@ def on_sparc_complete(result, model, view, sparc_controller, color_manager):
             )
             rois_data[i] = {**roi, **spec_data}
 
+    if result.instrument == 'PCAM':
+        for roi in rois_data:
+            roi['roi'] = roi['left_rect']
+
     colors, names = [], []
     for _ in rois_data:
         color, name = color_manager.next()
