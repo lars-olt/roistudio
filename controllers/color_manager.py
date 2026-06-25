@@ -24,6 +24,13 @@ class ColorManager:
         self._init_palette(instrument)
 
     def _init_palette(self, instrument):
+        if instrument == 'PCAM':
+            self._init_pcam_palette()
+        else:
+            self._init_zcam_palette()
+        self._rebuild_deque()
+
+    def _init_zcam_palette(self):
         merspect_order = [
             'eraser', 'green', 'yellow', 'blue', 'red', 'magenta', 'cyan',
             'orange', 'azure', 'purple', 'lime', 'rust',
@@ -42,6 +49,42 @@ class ColorManager:
             'red', 'magenta', 'cyan', 'orange', 'azure', 'purple',
             'lime', 'rust', 'green', 'blue', 'yellow', 'magenta+2', 'magenta-3',
         ]
+        self._build_palette(usable, preferred)
+
+    def _init_pcam_palette(self):
+        # MERSpect's Pancam palette. Each MER color maps to its closest MCZ
+        # equivalent for the RGB lookup, but the label index is the MER list
+        # position so .sel files round-trip with legacy merspect. eraser sits
+        # at the bottom (index 15), unlike MCZ where it leads.
+        mer_to_mcz = [
+            ('red',          'red-1'),
+            ('light green',  'green'),
+            ('light blue',   'blue'),
+            ('light cyan',   'cyan'),
+            ('dark green',   'green-2'),
+            ('yellow',       'yellow'),
+            ('light purple', 'magenta'),
+            ('pink',         'red+2'),
+            ('teal',         'cyan-2'),
+            ('goldenrod',    'orange-1'),
+            ('sienna',       'orange-2'),
+            ('dark blue',    'blue-2'),
+            ('bright red',   'red'),
+            ('dark red',     'red-2'),
+            ('dark purple',  'purple'),
+            ('eraser',       None),
+        ]
+
+        # Index by MER list position; palette is keyed on the MCZ name so RGB
+        # lookup and SEL import (which read MERSPECT_M20_COLOR_MAPPINGS) work.
+        self._merspect_indices = {mcz: i for i, (_mer, mcz) in enumerate(mer_to_mcz) if mcz}
+
+        usable = [mcz for _mer, mcz in mer_to_mcz if mcz]
+        # handout follows the MER list order top-to-bottom
+        self._build_palette(usable, preferred=usable)
+
+    def _build_palette(self, usable, preferred):
+        """Populate palette/name/preferred fields from a usable list and priority order."""
         self._preferred_set = set(preferred)
         ordered   = [k for k in preferred if k in set(usable)]
         remainder = [k for k in usable if k not in self._preferred_set]
@@ -50,8 +93,6 @@ class ColorManager:
             if k in MERSPECT_M20_COLOR_MAPPINGS:
                 self._palette.append(hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[k]))
                 self._name_palette.append(k)
-
-        self._rebuild_deque()
 
     def _rebuild_deque(self):
         """Rebuild the deque in priority order, skipping reserved names."""
@@ -120,3 +161,12 @@ class ColorManager:
     def reset(self):
         self._reserved = set()
         self._rebuild_deque()
+
+    def set_instrument(self, instrument):
+        """Rebuild the palette for a new instrument. Clears all reserved state."""
+        self._palette          = []
+        self._name_palette     = []
+        self._merspect_indices = {}
+        self._preferred_set    = set()
+        self._reserved         = set()
+        self._init_palette(instrument)

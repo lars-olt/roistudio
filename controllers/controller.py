@@ -158,6 +158,7 @@ class Controller(QObject):
         scene_callbacks.on_scene_load_complete(
             load_result, self._current_scene_id, self._model, self._view
         )
+        self.color_manager.set_instrument(self._model.instrument)
         self._render_current_images()
         self._refresh_swatch()
         # enable crop tool now that a scene is loaded (single screen only)
