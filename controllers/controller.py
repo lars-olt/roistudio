@@ -341,17 +341,17 @@ class Controller(QObject):
             self.color_manager,
         )
 
-    def _load_sel(self):
+    def _load_sel(self, sel_path=None):
         outcome = sel_controller.load_sel(
             self._view, self._model,
             self._get_instrument_config(),
             self.sparc_controller,
             self._has_dual_cubes(),
             self.color_manager,
+            sel_path=sel_path,
         )
         if outcome is None:
             return
-
         self._current_rois_data, self._current_colors, self._current_color_names = outcome
         self._update_roi_view()
         self._view.set_export_enabled(True)

@@ -84,22 +84,23 @@ def export_sel(view, model, rois_data, color_names, color_manager, output_path=N
         traceback.print_exc()
 
 
-def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, color_manager):
+def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, color_manager, sel_path=None):
     """Load ROIs from a .sel file into the current scene."""
     load_result = model.sparc_load_result
     if load_result is None:
         view.show_status_message("No scene loaded - cannot load SEL.")
         return None
 
-    path, _ = QFileDialog.getOpenFileName(
-        view, "Load SEL File", "", "SEL Files (*.sel);;All Files (*)"
-    )
-    if not path:
+    if sel_path is None:
+        sel_path, _ = QFileDialog.getOpenFileName(
+            view, "Load SEL File", "", "SEL Files (*.sel);;All Files (*)"
+        )
+    if not sel_path:
         return None
 
     try:
         instrument               = load_result.get('instrument', 'ZCAM').strip().upper()
-        right_rois, left_rois, label_ids = read_sel(path, instrument)
+        right_rois, left_rois, label_ids = read_sel(sel_path, instrument)
 
         col_off, row_off, _, _ = _sensor_offsets(load_result, instrument)
         if col_off or row_off:
@@ -119,7 +120,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
                     load_result, left_rect, right_rect, instrument_config
                 ) if has_dual_cubes else
                 sparc_controller.update_roi_spectrum(
-                    load_result['cube'], left_rect if instrument == 'PCAM' else right_rect, instrument_config
+                    load_result['cube'], right_rect, instrument_config
                 )
             )
 
@@ -130,9 +131,8 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
             else:
                 color, name = color_manager.next()
 
-            canvas_rect = left_rect if instrument == 'PCAM' else right_rect
             rois_data.append({
-                'roi':        canvas_rect,
+                'roi':        right_rect,
                 'right_rect': right_rect,
                 'left_rect':  left_rect,
                 'mineral':    'Loaded ROI',
@@ -143,7 +143,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
 
         color_manager.reset()
         color_manager.reserve(color_names)
-        view.show_status_message(f"Loaded {len(rois_data)} ROI(s) from {path}")
+        view.show_status_message(f"Loaded {len(rois_data)} ROI(s) from {sel_path}")
         return rois_data, colors, color_names
 
     except Exception as e:

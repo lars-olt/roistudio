@@ -67,6 +67,19 @@ class SceneController(QObject):
         self.load_started.emit()
         return scene_id
 
+    def load_direct(self, folder_path, seq_id, obs_ix, instrument):
+        """Load a scene directly without a prior scan - used for CLI launch."""
+        if self._load_thread is not None and self._load_thread.isRunning():
+            self._load_thread.quit()
+            self._load_thread.wait()
+
+        self._load_thread = SceneLoadThread(folder_path, seq_id, obs_ix, instrument)
+        self._load_thread.load_complete.connect(self.load_complete.emit)
+        self._load_thread.load_error.connect(self.load_error.emit)
+        self._load_thread.start()
+
+        self.load_started.emit()
+
     def get_scene_info(self, scene_id):
         """Return cached scene info as (folder_path, seq_id, obs_ix, instrument)."""
         return self._scene_cache.get(scene_id)
