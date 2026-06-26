@@ -178,8 +178,8 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
         base_bands  = load_result.get('base_bands', {})
         band_sets   = _EXPORT_BAND_SETS.get(instrument, _EXPORT_BAND_SETS['ZCAM'])
         mpl_colors  = [tuple(c / 255.0 for c in color) for color in colors]
-        right_rects = [r['roi']       for r in rois_data]
-        left_rects  = [r['left_rect'] for r in rois_data]
+        right_rects = [r['right_rect']                     for r in rois_data]
+        left_rects  = [r.get('left_rect', r['right_rect']) for r in rois_data]
 
         export_sel(view, model, rois_data, color_names, color_manager,
                    output_path=str(output_path / f"{scene_id}.sel"))
