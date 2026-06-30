@@ -690,6 +690,8 @@ class CanvasContainer(QWidget):
                 self.selected_roi_index = -1
                 self.update()
             return
+        if event.isAutoRepeat():
+            return
         if event.key() == Qt.Key_Space and not self.space_pressed:
             self.space_pressed = True
             if not self.is_panning:
@@ -701,10 +703,24 @@ class CanvasContainer(QWidget):
                 self.update()
 
     def keyReleaseEvent(self, event: QKeyEvent):
+        if event.isAutoRepeat():
+            return
         if event.key() == Qt.Key_Space:
             self.space_pressed = False
             if not self.is_panning:
                 super().setCursor(self.tool_cursor)
+    
+    def focusOutEvent(self, event):
+        # Losing focus while space is held means we never get the release
+        # reset pan state so ROI interaction isn't blocked.
+        if self.space_pressed or self.is_panning:
+            self.space_pressed = False
+            if self.is_panning:
+                self.is_panning    = False
+                self._pan_is_mouse = False
+                self._stop_momentum()
+            self.setCursor(self.tool_cursor)
+        super().focusOutEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
