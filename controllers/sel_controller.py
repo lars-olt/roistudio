@@ -28,8 +28,8 @@ _EXPORT_BAND_SETS = {
         'left':  {'RGB': ('L0R', 'L0G', 'L0B'), 'DCS': ('L2',  'L5',  'L6')},
     },
     'PCAM': {
-        'right': {'RGB': ('R7', 'R5', 'R3'), 'DCS': ('R7', 'R5', 'R3')},
-        'left':  {'RGB': ('L4', 'L5', 'L6'), 'DCS': ('L4', 'L5', 'L6')},
+        'right': {'RGB': ('R2', 'R1', 'R1'), 'DCS': ('R7', 'R5', 'R3')},
+        'left':  {'RGB': ('L2', 'L5', 'L7'), 'DCS': ('L2', 'L5', 'L7')},
     },
 }
 

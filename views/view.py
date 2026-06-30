@@ -28,12 +28,12 @@ INSTRUMENT_PRESETS = {
     },
     'PCAM': {
         'right': {
-            'RGB': {'r': 'R7', 'g': 'R5', 'b': 'R3', 'dcs': False},
+            'RGB': {'r': 'R2', 'g': 'R1', 'b': 'R1', 'dcs': False},
             'DCS': {'r': 'R7', 'g': 'R5', 'b': 'R3', 'dcs': True},
         },
         'left': {
-            'RGB': {'r': 'L4', 'g': 'L5', 'b': 'L6', 'dcs': False},
-            'DCS': {'r': 'L4', 'g': 'L5', 'b': 'L6', 'dcs': True},
+            'RGB': {'r': 'L2', 'g': 'L5', 'b': 'L7', 'dcs': False},
+            'DCS': {'r': 'L2', 'g': 'L5', 'b': 'L7', 'dcs': True},
         },
     },
 }
