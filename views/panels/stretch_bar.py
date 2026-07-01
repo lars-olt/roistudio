@@ -125,8 +125,9 @@ class StretchBar(QWidget):
     def __init__(self, parent: CanvasContainer):
         super().__init__(parent)
         self.setFocusPolicy(Qt.NoFocus)
-        self._focused   = False
-        self._loaded    = False
+        self._focused          = False
+        self._loaded           = False
+        self._bands_available  = True   # whether the manual band combos are usable
         self._default_r = None
         self._default_g = None
         self._default_b = None
@@ -187,7 +188,7 @@ class StretchBar(QWidget):
             self.combo_preset.addItem(label)
         self.combo_preset.setCurrentIndex(0)
         self.combo_preset.blockSignals(False)
-        self._style_band_controls(enabled=True)
+        self._style_band_controls(enabled=self._bands_available)
 
     def set_focused(self, focused: bool):
         if focused != self._focused:
@@ -196,6 +197,15 @@ class StretchBar(QWidget):
 
     def set_loaded(self, loaded: bool):
         self._loaded = loaded
+        self._apply_scale()
+
+    def set_bands_available(self, available: bool):
+        """Enable or disable the manual band combos without touching the preset combo.
+
+        A scene may be missing its preferred RGB bands (so manual RGB is degraded)
+        yet still support presets that use other bands - the preset combo stays live.
+        """
+        self._bands_available = available
         self._apply_scale()
 
     def populate(self, band_names, r=None, g=None, b=None):
@@ -220,6 +230,7 @@ class StretchBar(QWidget):
             combo.setCurrentText(sel)
             combo.blockSignals(False)
 
+        self._bands_available = True
         self.set_loaded(True)
 
     def apply_preset(self, r: str, g: str, b: str, dcs: bool):
@@ -270,7 +281,10 @@ class StretchBar(QWidget):
         self.chk_dcs.setRowHeight(row_h)
 
         self._style_preset_combo(fs, row_h)
-        self._style_band_controls(enabled=self._loaded and self.combo_preset.currentText() == "None")
+        self._style_band_controls(
+            enabled=self._loaded and self._bands_available
+                    and self.combo_preset.currentText() == "None"
+        )
 
         self.setFixedHeight(bar_height())
         self.setMaximumWidth(16777215)
@@ -331,7 +345,7 @@ class StretchBar(QWidget):
     def _on_preset_selected(self, index):
         label = self.combo_preset.itemText(index)
         if label == "None":
-            self._style_band_controls(enabled=True)
+            self._style_band_controls(enabled=self._bands_available)
             return
         bands = self._named_presets.get(label)
         if bands is None:

@@ -85,10 +85,3 @@ def _set_band_names(load_result, view, instrument):
         right['r'], right['g'], right['b'],
         left['r'],  left['g'],  left['b'],
     )
-
-    if not stretch[single_stretch]:
-        view.panel_image_editing.set_stretch_enabled('single', False)
-    if not stretch['right']:
-        view.panel_image_editing.set_stretch_enabled('right', False)
-    if not stretch['left']:
-        view.panel_image_editing.set_stretch_enabled('left', False)

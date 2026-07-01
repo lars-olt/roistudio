@@ -435,11 +435,15 @@ class ImageEditingPanel(QWidget):
         self._overlay_left.set_presets('left', presets)
     
     def set_stretch_enabled(self, camera: str, enabled: bool):
-        """Enable or disable the stretch bar overlay for the given camera side."""
+        """Enable or disable the manual band selectors for the given camera side.
+
+        Only the manual R/G/B combos are affected - the preset dropdown stays
+        usable since presets may rely on bands other than the missing RGB set.
+        """
         overlay = {'single': self._overlay_single,
                 'right':  self._overlay_right,
                 'left':   self._overlay_left}[camera]
-        overlay.set_loaded(enabled)
+        overlay.set_bands_available(enabled)
     
     def set_split_screen_enabled(self, enabled: bool):
         """Mark split screen as available or not for the current scene."""
