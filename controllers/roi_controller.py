@@ -83,6 +83,7 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
         'roi':        canvas_rect,
         'right_rect': right_rect,
         'left_rect':  left_rect,
+        'left_locked': False,   # user edited it - stored geometry is no longer authoritative
         **spec_data,
     }
 
@@ -90,9 +91,14 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
 def sync_left_rois(rois_data, homography):
     """Recompute left_rect for every ROI from its right_rect via the homography.
 
-    Called when leaving split screen so both sides are back in sync.
+    Called when leaving split screen so both sides are back in sync. ROIs flagged
+    left_locked keep their stored left_rect - it was authored elsewhere (a loaded
+    .sel) and must not be re-derived through this machine's homography, which
+    would shift and reshape it.
     """
     for roi in rois_data:
+        if roi.get('left_locked'):
+            continue
         right_rect   = roi['right_rect']
         left_rect    = (right_rect_to_left_inscribed(right_rect, homography)
                         if homography is not None else right_rect) or right_rect

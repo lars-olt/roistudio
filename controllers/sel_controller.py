@@ -135,10 +135,11 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
 
             canvas_rect = left_rect if instrument == 'PCAM' else right_rect
             rois_data.append({
-                'roi':        canvas_rect,
-                'right_rect': right_rect,
-                'left_rect':  left_rect,
-                'mineral':    'Loaded ROI',
+                'roi':         canvas_rect,
+                'right_rect':  right_rect,
+                'left_rect':   left_rect,
+                'mineral':     'Loaded ROI',
+                'left_locked': True,   # left_rect came from the file - don't re-derive it
                 **spec_data,
             })
             colors.append(color)
