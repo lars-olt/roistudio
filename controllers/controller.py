@@ -356,6 +356,14 @@ class Controller(QObject):
         self._update_roi_view()
         self._view.set_export_enabled(True)
 
+        # Stereo scenes: open in split screen so the two cameras' loaded rects are
+        # shown as authored. Mark them dirty (after the toggle, which clears the
+        # flag) so leaving split screen warns before the left rects get re-derived.
+        if self._has_dual_cubes() and not self._is_split_screen:
+            self._view.panel_image_editing.enter_split_screen()
+            if self._is_split_screen:
+                self._split_screen_rois_dirty = True
+
     # ------------------------------------------------------------------
     # Hover preview
     # ------------------------------------------------------------------

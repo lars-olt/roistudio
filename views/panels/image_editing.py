@@ -373,6 +373,16 @@ class ImageEditingPanel(QWidget):
             return
         self._apply_split_screen(True)
 
+    def enter_split_screen(self):
+        """Programmatically enter split screen if the scene supports it.
+
+        Used after loading a .sel so a stereo scene shows both cameras' loaded
+        rects. No-op when split screen is unavailable or already active.
+        """
+        if self._is_split or not getattr(self, '_split_screen_enabled', True):
+            return
+        self._apply_split_screen(True)
+
     def confirm_split_screen_exit(self):
         """Called by the controller after the user confirms they want to leave split screen."""
         self._apply_split_screen(False)
@@ -433,7 +443,7 @@ class ImageEditingPanel(QWidget):
         self._overlay_single.set_presets('right', presets)
         self._overlay_right.set_presets('right', presets)
         self._overlay_left.set_presets('left', presets)
-    
+
     def set_stretch_enabled(self, camera: str, enabled: bool):
         """Enable or disable the manual band selectors for the given camera side.
 
@@ -444,7 +454,7 @@ class ImageEditingPanel(QWidget):
                 'right':  self._overlay_right,
                 'left':   self._overlay_left}[camera]
         overlay.set_bands_available(enabled)
-    
+
     def set_split_screen_enabled(self, enabled: bool):
         """Mark split screen as available or not for the current scene."""
         self._split_screen_enabled = enabled
