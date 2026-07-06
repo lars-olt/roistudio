@@ -51,6 +51,7 @@ class View(QWidget):
     set_sam_path_signal         = pyqtSignal()
     open_folder_signal          = pyqtSignal()
     load_sel_signal             = pyqtSignal()
+    load_fits_signal            = pyqtSignal()
     export_sel_signal           = pyqtSignal()
     export_context_signal       = pyqtSignal()
     export_fits_signal          = pyqtSignal()
@@ -158,6 +159,11 @@ class View(QWidget):
         self.action_load_sel.triggered.connect(self.load_sel_signal.emit)
         self.action_load_sel.setEnabled(False)
         self.menu_file.addAction(self.action_load_sel)
+
+        self.action_load_fits = QAction("Load FITS", self)
+        self.action_load_fits.triggered.connect(self.load_fits_signal.emit)
+        self.action_load_fits.setEnabled(False)
+        self.menu_file.addAction(self.action_load_fits)
 
         self.action_export_sel = QAction("Export sel", self)
         self.action_export_sel.triggered.connect(self.export_sel_signal.emit)

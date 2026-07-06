@@ -161,6 +161,124 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
         return None
 
 
+def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, color_manager, fits_path=None):
+    """Load ROIs and their metadata from a ROIStudio FITS export.
+
+    Each ROI is a pair of full-frame binary mask HDUs (one per eye) tagged with
+    NAME and EYE headers. Rects are recovered as the bounding box of each mask,
+    and metadata comes back off the headers using the panel schema as the key
+    whitelist, so structural FITS keywords never leak in.
+    """
+    load_result = model.sparc_load_result
+    if load_result is None:
+        view.show_status_message("No scene loaded - cannot load FITS.")
+        return None
+
+    if fits_path is None:
+        fits_path, _ = QFileDialog.getOpenFileName(
+            view, "Load FITS File", "", "FITS Files (*.fits);;All Files (*)"
+        )
+    if not fits_path:
+        return None
+
+    try:
+        from astropy.io import fits as astropy_fits
+        from views.panels.roi_metadata import METADATA_FIELDS
+
+        instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+
+        # name -> {eye: (rect, metadata)}, in first-appearance order (ROI order)
+        masks       = {}
+        frame_shape = None
+        with astropy_fits.open(fits_path) as hdul:
+            for hdu in hdul:
+                hdr = hdu.header
+                if 'NAME' not in hdr or 'EYE' not in hdr or hdu.data is None:
+                    continue
+                frame_shape = hdu.data.shape
+                name = str(hdr['NAME']).strip().lower()
+                eye  = str(hdr['EYE']).strip().lower()
+                masks.setdefault(name, {})[eye] = (
+                    _mask_rect(hdu.data),
+                    {f.key: str(hdr[f.key]) for f in METADATA_FIELDS if f.key in hdr},
+                )
+
+        if not masks:
+            view.show_status_message(f"No ROI masks found in {fits_path}")
+            return None
+
+        scene_shape = load_result['rgb_img'].shape[:2]
+        if frame_shape is not None and tuple(frame_shape) != tuple(scene_shape):
+            view.show_status_message(
+                f"FITS masks are {frame_shape[1]}x{frame_shape[0]} but the scene is "
+                f"{scene_shape[1]}x{scene_shape[0]} - ROIs may not line up."
+            )
+
+        name_lookup = {n.lower(): n for n in color_manager._merspect_indices}
+
+        rois_data, colors, color_names = [], [], []
+
+        for lname, eyes in masks.items():
+            right_rect, right_meta = eyes.get('right', (None, {}))
+            left_rect,  left_meta  = eyes.get('left',  (None, {}))
+            right_rect = right_rect or left_rect
+            left_rect  = left_rect  or right_rect
+            if right_rect is None:
+                continue
+            metadata = right_meta or left_meta
+
+            spec_data = (
+                sparc_controller.update_roi_spectrum_dual(
+                    load_result, left_rect, right_rect, instrument_config
+                ) if has_dual_cubes else
+                sparc_controller.update_roi_spectrum(
+                    load_result['cube'],
+                    left_rect if instrument == 'PCAM' else right_rect,
+                    instrument_config
+                )
+            )
+
+            name = name_lookup.get(lname)
+            if name:
+                color = hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[name])
+            else:
+                color, name = color_manager.next()
+
+            canvas_rect = left_rect if instrument == 'PCAM' else right_rect
+            roi = {
+                'roi':         canvas_rect,
+                'right_rect':  right_rect,
+                'left_rect':   left_rect,
+                'mineral':     'Loaded ROI',
+                'left_locked': True,   # left_rect came from the file - don't re-derive it
+                **spec_data,
+            }
+            if metadata:
+                roi['metadata'] = metadata
+            rois_data.append(roi)
+            colors.append(color)
+            color_names.append(name)
+
+        color_manager.reset()
+        color_manager.reserve(color_names)
+        view.show_status_message(f"Loaded {len(rois_data)} ROI(s) from {fits_path}")
+        return rois_data, colors, color_names
+
+    except Exception as e:
+        view.show_status_message(f"Load FITS failed: {e}")
+        traceback.print_exc()
+        return None
+
+
+def _mask_rect(mask):
+    """Bounding (x, y, w, h) of the nonzero region, or None for an empty mask."""
+    ys, xs = np.nonzero(mask)
+    if ys.size == 0:
+        return None
+    return (int(xs.min()), int(ys.min()),
+            int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1))
+
+
 def export_context(view, model, rois_data, colors, color_names, color_manager):
     """Export a context folder: SEL file + four annotated images + spectra plot."""
     if not rois_data:

@@ -77,6 +77,7 @@ class Controller(QObject):
         self._view.open_folder_signal.connect(self._open_iof_folder)
         self._view.export_sel_signal.connect(self._export_sel)
         self._view.load_sel_signal.connect(self._load_sel)
+        self._view.load_fits_signal.connect(self._load_fits)
         self._view.export_context_signal.connect(self._export_context)
         self._view.export_fits_signal.connect(self._export_fits)
         self._view.scene_dropped_signal.connect(self._load_scene_by_id)
@@ -394,14 +395,25 @@ class Controller(QObject):
         )
 
     def _load_sel(self, sel_path=None):
-        outcome = sel_controller.load_sel(
+        self._apply_loaded_rois(sel_controller.load_sel(
             self._view, self._model,
             self._get_instrument_config(),
             self.sparc_controller,
             self._has_dual_cubes(),
             self.color_manager,
             sel_path=sel_path,
-        )
+        ))
+
+    def _load_fits(self):
+        self._apply_loaded_rois(sel_controller.load_fits(
+            self._view, self._model,
+            self._get_instrument_config(),
+            self.sparc_controller,
+            self._has_dual_cubes(),
+            self.color_manager,
+        ))
+
+    def _apply_loaded_rois(self, outcome):
         if outcome is None:
             return
         self._current_rois_data, self._current_colors, self._current_color_names = outcome
