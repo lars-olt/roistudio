@@ -22,6 +22,11 @@ from utils.converters import hex_to_rgb
 
 # RGB and DCS band triplets per instrument and camera side.
 # Mirrors INSTRUMENT_PRESETS in view.py - kept here to avoid a circular import.
+#
+# NOTE: PCAM values below match main. The fits-export branch had these set to
+# right=(R7,R5,R3)/(R7,R5,R3), left=(L4,L5,L6)/(L4,L5,L6) - if that was a
+# deliberate change rather than experimentation, restore it here and in
+# view.py's INSTRUMENT_PRESETS together, since they're meant to mirror each other.
 _EXPORT_BAND_SETS = {
     'ZCAM': {
         'right': {'RGB': ('R0R', 'R0G', 'R0B'), 'DCS': ('R6',  'R3',  'R1')},
@@ -213,6 +218,73 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
         traceback.print_exc()
 
 
+def export_fits(view, model, rois_data, color_names, output_path=None):
+    """Export ROIs as a FITS file with per-color binary masks.
+
+    Each ROI produces two HDUs (left eye, right eye), each a full-frame
+    uint8 mask with 1s inside the ROI rect and 0s elsewhere.
+    All left HDUs are written first, then all right HDUs.
+    """
+    if not rois_data:
+        view.show_status_message("No ROIs to export.")
+        return
+
+    load_result = model.sparc_load_result
+    if load_result is None:
+        view.show_status_message("No scene loaded - cannot export FITS.")
+        return
+
+    scene_id = load_result.get('id', 'scene')
+    if output_path is None:
+        output_path, _ = QFileDialog.getSaveFileName(
+            view, "Export FITS File", f"{scene_id}.fits", "FITS Files (*.fits);;All Files (*)"
+        )
+    if not output_path:
+        return
+
+    try:
+        from astropy.io import fits as astropy_fits
+
+        H, W  = load_result['rgb_img'].shape[:2]
+        hdus  = []
+        first = True
+
+        for eye in ('left', 'right'):
+            rect_key = 'left_rect' if eye == 'left' else 'right_rect'
+            for roi_data, color_name in zip(rois_data, color_names):
+                mask       = np.zeros((H, W), dtype=np.uint8)
+                x, y, w, h = (int(v) for v in roi_data.get(rect_key, roi_data['roi']))
+                x0, x1     = max(0, x), min(W, x + w)
+                y0, y1     = max(0, y), min(H, y + h)
+                if x1 > x0 and y1 > y0:
+                    mask[y0:y1, x0:x1] = 1
+
+                hdr             = astropy_fits.Header()
+                hdr['NAME']     = color_name.lower()
+                hdr['EYE']      = eye
+                hdr['SOURCEFN'] = 'ROIStudio'
+                hdr['EXTNAME']  = f'{color_name.upper()} {eye.upper()}'
+                hdr['IMAGEREF'] = scene_id
+
+                # Per-ROI metadata assigned in the ROI Metadata panel. Keys are
+                # already FITS-safe (max 8 chars) - written as-is on both eyes.
+                for key, value in roi_data.get('metadata', {}).items():
+                    hdr[key] = value
+
+                if first:
+                    hdus.append(astropy_fits.PrimaryHDU(data=mask, header=hdr))
+                    first = False
+                else:
+                    hdus.append(astropy_fits.ImageHDU(data=mask, header=hdr))
+
+        astropy_fits.HDUList(hdus).writeto(output_path, overwrite=True)
+        view.show_status_message(f"Exported {len(rois_data)} ROI(s) to {output_path}")
+
+    except Exception as e:
+        view.show_status_message(f"FITS export failed: {e}")
+        traceback.print_exc()
+
+
 def _render_bands(r_name, g_name, b_name, base_bands, dcs):
     """Render three named bands to a uint8 (H, W, 3) numpy array."""
     if not all(k in base_bands for k in (r_name, g_name, b_name)):
@@ -281,9 +353,9 @@ def _save_annotated(arr, rects, mpl_colors, filepath):
 def _sensor_offsets(load_result, instrument):
     """Return (col_off, row_off, full_H, full_W) for converting between cropped and sensor coords."""
     if instrument in {'ZCAM', 'MCZ'}:
-        crop    = rapidlooks.CROP_SETTINGS["crop"]
-        col_off = int(crop[0])
-        row_off = int(crop[2])
+        crop     = rapidlooks.CROP_SETTINGS["crop"]
+        col_off  = int(crop[0])
+        row_off  = int(crop[2])
         raw_band = next(iter(load_result["base_bands"].values()))
         ch, cw   = raw_band.shape
         return col_off, row_off, ch + crop[2] + crop[3], cw + crop[0] + crop[1]

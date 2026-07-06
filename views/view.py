@@ -2,7 +2,8 @@ from PyQt5.QtCore import QRect, Qt, pyqtSignal
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction,
                              QSplitter, QStackedWidget)
 
-from .panels import SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel, StatusPanel, ParameterSelectionPanel
+from .panels import (SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel,
+                     StatusPanel, ParameterSelectionPanel, ROIMetadataPanel)
 from colors import Colors
 from utils.scale import Scale, scaled, scaled_font
 
@@ -15,6 +16,11 @@ _MAIN_RATIO = 0.35
 # All named color/band presets, keyed by instrument.
 # Each entry: label shown in the menu and stretch bar, camera side, R/G/B band names, DCS flag.
 # Edit these to change what any preset does - one place, affects both the View menu and the overlay.
+#
+# NOTE: PCAM values below match main, not the fits-export branch (which had
+# right=(R7,R5,R3)/(R7,R5,R3), left=(L4,L5,L6)/(L4,L5,L6)). If that was a
+# deliberate change, restore it here and in sel_controller.py's
+# _EXPORT_BAND_SETS together, since the two are meant to mirror each other.
 INSTRUMENT_PRESETS = {
     'ZCAM': {
         'right': {
@@ -47,11 +53,13 @@ class View(QWidget):
     load_sel_signal             = pyqtSignal()
     export_sel_signal           = pyqtSignal()
     export_context_signal       = pyqtSignal()
+    export_fits_signal          = pyqtSignal()
     run_algorithm_signal        = pyqtSignal()
     scene_dropped_signal        = pyqtSignal(str)
     scene_double_clicked_signal = pyqtSignal(str)
     apply_stretch_mode_signal   = pyqtSignal(str)
     delete_all_rois_signal      = pyqtSignal()
+    mode_changed                = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -145,7 +153,7 @@ class View(QWidget):
         self.menu_file.addAction(self.action_open_folder)
 
         self.menu_file.addSeparator()
-        
+
         self.action_load_sel = QAction("Load sel", self)
         self.action_load_sel.triggered.connect(self.load_sel_signal.emit)
         self.action_load_sel.setEnabled(False)
@@ -160,6 +168,11 @@ class View(QWidget):
         self.action_export_context.triggered.connect(self.export_context_signal.emit)
         self.action_export_context.setEnabled(False)
         self.menu_file.addAction(self.action_export_context)
+
+        self.action_export_fits = QAction("Export FITS", self)
+        self.action_export_fits.triggered.connect(self.export_fits_signal.emit)
+        self.action_export_fits.setEnabled(False)
+        self.menu_file.addAction(self.action_export_fits)
 
         self.menu_view = QMenu("View", self.menubar)
         self.menubar.addMenu(self.menu_view)
@@ -208,6 +221,12 @@ class View(QWidget):
         self.action_mode_roi.triggered.connect(lambda: self._set_mode('roi_processing'))
         self.menu_window.addAction(self.action_mode_roi)
 
+        self.action_mode_metadata = QAction("ROI Metadata", self)
+        self.action_mode_metadata.setCheckable(True)
+        self.action_mode_metadata.setChecked(False)
+        self.action_mode_metadata.triggered.connect(lambda: self._set_mode('roi_metadata'))
+        self.menu_window.addAction(self.action_mode_metadata)
+
     def set_instrument_presets(self, instrument: str):
         """Push instrument presets to the stretch bar overlays."""
         presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
@@ -219,6 +238,7 @@ class View(QWidget):
         self.panel_spectral_view       = SpectralViewPanel()
         self.panel_status              = StatusPanel()
         self.panel_parameter_selection = ParameterSelectionPanel()
+        self.panel_roi_metadata        = ROIMetadataPanel()
 
         self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)
         self.panel_image_selection.scene_double_clicked.connect(self.scene_double_clicked_signal.emit)
@@ -268,11 +288,11 @@ class View(QWidget):
         self.right_splitter.setHandleWidth(1)
         self.right_splitter.setStyleSheet(style)
 
-        # Top slot switches between image selection and parameter panels via
-        # a stacked widget - no size collapsing tricks needed.
+        # Top slot switches between panels via a stacked widget - indices match _MODES.
         self.top_stack = QStackedWidget()
-        self.top_stack.addWidget(self.panel_image_selection)   # index 0 - scene loading
-        self.top_stack.addWidget(self.panel_parameter_selection)  # index 1 - roi processing
+        self.top_stack.addWidget(self.panel_image_selection)      # scene loading
+        self.top_stack.addWidget(self.panel_parameter_selection)  # roi processing
+        self.top_stack.addWidget(self.panel_roi_metadata)         # roi metadata
 
         self.left_splitter.addWidget(self.top_stack)
         self.left_splitter.addWidget(self.panel_spectral_view)
@@ -294,13 +314,17 @@ class View(QWidget):
         self.layout.addWidget(self.main_splitter)
         self.layout.addWidget(self.panel_status)
 
+    _MODES = {'scene_loading': 0, 'roi_processing': 1, 'roi_metadata': 2}
+
     def _set_mode(self, mode: str):
         if mode == self._mode:
             return
         self._mode = mode
         self.action_mode_scene.setChecked(mode == 'scene_loading')
         self.action_mode_roi.setChecked(mode == 'roi_processing')
-        self.top_stack.setCurrentIndex(0 if mode == 'scene_loading' else 1)
+        self.action_mode_metadata.setChecked(mode == 'roi_metadata')
+        self.top_stack.setCurrentIndex(self._MODES[mode])
+        self.mode_changed.emit(mode)
 
     def _apply_scale(self):
         self.menubar.setStyleSheet(self._menu_stylesheet())
@@ -333,9 +357,10 @@ class View(QWidget):
     # ------------------------------------------------------------------
 
     def set_export_enabled(self, enabled: bool):
-        """Enable or disable both export actions together."""
+        """Enable or disable all export actions together."""
         self.action_export_sel.setEnabled(enabled)
         self.action_export_context.setEnabled(enabled)
+        self.action_export_fits.setEnabled(enabled)
         self.action_delete_all_rois.setEnabled(enabled)
 
     def enable_presets(self, enabled: bool):

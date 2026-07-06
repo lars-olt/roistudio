@@ -11,6 +11,9 @@ from . import scene_callbacks, sparc_callbacks, roi_controller, sel_controller
 from utils.rendering import render_images
 from utils.paths import _get_config_path
 
+# How far non-active ROI outlines dim while the metadata panel is open.
+_METADATA_DIM = 0.4
+
 
 class Controller(QObject):
     """Coordinates all application logic between model and view."""
@@ -26,6 +29,8 @@ class Controller(QObject):
         self._is_split_screen         = False
         self._split_screen_rois_dirty = False
         self._pending_recolor_index   = None  # ROI index being recolored, or None for next-color
+        self._view_mode               = 'scene_loading'
+        self._metadata_active_index   = None  # ROI highlighted by the metadata panel
 
         self.config_path = _get_config_path()
         self.load_config()
@@ -73,6 +78,7 @@ class Controller(QObject):
         self._view.export_sel_signal.connect(self._export_sel)
         self._view.load_sel_signal.connect(self._load_sel)
         self._view.export_context_signal.connect(self._export_context)
+        self._view.export_fits_signal.connect(self._export_fits)
         self._view.scene_dropped_signal.connect(self._load_scene_by_id)
         self._view.run_algorithm_signal.connect(self._run_algorithm)
         self._view.scene_double_clicked_signal.connect(self._load_scene_by_id)
@@ -95,6 +101,10 @@ class Controller(QObject):
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)
         panel.roi_right_clicked.connect(self._on_roi_right_clicked)
         panel._swatch_grid.color_selected.connect(self._on_color_selected)
+
+        self._view.panel_roi_metadata.metadata_changed.connect(self._on_roi_metadata_changed)
+        self._view.panel_roi_metadata.roi_activated.connect(self._on_roi_metadata_activated)
+        self._view.mode_changed.connect(self._on_view_mode_changed)
 
     def _connect_controller_signals(self):
         sc = self.scene_controller
@@ -139,8 +149,10 @@ class Controller(QObject):
         self._current_color_names     = []
         self._split_screen_rois_dirty = False
         self._pending_recolor_index   = None
+        self._metadata_active_index   = None
         self.color_manager.reset()
         self._view.panel_image_editing.set_rois([], [], [])
+        self._view.panel_roi_metadata.set_rois([], [], [])
         self._view.panel_spectral_view.clear_roi_spectra()
         self._view.panel_spectral_view.clear_plot()
         self._view.set_export_enabled(False)
@@ -273,13 +285,46 @@ class Controller(QObject):
             self._view.show_status_message(f"Error updating ROI: {e}")
 
     def _update_roi_view(self):
-        self._view.panel_image_editing.set_rois(
+        self._view.panel_roi_metadata.set_rois(
             self._current_rois_data, self._current_colors, self._current_color_names
         )
+        self._refresh_canvas_rois()
         self._view.panel_spectral_view.plot_roi_spectra(
             self._current_rois_data, self._current_colors
         )
         self._refresh_swatch()
+
+    def _refresh_canvas_rois(self):
+        self._view.panel_image_editing.set_rois(
+            self._current_rois_data, self._canvas_colors(), self._current_color_names
+        )
+
+    def _canvas_colors(self):
+        """Outline colors for the canvases.
+
+        While the metadata panel is open, every ROI except the one being
+        described dims toward black so it's obvious which ROI the fields
+        belong to. All other consumers get the true colors.
+        """
+        colors = self._current_colors
+        ix     = self._metadata_active_index
+        if self._view_mode != 'roi_metadata' or ix is None or not (0 <= ix < len(colors)):
+            return colors
+        return [c if i == ix else tuple(int(v * _METADATA_DIM) for v in c)
+                for i, c in enumerate(colors)]
+
+    def _on_roi_metadata_activated(self, roi_index):
+        self._metadata_active_index = roi_index
+        self._refresh_canvas_rois()
+
+    def _on_view_mode_changed(self, mode):
+        self._view_mode = mode
+        self._refresh_canvas_rois()
+
+    def _on_roi_metadata_changed(self, roi_index, metadata):
+        """Store metadata edits on the ROI so they travel with it and export with it."""
+        if 0 <= roi_index < len(self._current_rois_data):
+            self._current_rois_data[roi_index]['metadata'] = dict(metadata)
 
     def _refresh_swatch(self):
         """Sync the active color swatch and palette grid with current state."""
@@ -321,7 +366,7 @@ class Controller(QObject):
             self._refresh_swatch()
 
     # ------------------------------------------------------------------
-    # SEL export / import
+    # SEL / FITS export / import
     # ------------------------------------------------------------------
 
     def _export_sel(self):
@@ -330,6 +375,13 @@ class Controller(QObject):
             self._current_rois_data,
             self._current_color_names,
             self.color_manager,
+        )
+
+    def _export_fits(self):
+        sel_controller.export_fits(
+            self._view, self._model,
+            self._current_rois_data,
+            self._current_color_names,
         )
 
     def _export_context(self):
@@ -475,7 +527,7 @@ class Controller(QObject):
         if self._model.sparc_load_result is not None:
             self._render_current_images()
             self._view.panel_image_editing.set_rois(
-                self._current_rois_data, self._current_colors, self._current_color_names
+                self._current_rois_data, self._canvas_colors(), self._current_color_names
             )
             if self._current_rois_data:
                 self._view.panel_spectral_view.plot_roi_spectra(
