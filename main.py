@@ -48,6 +48,8 @@ def _parse_args():
                         choices=['ZCAM', 'PCAM'],
                         help='Instrument (default: ZCAM)')
     parser.add_argument('sel_file',     nargs='?', help='Optional .sel file to load after the scene')
+    parser.add_argument('--notes',      default=None,
+                        help='Observation-level science notes shown in the toolbar')
     # strip Qt's own args before parsing so --style etc. don't confuse argparse
     args, _ = parser.parse_known_args()
     return args
@@ -129,6 +131,9 @@ if __name__ == '__main__':
 
     view.show()
     Scale.set_window(view.windowHandle())
+
+    if args.notes:
+        view.set_science_notes(args.notes)
 
     if args.iof_folder:
         def _auto_load():

@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QPointF, QRectF
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QPointF, QRectF, QSize
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QComboBox, QFrame)
 from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap, QFontMetrics, QFont
@@ -65,6 +65,32 @@ class _ActiveColorSwatch(QWidget):
             self.clicked.emit()
 
 
+class _ScienceNotes(QLabel):
+    """Right-aligned toolbar label for science notes."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.hide()
+
+    def set_notes(self, notes: str):
+        notes = ' '.join((notes or '').split())   # collapse newlines and repeated whitespace
+        self.setText(notes)
+        self.setToolTip(notes)
+        self.setVisible(bool(notes))
+
+    def minimumSizeHint(self):
+        # A small floor lets the layout squeeze the label freely - the full
+        # text elides rather than forcing a wider window.
+        return QSize(scaled(30), super().minimumSizeHint().height())
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        elided = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, self.width())
+        painter.drawText(self.rect(), int(self.alignment()), elided)
+
+
 class ImageEditingPanel(QWidget):
     """Image canvas panel with toolbar and per-camera band selector overlays."""
 
@@ -112,6 +138,9 @@ class ImageEditingPanel(QWidget):
         self.loading_indicator = LoadingIndicator()
         tb_layout.addWidget(self.loading_indicator)
         tb_layout.addStretch()
+
+        self._science_notes = _ScienceNotes()
+        tb_layout.addWidget(self._science_notes)
         layout.addWidget(self.top_bar)
 
         # Content area - side toolbar + canvas
@@ -267,7 +296,17 @@ class ImageEditingPanel(QWidget):
             QPushButton:hover   {{ background-color: {Colors.ACCENT_HOVER}; }}
             QPushButton:pressed {{ background-color: {Colors.ACCENT_PRESSED}; }}
         """)
+        self._science_notes.setStyleSheet(
+            f"color: {Colors.TEXT_SECONDARY}; font-size: {scaled_font(9)}pt; font-style: italic;"
+        )
         self.update_cursor()
+
+    def set_science_notes(self, notes: str):
+        """Show observation-level science notes on the right of the top bar.
+
+        Empty or None hides the label, leaving the bar exactly as it was.
+        """
+        self._science_notes.set_notes(notes)
 
     # ------------------------------------------------------------------
     # Overlays
