@@ -15,12 +15,6 @@ _MAIN_RATIO = 0.35
 
 # All named color/band presets, keyed by instrument.
 # Each entry: label shown in the menu and stretch bar, camera side, R/G/B band names, DCS flag.
-# Edit these to change what any preset does - one place, affects both the View menu and the overlay.
-#
-# NOTE: PCAM values below match main, not the fits-export branch (which had
-# right=(R7,R5,R3)/(R7,R5,R3), left=(L4,L5,L6)/(L4,L5,L6)). If that was a
-# deliberate change, restore it here and in sel_controller.py's
-# _EXPORT_BAND_SETS together, since the two are meant to mirror each other.
 INSTRUMENT_PRESETS = {
     'ZCAM': {
         'right': {

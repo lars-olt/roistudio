@@ -1,10 +1,10 @@
 """Per-ROI metadata assignment panel.
 
 Fields are declared in METADATA_FIELDS - key, label, options, and an optional
-visibility predicate on the other values. The cards render whatever the schema
-says, so adding or gating a category is a schema edit, not a UI change. Values
-live on each roi_data dict under 'metadata' and are written into FITS headers
-verbatim on export.
+visibility predicate on the other values. The cards render from the schema, so
+adding or gating a category is a schema edit, not a UI change. Values live on
+each roi_data dict under 'metadata' and are written into FITS headers verbatim
+on export.
 """
 
 from dataclasses import dataclass
@@ -207,8 +207,8 @@ class _MetadataCard(QFrame):
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
-        # Focusing any field claims the card, so editing and canvas highlight
-        # always agree on which ROI is being described.
+        # Focusing a field activates its card, keeping the canvas highlight
+        # on the ROI being edited.
         if event.type() == QEvent.FocusIn and not self._active:
             self.activated.emit(self.index)
         return super().eventFilter(obj, event)

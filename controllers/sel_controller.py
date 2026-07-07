@@ -22,11 +22,6 @@ from utils.converters import hex_to_rgb
 
 # RGB and DCS band triplets per instrument and camera side.
 # Mirrors INSTRUMENT_PRESETS in view.py - kept here to avoid a circular import.
-#
-# NOTE: PCAM values below match main. The fits-export branch had these set to
-# right=(R7,R5,R3)/(R7,R5,R3), left=(L4,L5,L6)/(L4,L5,L6) - if that was a
-# deliberate change rather than experimentation, restore it here and in
-# view.py's INSTRUMENT_PRESETS together, since they're meant to mirror each other.
 _EXPORT_BAND_SETS = {
     'ZCAM': {
         'right': {'RGB': ('R0R', 'R0G', 'R0B'), 'DCS': ('R6',  'R3',  'R1')},
@@ -165,9 +160,9 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
     """Load ROIs and their metadata from a ROIStudio FITS export.
 
     Each ROI is a pair of full-frame binary mask HDUs (one per eye) tagged with
-    NAME and EYE headers. Rects are recovered as the bounding box of each mask,
-    and metadata comes back off the headers using the panel schema as the key
-    whitelist, so structural FITS keywords never leak in.
+    NAME and EYE headers. Rects are recovered as the bounding box of each mask.
+    Metadata is read from the headers using the panel schema as the key
+    whitelist, which keeps structural FITS keywords out of the ROI metadata.
     """
     load_result = model.sparc_load_result
     if load_result is None:

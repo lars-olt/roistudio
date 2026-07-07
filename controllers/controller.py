@@ -304,8 +304,8 @@ class Controller(QObject):
         """Outline colors for the canvases.
 
         While the metadata panel is open, every ROI except the one being
-        described dims toward black so it's obvious which ROI the fields
-        belong to. All other consumers get the true colors.
+        described dims toward black so the described ROI stands out. All
+        other consumers get the true colors.
         """
         colors = self._current_colors
         ix     = self._metadata_active_index
@@ -323,7 +323,7 @@ class Controller(QObject):
         self._refresh_canvas_rois()
 
     def _on_roi_metadata_changed(self, roi_index, metadata):
-        """Store metadata edits on the ROI so they travel with it and export with it."""
+        """Store metadata on the ROI so it follows it through deletion, recoloring, and export."""
         if 0 <= roi_index < len(self._current_rois_data):
             self._current_rois_data[roi_index]['metadata'] = dict(metadata)
 
