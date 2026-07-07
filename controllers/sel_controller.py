@@ -9,29 +9,19 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 from asdf_settings import rapidlooks
-from marslab.imgops.imgutils import enhance_color
 from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 from PyQt5.QtWidgets import QFileDialog
+from sparc.data.loading import create_rgb_stretch, dcs_rgb
 from sparc.visualization.plotting import plot_spectra_with_error
 from sparc.utils.sel_writer import (
     export_sel as _write_sel,
     read_sel,
     filenames_from_load_result,
 )
+from presets import INSTRUMENT_PRESETS
 from utils.converters import hex_to_rgb
 
-# RGB and DCS band triplets per instrument and camera side.
-# Mirrors INSTRUMENT_PRESETS in view.py - kept here to avoid a circular import.
-_EXPORT_BAND_SETS = {
-    'ZCAM': {
-        'right': {'RGB': ('R0R', 'R0G', 'R0B'), 'DCS': ('R6',  'R3',  'R1')},
-        'left':  {'RGB': ('L0R', 'L0G', 'L0B'), 'DCS': ('L2',  'L5',  'L6')},
-    },
-    'PCAM': {
-        'right': {'RGB': ('R2', 'R1', 'R1'), 'DCS': ('R7', 'R5', 'R3')},
-        'left':  {'RGB': ('L2', 'L5', 'L7'), 'DCS': ('L2', 'L5', 'L7')},
-    },
-}
+_EXPORT_DPI = 150
 
 
 def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
@@ -298,7 +288,7 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
     try:
         instrument  = load_result.get('instrument', 'ZCAM').strip().upper()
         base_bands  = load_result.get('base_bands', {})
-        band_sets   = _EXPORT_BAND_SETS.get(instrument, _EXPORT_BAND_SETS['ZCAM'])
+        presets     = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
         mpl_colors  = [tuple(c / 255.0 for c in color) for color in colors]
         right_rects = [r['right_rect']                     for r in rois_data]
         left_rects  = [r.get('left_rect', r['right_rect']) for r in rois_data]
@@ -312,7 +302,8 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
             ('right', 'DCS', right_rects, 'right_dcs'),
             ('left',  'DCS', left_rects,  'left_dcs'),
         ):
-            arr = _render_bands(*band_sets[camera][mode], base_bands, dcs=(mode == 'DCS'))
+            bands = presets[camera][mode]
+            arr   = _render_bands(bands['r'], bands['g'], bands['b'], base_bands, dcs=bands['dcs'])
             if arr is not None:
                 _save_annotated(arr, rects, mpl_colors, output_path / f"{scene_id}_{label}.png")
 
@@ -321,7 +312,7 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
         wls     = rois_data[0]['wavelengths']
 
         fig = plot_spectra_with_error(spectra, stds, wavelengths=wls, colors=mpl_colors, show=False)
-        fig.savefig(output_path / f"{scene_id}_spectra.png", bbox_inches='tight', dpi=150)
+        fig.savefig(output_path / f"{scene_id}_spectra.png", bbox_inches='tight', dpi=_EXPORT_DPI)
         plt.close(fig)
 
         view.show_status_message(f"Context exported to {output_path}")
@@ -402,52 +393,15 @@ def _render_bands(r_name, g_name, b_name, base_bands, dcs):
     """Render three named bands to a uint8 (H, W, 3) numpy array."""
     if not all(k in base_bands for k in (r_name, g_name, b_name)):
         return None
-
-    def clean(name):
-        arr = base_bands[name].astype(np.float32)
-        return np.where(np.isfinite(arr), arr, np.nan)
-
-    r, g, b = clean(r_name), clean(g_name), clean(b_name)
-
-    if not dcs:
-        rgb    = np.stack([r, g, b], axis=-1)
-        result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
-        return (np.ma.filled(result, 0) * 255).astype(np.uint8)
-
-    # Decorrelation stretch - eigenspace rotation per Gillespie et al. 1986.
-    H, W    = r.shape
-    invalid = ~np.isfinite(r) | ~np.isfinite(g) | ~np.isfinite(b)
-    r = np.where(invalid, 0.0, r).astype(np.float32)
-    g = np.where(invalid, 0.0, g).astype(np.float32)
-    b = np.where(invalid, 0.0, b).astype(np.float32)
-
-    vecs  = np.stack([r, g, b], axis=-1).reshape(-1, 3)
-    valid = vecs[~invalid.ravel()]
-    if valid.shape[0] < 4:
-        return np.zeros((H, W, 3), dtype=np.uint8)
-
-    cov        = np.cov(valid.T).astype(np.float32)
-    eigvals, V = np.linalg.eig(cov)
-    T          = (V @ np.diag(1.0 / np.sqrt(np.abs(eigvals))) @ V.T).astype(np.float32)
-    means      = valid.mean(axis=0)
-    dcs_arr    = ((vecs - means) @ T + means + (means - means @ T)).reshape(H, W, 3)
-
-    result   = np.zeros((H, W, 3), dtype=np.float32)
-    valid_2d = ~invalid
-    for c in range(3):
-        ch     = dcs_arr[:, :, c]
-        v      = ch[valid_2d]
-        if v.size == 0:
-            continue
-        lo, hi = np.percentile(v, [0.5, 99.5])
-        result[:, :, c] = np.clip((ch - lo) / (hi - lo) if hi > lo else ch, 0.0, 1.0)
-    result[invalid] = 0.0
-    return (result * 255).astype(np.uint8)
+    r, g, b = (base_bands[k].astype(np.float32) for k in (r_name, g_name, b_name))
+    if dcs:
+        return dcs_rgb(r, g, b)
+    return create_rgb_stretch(np.stack([r, g, b]))
 
 
 def _save_annotated(arr, rects, mpl_colors, filepath):
     """Save a uint8 RGB array with colored ROI rectangles overlaid."""
-    fig, ax = plt.subplots(figsize=(12, 9), dpi=150)
+    fig, ax = plt.subplots(figsize=(12, 9), dpi=_EXPORT_DPI)
     fig.patch.set_facecolor('black')
     ax.set_facecolor('black')
     ax.imshow(arr)
@@ -459,7 +413,7 @@ def _save_annotated(arr, rects, mpl_colors, filepath):
             edgecolor=mpl_colors[i % len(mpl_colors)],
             facecolor='none',
         ))
-    fig.savefig(filepath, bbox_inches='tight', pad_inches=0, dpi=150)
+    fig.savefig(filepath, bbox_inches='tight', pad_inches=0, dpi=_EXPORT_DPI)
     plt.close(fig)
 
 

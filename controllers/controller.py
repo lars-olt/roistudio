@@ -10,6 +10,7 @@ from .color_manager import ColorManager
 from . import scene_callbacks, sparc_callbacks, roi_controller, sel_controller
 from utils.rendering import render_images
 from utils.paths import _get_config_path
+from presets import INSTRUMENT_PRESETS
 
 # How far non-active ROI outlines dim while the metadata panel is open.
 _METADATA_DIM = 0.4
@@ -489,7 +490,6 @@ class Controller(QObject):
         if self._model.sparc_load_result is None:
             return
         instrument = self._model.instrument
-        from views.view import INSTRUMENT_PRESETS
         presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
         cameras = (['single', 'left', 'right'] if self._is_split_screen
                    else ['single'])

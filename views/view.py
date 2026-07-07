@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction,
 from .panels import (SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel,
                      StatusPanel, ParameterSelectionPanel, ROIMetadataPanel)
 from colors import Colors
+from presets import INSTRUMENT_PRESETS
 from utils.scale import Scale, scaled, scaled_font
 
 
@@ -13,30 +14,6 @@ _DEFAULT_WINDOW_HEIGHT = 900
 
 _MAIN_RATIO = 0.35
 
-# All named color/band presets, keyed by instrument.
-# Each entry: label shown in the menu and stretch bar, camera side, R/G/B band names, DCS flag.
-INSTRUMENT_PRESETS = {
-    'ZCAM': {
-        'right': {
-            'RGB': {'r': 'R0R', 'g': 'R0G', 'b': 'R0B', 'dcs': False},
-            'DCS': {'r': 'R6',  'g': 'R3',  'b': 'R1',  'dcs': True},
-        },
-        'left': {
-            'RGB': {'r': 'L0R', 'g': 'L0G', 'b': 'L0B', 'dcs': False},
-            'DCS': {'r': 'L2',  'g': 'L5',  'b': 'L6',  'dcs': True},
-        },
-    },
-    'PCAM': {
-        'right': {
-            'RGB': {'r': 'R2', 'g': 'R1', 'b': 'R1', 'dcs': False},
-            'DCS': {'r': 'R7', 'g': 'R5', 'b': 'R3', 'dcs': True},
-        },
-        'left': {
-            'RGB': {'r': 'L2', 'g': 'L5', 'b': 'L7', 'dcs': False},
-            'DCS': {'r': 'L2', 'g': 'L5', 'b': 'L7', 'dcs': True},
-        },
-    },
-}
 
 
 class View(QWidget):
