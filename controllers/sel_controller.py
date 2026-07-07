@@ -168,9 +168,10 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
 
     try:
         from astropy.io import fits as astropy_fits
-        from views.panels.roi_metadata import METADATA_FIELDS
+        from views.panels.roi_metadata import metadata_fields
 
         instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+        fields     = metadata_fields(instrument)
 
         # name -> {eye: (rect, metadata)}, in first-appearance order (ROI order)
         masks       = {}
@@ -185,7 +186,7 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
                 eye  = str(hdr['EYE']).strip().lower()
                 masks.setdefault(name, {})[eye] = (
                     _mask_rect(hdu.data),
-                    {f.key: str(hdr[f.key]) for f in METADATA_FIELDS if f.key in hdr},
+                    {f.key: str(hdr[f.key]) for f in fields if f.key in hdr},
                 )
 
         if not masks:

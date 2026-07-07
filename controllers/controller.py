@@ -288,7 +288,8 @@ class Controller(QObject):
 
     def _update_roi_view(self):
         self._view.panel_roi_metadata.set_rois(
-            self._current_rois_data, self._current_colors, self._current_color_names
+            self._current_rois_data, self._current_colors, self._current_color_names,
+            instrument=self._model.instrument,
         )
         self._refresh_canvas_rois()
         self._view.panel_spectral_view.plot_roi_spectra(

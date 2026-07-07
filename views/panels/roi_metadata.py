@@ -1,10 +1,12 @@
 """Per-ROI metadata assignment panel.
 
-Fields are declared in METADATA_FIELDS - key, label, options, and an optional
-visibility predicate on the other values. The cards render from the schema, so
-adding or gating a category is a schema edit, not a UI change. Values live on
-each roi_data dict under 'metadata' and are written into FITS headers verbatim
-on export.
+Fields are declared per instrument in MCZ_METADATA_FIELDS and
+PCAM_METADATA_FIELDS - key, label, options, and an optional visibility
+predicate on the other values. Options can be a callable on the metadata for
+lists that depend on another field, like the Pancam feature subtype. The cards
+render from the schema, so adding or gating a category is a schema edit, not a
+UI change. Values live on each roi_data dict under 'metadata' and are written
+into FITS headers verbatim on export.
 """
 
 from dataclasses import dataclass
@@ -24,9 +26,12 @@ from utils.scale import Scale, scaled, scaled_font
 class MetadataField:
     key:          str                        # FITS header keyword (max 8 chars)
     label:        str                        # shown next to the editor
-    options:      Tuple[str, ...] = ()       # allowed values; empty means free text
+    options:      object = ()                # tuple of values, or a callable(metadata) -> tuple; empty means free text
     hints:        Optional[Dict[str, str]] = None       # value -> display label overrides
     visible_when: Optional[Callable[[dict], bool]] = None
+
+    def options_for(self, metadata: dict) -> Tuple[str, ...]:
+        return self.options(metadata) if callable(self.options) else self.options
 
 
 def _is_rock(m):  return m.get('FEATURE') == 'Rock'
@@ -35,14 +40,18 @@ def _is_other(m): return m.get('FEATURE') == 'Other'
 def _is_nearfield_soil(m): return _is_soil(m) and m.get('DISTANCE') == 'Nearfield'
 
 
-# Pancam starting categories. Distance is best effort - actual distance can be
+_DISTANCE = MetadataField('DISTANCE', 'Distance', ('Nearfield', 'Midfield', 'Farfield'),
+                          hints={'Nearfield': 'Nearfield (< 10 m)',
+                                 'Midfield':  'Midfield (10 m - 50 m)',
+                                 'Farfield':  'Farfield (> 50 m)'})
+_DESCRIPT = MetadataField('DESCRIPT', 'Description')
+
+
+# MCZ starting categories. Distance is best effort - actual distance can be
 # used to filter in Multidex. DESCRIPT is free text for identifiers the fixed
 # categories don't cover (e.g. "scree slope", "candidate meteorite").
-METADATA_FIELDS = (
-    MetadataField('DISTANCE', 'Distance', ('Nearfield', 'Midfield', 'Farfield'),
-                  hints={'Nearfield': 'Nearfield (< 10 m)',
-                         'Midfield':  'Midfield (10 m - 50 m)',
-                         'Farfield':  'Farfield (> 50 m)'}),
+MCZ_METADATA_FIELDS = (
+    _DISTANCE,
     MetadataField('FEATURE', 'Feature', ('Rock', 'Soil', 'Other', 'Hardware')),
     MetadataField('FLOAT', 'Float', ('Float', 'In-Place', 'Unclear'),
                   visible_when=_is_rock),
@@ -62,8 +71,61 @@ METADATA_FIELDS = (
     ), visible_when=_is_soil),
     MetadataField('FEATTYPE', 'Feature type', ('Blueberry', 'Vein'),
                   visible_when=_is_other),
-    MetadataField('DESCRIPT', 'Description'),
+    _DESCRIPT,
 )
+
+
+# Pancam categories. Feature subtype options depend on the feature, so SUBTYPE
+# carries a callable and repopulates when FEATURE changes. FLOAT, TWO-TONED,
+# and TEXTURE apply to rocks only. Null under TWO-TONED means assessed and not
+# two-toned, as opposed to blank meaning not assessed.
+_PCAM_SUBTYPES = {
+    'Rock': (
+        'Dark Rock Surface', 'Bright Rock Surface', 'Thick Dust on Rock',
+        'RAT Brushed Rock', 'RAT Brushed Rock Average',
+        'RAT Abraded Rock', 'RAT Abraded Rock Average', 'RAT Tailings',
+        'Broken Rock Surface', 'Clast/Grain Within Rock',
+        'Blueberries (Embedded in Rock)', 'Rock Coating', 'Meteorite', 'Vein',
+    ),
+    'Soil': (
+        'Undisturbed Soil', 'Undisturbed Soil (Near Rock)', 'Soil on top of Rock',
+        'Compressed Soil in Wheel Track', 'Disturbed Soil in Wheel Track',
+        'Disturbed Soil (Not in Wheel Track)', 'Bedform',
+        'Soil on Rover Hardware', 'Thick dust on Soil',
+    ),
+    'Pebble': (
+        'Pebble (Individual Pebbles)', 'Blueberries (Individual Berries)',
+        'Blueberries (On Rock)', 'Blueberries (On Soil)', 'Pebbles (On Soil)',
+    ),
+}
+
+PCAM_METADATA_FIELDS = (
+    _DISTANCE,
+    MetadataField('FEATURE', 'Feature', ('Rock', 'Soil', 'Pebble')),
+    MetadataField('SUBTYPE', 'Feature subtype',
+                  lambda m: _PCAM_SUBTYPES.get(m.get('FEATURE'), ()),
+                  visible_when=lambda m: m.get('FEATURE') in _PCAM_SUBTYPES),
+    MetadataField('FLOAT', 'Float', ('Float', 'In-Place'),
+                  visible_when=_is_rock),
+    MetadataField('TWOTONED', 'Two-toned', ('Upper Surface', 'Lower Surface'),
+                  visible_when=_is_rock),
+    MetadataField('TEXTURE', 'Texture', ('Massive', 'Pitted', 'Platy', 'Ventifacted'),
+                  visible_when=_is_rock),
+    _DESCRIPT,
+)
+
+
+_INSTRUMENT_METADATA_FIELDS = {
+    'ZCAM': MCZ_METADATA_FIELDS,
+    'MCZ':  MCZ_METADATA_FIELDS,
+    'PCAM': PCAM_METADATA_FIELDS,
+}
+
+
+def metadata_fields(instrument: str) -> Tuple[MetadataField, ...]:
+    """Field schema for an instrument, defaulting to MCZ."""
+    return _INSTRUMENT_METADATA_FIELDS.get(str(instrument).strip().upper(),
+                                           MCZ_METADATA_FIELDS)
 
 _UNSET = ''  # combo userData for the blank option
 
@@ -74,19 +136,20 @@ class _MetadataCard(QFrame):
     activated = pyqtSignal(int)
     changed   = pyqtSignal(int, dict)
 
-    def __init__(self, index, color, name, metadata, parent=None):
+    def __init__(self, index, color, name, metadata, schema, parent=None):
         super().__init__(parent)
         self.index     = index
         self._color    = color
         self._name     = name
         self._metadata = dict(metadata)
+        self._schema   = schema
         self._active   = False
         self._editors  = {}   # field key -> editor widget
         self._rows     = {}   # field key -> row container widget
 
         self.setObjectName('card')
         self._build_ui()
-        self._sync_visibility()
+        self._sync_schema()
         self._apply_scale()
 
     def _build_ui(self):
@@ -106,7 +169,7 @@ class _MetadataCard(QFrame):
         self._title = QLabel(self._name)
         self._fields_layout.addWidget(self._title)
 
-        for field in METADATA_FIELDS:
+        for field in self._schema:
             row      = QWidget()
             row_lay  = QHBoxLayout()
             row_lay.setContentsMargins(0, 0, 0, 0)
@@ -118,16 +181,7 @@ class _MetadataCard(QFrame):
 
             if field.options:
                 editor = QComboBox()
-                editor.addItem('-', _UNSET)
-                hints = field.hints or {}
-                for value in field.options:
-                    editor.addItem(hints.get(value, value), value)
-                current = self._metadata.get(field.key)
-                if current is not None:
-                    ix = editor.findData(current)
-                    if ix >= 0:
-                        editor.setCurrentIndex(ix)
-                self._mark_current(editor)
+                self._populate_combo(editor, field)
                 editor.currentIndexChanged.connect(partial(self._on_combo_changed, field.key))
             else:
                 editor = QLineEdit()
@@ -141,6 +195,22 @@ class _MetadataCard(QFrame):
             self._editors[field.key] = editor
             self._rows[field.key]    = row
             self._fields_layout.addWidget(row)
+
+    def _populate_combo(self, editor, field):
+        """Fill a combo from the field's current options, keeping a valid stored value."""
+        editor.blockSignals(True)
+        editor.clear()
+        editor.addItem('-', _UNSET)
+        hints = field.hints or {}
+        for value in field.options_for(self._metadata):
+            editor.addItem(hints.get(value, value), value)
+        current = self._metadata.get(field.key)
+        if current is not None:
+            ix = editor.findData(current)
+            if ix >= 0:
+                editor.setCurrentIndex(ix)
+        self._mark_current(editor)
+        editor.blockSignals(False)
 
     # ------------------------------------------------------------------
     # Field changes
@@ -167,31 +237,46 @@ class _MetadataCard(QFrame):
             self._metadata[key] = value
         else:
             self._metadata.pop(key, None)
-        self._drop_hidden_values()
-        self._sync_visibility()
+        self._sync_schema()
         self.changed.emit(self.index, dict(self._metadata))
 
-    def _drop_hidden_values(self):
-        """Clear values of fields the current selections have hidden."""
-        for field in METADATA_FIELDS:
-            if field.visible_when is None or field.visible_when(self._metadata):
-                continue
-            if field.key not in self._metadata:
-                continue
-            self._metadata.pop(field.key)
-            editor = self._editors[field.key]
-            editor.blockSignals(True)
-            if isinstance(editor, QComboBox):
-                editor.setCurrentIndex(0)
-                self._mark_current(editor)
-            else:
-                editor.clear()
-            editor.blockSignals(False)
+    def _sync_schema(self):
+        """Reconcile editors with the current values.
 
-    def _sync_visibility(self):
-        for field in METADATA_FIELDS:
+        Hides gated rows and drops their values, and refreshes option lists
+        that depend on other fields, dropping any value the new list no
+        longer contains.
+        """
+        for field in self._schema:
+            editor  = self._editors[field.key]
             visible = field.visible_when is None or field.visible_when(self._metadata)
             self._rows[field.key].setVisible(visible)
+
+            if not visible:
+                if field.key in self._metadata:
+                    self._metadata.pop(field.key)
+                    self._reset_editor(editor)
+                continue
+
+            if callable(field.options) and isinstance(editor, QComboBox):
+                options = field.options_for(self._metadata)
+                if options != self._combo_options(editor):
+                    if self._metadata.get(field.key) not in options:
+                        self._metadata.pop(field.key, None)
+                    self._populate_combo(editor, field)
+
+    def _reset_editor(self, editor):
+        editor.blockSignals(True)
+        if isinstance(editor, QComboBox):
+            editor.setCurrentIndex(0)
+            self._mark_current(editor)
+        else:
+            editor.clear()
+        editor.blockSignals(False)
+
+    @staticmethod
+    def _combo_options(editor):
+        return tuple(editor.itemData(i) for i in range(1, editor.count()))
 
     # ------------------------------------------------------------------
     # Active state
@@ -286,10 +371,11 @@ class ROIMetadataPanel(QWidget):
     # Public interface
     # ------------------------------------------------------------------
 
-    def set_rois(self, rois_data, colors, names):
+    def set_rois(self, rois_data, colors, names, instrument='ZCAM'):
         """Rebuild the card list from current ROIs, preserving the active card by name."""
         active_name = (self._cards[self._active_index]._name
                        if self._cards and self._active_index < len(self._cards) else None)
+        schema = metadata_fields(instrument)
 
         while self._list_layout.count():
             item = self._list_layout.takeAt(0)
@@ -299,7 +385,7 @@ class ROIMetadataPanel(QWidget):
 
         self._cards = []
         for i, (roi, color, name) in enumerate(zip(rois_data, colors, names)):
-            card = _MetadataCard(i, color, name, roi.get('metadata', {}))
+            card = _MetadataCard(i, color, name, roi.get('metadata', {}), schema)
             card.activated.connect(self._on_card_activated)
             card.changed.connect(self.metadata_changed.emit)
             self._cards.append(card)
