@@ -77,8 +77,7 @@ MCZ_METADATA_FIELDS = (
 
 # Pancam categories. Feature subtype options depend on the feature, so SUBTYPE
 # carries a callable and repopulates when FEATURE changes. FLOAT, TWO-TONED,
-# and TEXTURE apply to rocks only. Null under TWO-TONED means assessed and not
-# two-toned, as opposed to blank meaning not assessed.
+# and TEXTURE apply to rocks only.
 _PCAM_SUBTYPES = {
     'Rock': (
         'Dark Rock Surface', 'Bright Rock Surface', 'Thick Dust on Rock',
