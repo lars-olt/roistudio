@@ -407,13 +407,14 @@ class Controller(QObject):
             sel_path=sel_path,
         ))
 
-    def _load_fits(self):
+    def _load_fits(self, fits_path=None):
         self._apply_loaded_rois(sel_controller.load_fits(
             self._view, self._model,
             self._get_instrument_config(),
             self.sparc_controller,
             self._has_dual_cubes(),
             self.color_manager,
+            fits_path=fits_path,
         ))
 
     def _apply_loaded_rois(self, outcome):

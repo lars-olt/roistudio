@@ -23,6 +23,7 @@ _bootstrap_pipeline()
 
 import argparse
 import sys
+from pathlib import Path
 from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QColor, QPalette, QKeySequence, QFont, QIcon
 from PyQt5.QtWidgets import QApplication, QShortcut
@@ -47,7 +48,7 @@ def _parse_args():
     parser.add_argument('instrument',   nargs='?', default='ZCAM',
                         choices=['ZCAM', 'PCAM'],
                         help='Instrument (default: ZCAM)')
-    parser.add_argument('sel_file',     nargs='?', help='Optional .sel file to load after the scene')
+    parser.add_argument('roi_file',     nargs='?', help='Optional .sel or .fits ROI file to load after the scene')
     parser.add_argument('--notes',      default=None,
                         help='Observation-level science notes shown in the toolbar')
     # strip Qt's own args before parsing so --style etc. don't confuse argparse
@@ -146,8 +147,11 @@ if __name__ == '__main__':
             def _on_load_complete(_load_result):
                 controller.scene_controller.load_complete.disconnect(_on_load_complete)
                 view._set_mode('roi_processing')
-                if args.sel_file:
-                    controller._load_sel(sel_path=args.sel_file)
+                if args.roi_file:
+                    if Path(args.roi_file).suffix.lower() == '.fits':
+                        controller._load_fits(fits_path=args.roi_file)
+                    else:
+                        controller._load_sel(sel_path=args.roi_file)
 
             controller.scene_controller.load_complete.connect(_on_load_complete)
             controller.scene_controller.load_direct(
