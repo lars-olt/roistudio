@@ -4,9 +4,7 @@ Fields are declared per instrument in MCZ_METADATA_FIELDS and
 PCAM_METADATA_FIELDS - key, label, options, and an optional visibility
 predicate on the other values. Options can be a callable on the metadata for
 lists that depend on another field, like the Pancam feature subtype. The cards
-render from the schema, so adding or gating a category is a schema edit, not a
-UI change. Values live on each roi_data dict under 'metadata' and are written
-into FITS headers verbatim on export.
+render from the schema.
 """
 
 from dataclasses import dataclass
@@ -24,7 +22,7 @@ from utils.scale import Scale, scaled, scaled_font
 
 @dataclass(frozen=True)
 class MetadataField:
-    key:          str                        # FITS header keyword (max 8 chars)
+    key:          str                        # FITS header keyword; astropy writes keys over 8 chars as HIERARCH cards
     label:        str                        # shown next to the editor
     options:      object = ()                # tuple of values, or a callable(metadata) -> tuple; empty means free text
     hints:        Optional[Dict[str, str]] = None       # value -> display label overrides
@@ -34,83 +32,89 @@ class MetadataField:
         return self.options(metadata) if callable(self.options) else self.options
 
 
-def _is_rock(m):  return m.get('FEATURE') == 'Rock'
-def _is_soil(m):  return m.get('FEATURE') == 'Soil'
-def _is_other(m): return m.get('FEATURE') == 'Other'
-def _is_nearfield_soil(m): return _is_soil(m) and m.get('DISTANCE') == 'Nearfield'
+def _is_rock(m): return m.get('FEATURE') == 'rock'
+def _is_soil(m): return m.get('FEATURE') == 'soil'
 
 
-_DISTANCE = MetadataField('DISTANCE', 'Distance', ('Nearfield', 'Midfield', 'Farfield'),
-                          hints={'Nearfield': 'Nearfield (< 10 m)',
-                                 'Midfield':  'Midfield (10 m - 50 m)',
-                                 'Farfield':  'Farfield (> 50 m)'})
-_DESCRIPT = MetadataField('DESCRIPT', 'Description')
+_FEATURE_OPTIONS  = ('rock', 'soil', 'pebble', 'hardware', 'landscape')
+_FLOAT_OPTIONS    = ('float', 'in-place', 'unclear')
+_DISTANCE_OPTIONS = ('nearfield', 'midfield', 'farfield')
+_GRAIN_SIZES      = ('fine (grains not resolvable)', 'coarse (grains resolvable)', 'mixed')
 
-
-# MCZ starting categories. Distance is best effort - actual distance can be
-# used to filter in Multidex. DESCRIPT is free text for identifiers the fixed
-# categories don't cover (e.g. "scree slope", "candidate meteorite").
-MCZ_METADATA_FIELDS = (
-    _DISTANCE,
-    MetadataField('FEATURE', 'Feature', ('Rock', 'Soil', 'Other', 'Hardware')),
-    MetadataField('FLOAT', 'Float', ('Float', 'In-Place', 'Unclear'),
-                  visible_when=_is_rock),
-    MetadataField('ROCKSURF', 'Rock surface', (
-        'Bright natural surface', 'Dark natural surface', 'Thick dust',
-        'LIBS-cleared surface', 'gDRT-cleared surface', 'Abraded surface',
-        'Coating (not dust)', 'Clast/Inclusion', 'Tailings', 'Broken/scuffed',
-    ), visible_when=_is_rock),
-    MetadataField('GRAINSZ', 'Grain size', ('Fine', 'Coarse', 'Mixed'),
-                  hints={'Fine':   'Fine (grains not resolvable)',
-                         'Coarse': 'Coarse (grains resolvable)'},
-                  visible_when=_is_nearfield_soil),
-    MetadataField('SOILLOC', 'Soil location', (
-        'Undisturbed regolith', 'On rock', 'Wheel track compressed',
-        'Wheel track disturbed', 'Disturbed surface (not wheel track)',
-        'Bedform', 'On hardware',
-    ), visible_when=_is_soil),
-    MetadataField('FEATTYPE', 'Feature type', ('Blueberry', 'Vein'),
-                  visible_when=_is_other),
-    _DESCRIPT,
+_SOIL_SUBTYPES = (
+    'undisturbed regolith', 'on rock', 'wheel track compressed',
+    'wheel track disturbed', 'disturbed surface (not wheel track)',
+    'bedform crest/slope', 'on hardware',
 )
 
-
-# Pancam categories. Feature subtype options depend on the feature, so SUBTYPE
-# carries a callable and repopulates when FEATURE changes. FLOAT, TWO-TONED,
-# and TEXTURE apply to rocks only.
-_PCAM_SUBTYPES = {
-    'Rock': (
-        'Dark Rock Surface', 'Bright Rock Surface', 'Thick Dust on Rock',
-        'RAT Brushed Rock', 'RAT Brushed Rock Average',
-        'RAT Abraded Rock', 'RAT Abraded Rock Average', 'RAT Tailings',
-        'Broken Rock Surface', 'Clast/Grain Within Rock',
-        'Blueberries (Embedded in Rock)', 'Rock Coating', 'Meteorite', 'Vein',
+_ZCAM_SUBTYPES = {
+    'rock': (
+        'bright natural surface', 'dark natural surface', 'thick dust',
+        'LIBS-cleared surface', 'gDRT-cleared surface', 'abraded surface',
+        'coating (not dust)', 'clast/inclusion', 'tailings',
+        'broken/scuffed surface',
     ),
-    'Soil': (
-        'Undisturbed Soil', 'Undisturbed Soil (Near Rock)', 'Soil on top of Rock',
-        'Compressed Soil in Wheel Track', 'Disturbed Soil in Wheel Track',
-        'Disturbed Soil (Not in Wheel Track)', 'Bedform',
-        'Soil on Rover Hardware', 'Thick dust on Soil',
-    ),
-    'Pebble': (
-        'Pebble (Individual Pebbles)', 'Blueberries (Individual Berries)',
-        'Blueberries (On Rock)', 'Blueberries (On Soil)', 'Pebbles (On Soil)',
-    ),
+    'soil': _SOIL_SUBTYPES,
 }
 
-PCAM_METADATA_FIELDS = (
+# Pancam has no LIBS or gDRT - otherwise the subtype sets match ZCAM.
+_PCAM_SUBTYPES = {
+    'rock': (
+        'bright natural surface', 'dark natural surface', 'thick dust',
+        'abraded surface', 'coating (not dust)', 'clast/inclusion',
+        'tailings', 'broken/scuffed surface',
+    ),
+    'soil': _SOIL_SUBTYPES,
+}
+
+_ZCAM_FORMATIONS = (
+    'Maaz', 'Seitah', 'delta', 'margin unit', 'Neretva Vallis',
+    'Crater Rim', 'Lac de Charmes',
+)
+
+# Only these formations have named members.
+_ZCAM_MEMBERS = {
+    'Maaz':   ('Chal', 'Nataani', 'Rochette', 'Artuby', 'Roubion'),
+    'Seitah': ('Content', 'Bastide', 'Issole'),
+}
+
+_DISTANCE = MetadataField('DISTANCE', 'Distance', _DISTANCE_OPTIONS,
+                          hints={'nearfield': 'nearfield (< 10 m)',
+                                 'midfield':  'midfield (10 m - 50 m)',
+                                 'farfield':  'farfield (> 50 m)'})
+_DESCRIPTION = MetadataField('DESCRIPTION', 'Description')
+
+
+# Field keys, values, and gating mirror the marslab metadata settings - values
+# are written to FITS headers verbatim, so they must match exactly for
+# Multidex and the marslab pipeline to read them. Field order follows
+# ROI_METADATA_FIELDS there.
+MCZ_METADATA_FIELDS = (
+    MetadataField('FEATURE', 'Feature', _FEATURE_OPTIONS),
+    MetadataField('FEATURE_SUBTYPE', 'Feature subtype',
+                  lambda m: _ZCAM_SUBTYPES.get(m.get('FEATURE'), ()),
+                  visible_when=lambda m: m.get('FEATURE') in _ZCAM_SUBTYPES),
+    MetadataField('FLOAT', 'Float', _FLOAT_OPTIONS, visible_when=_is_rock),
+    MetadataField('FORMATION', 'Formation', _ZCAM_FORMATIONS, visible_when=_is_rock),
+    MetadataField('GRAIN_SIZE', 'Grain size', _GRAIN_SIZES, visible_when=_is_soil),
+    MetadataField('MEMBER', 'Member',
+                  lambda m: _ZCAM_MEMBERS.get(m.get('FORMATION'), ()),
+                  visible_when=lambda m: _is_rock(m) and m.get('FORMATION') in _ZCAM_MEMBERS),
     _DISTANCE,
-    MetadataField('FEATURE', 'Feature', ('Rock', 'Soil', 'Pebble')),
-    MetadataField('SUBTYPE', 'Feature subtype',
+    _DESCRIPTION,
+)
+
+# Pancam: same structure without FORMATION and MEMBER, which have no defined
+# choices for MER.
+PCAM_METADATA_FIELDS = (
+    MetadataField('FEATURE', 'Feature', _FEATURE_OPTIONS),
+    MetadataField('FEATURE_SUBTYPE', 'Feature subtype',
                   lambda m: _PCAM_SUBTYPES.get(m.get('FEATURE'), ()),
                   visible_when=lambda m: m.get('FEATURE') in _PCAM_SUBTYPES),
-    MetadataField('FLOAT', 'Float', ('Float', 'In-Place'),
-                  visible_when=_is_rock),
-    MetadataField('TWOTONED', 'Two-toned', ('Upper Surface', 'Lower Surface'),
-                  visible_when=_is_rock),
-    MetadataField('TEXTURE', 'Texture', ('Massive', 'Pitted', 'Platy', 'Ventifacted'),
-                  visible_when=_is_rock),
-    _DESCRIPT,
+    MetadataField('FLOAT', 'Float', _FLOAT_OPTIONS, visible_when=_is_rock),
+    MetadataField('GRAIN_SIZE', 'Grain size', _GRAIN_SIZES, visible_when=_is_soil),
+    _DISTANCE,
+    _DESCRIPTION,
 )
 
 
@@ -125,6 +129,7 @@ def metadata_fields(instrument: str) -> Tuple[MetadataField, ...]:
     """Field schema for an instrument, defaulting to MCZ."""
     return _INSTRUMENT_METADATA_FIELDS.get(str(instrument).strip().upper(),
                                            MCZ_METADATA_FIELDS)
+
 
 _UNSET = ''  # combo userData for the blank option
 
