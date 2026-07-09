@@ -18,6 +18,13 @@ _VELOCITY_WINDOW = 5
 _ANGLE_TO_PIXELS = 8    # Qt angleDelta is in eights-of-a-degree; divide to get pixels
 _SCROLL_SPEED    = 0.5  # multiplier for mouse wheel vertical scroll
 
+# ROI size limits, in image pixels. A valid ROI must clear the per-side floor
+# on both dimensions and the area floor overall, which lets it go long and
+# narrow or short and wide while keeping the total footprint about the same as
+# the old square minimum.
+_MIN_ROI_SIDE = 2
+_MIN_ROI_AREA = 24
+
 
 class CanvasContainer(QWidget):
     """
@@ -566,7 +573,7 @@ class CanvasContainer(QWidget):
             elif self.interaction_mode == self.MODE_RESIZE_R:
                 r[2] += dx
 
-            r[2] = max(5, r[2]); r[3] = max(5, r[3])
+            r[2] = max(_MIN_ROI_SIDE, r[2]); r[3] = max(_MIN_ROI_SIDE, r[3])
             self.rois[self.selected_roi_index] = tuple(r)
             self.last_mouse_pos = event.pos()
             self.update()
@@ -659,7 +666,8 @@ class CanvasContainer(QWidget):
         if self.interaction_mode == self.MODE_CREATE:
             if self.current_creation_rect:
                 r = self.current_creation_rect
-                if r.width() > 5 and r.height() > 5:
+                if (r.width() >= _MIN_ROI_SIDE and r.height() >= _MIN_ROI_SIDE
+                        and r.width() * r.height() >= _MIN_ROI_AREA):
                     self.roi_created.emit((r.x(), r.y(), r.width(), r.height()))
                 else:
                     self.roi_too_small.emit()
@@ -709,7 +717,7 @@ class CanvasContainer(QWidget):
             self.space_pressed = False
             if not self.is_panning:
                 super().setCursor(self.tool_cursor)
-    
+
     def focusOutEvent(self, event):
         # Losing focus while space is held means we never get the release
         # reset pan state so ROI interaction isn't blocked.
