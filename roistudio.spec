@@ -136,6 +136,7 @@ datas = []
 datas += [
     ("graphics", "graphics"),
     ("config.yml", "."),
+    ("resources/pcam_roi_metadata.json", "resources"),
 ]
 
 # SPARC package data - blank .sel templates required by sel_writer at runtime
