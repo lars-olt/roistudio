@@ -94,7 +94,7 @@ MCZ_METADATA_FIELDS = (
 
 
 # Pancam metadata is defined in resources/pcam_roi_metadata.json.
-_PCAM_SCHEMA_FILE = 'resources\pcam_roi_metadata.json'
+_PCAM_SCHEMA_FILE = 'resources/pcam_roi_metadata.json'
 
 
 def _condition(spec):
