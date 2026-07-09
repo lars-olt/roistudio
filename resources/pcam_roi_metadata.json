@@ -67,6 +67,11 @@
         "midfield": "midfield (10 m - 50 m)",
         "farfield": "farfield (> 50 m)"
       }
+    },
+    {
+      "key": "DESCRIPTION",
+      "label": "Description",
+      "options": []
     }
   ]
 }
