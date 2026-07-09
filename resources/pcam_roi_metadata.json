@@ -1,0 +1,72 @@
+{
+  "fields": [
+    {
+      "key": "FEATURE",
+      "label": "Feature",
+      "options": ["rock", "soil", "pebble"]
+    },
+    {
+      "key": "FEATURE_SUBTYPE",
+      "label": "Feature subtype",
+      "options_by_field": "FEATURE",
+      "options": {
+        "rock": [
+          "dark rock surface",
+          "bright rock surface",
+          "thick dust on rock",
+          "RAT brushed rock",
+          "RAT brushed rock average",
+          "RAT abraded rock",
+          "RAT abraded rock average",
+          "RAT tailings",
+          "broken rock surface",
+          "clast/grain within rock",
+          "blueberries (embedded in rock)",
+          "rock coating",
+          "meteorite",
+          "vein"
+        ],
+        "soil": [
+          "undisturbed soil",
+          "undisturbed soil (near rock)",
+          "soil on top of rock",
+          "compressed soil in wheel track",
+          "disturbed soil in wheel track",
+          "disturbed soil (not in wheel track)",
+          "bedform",
+          "soil on rover hardware",
+          "thick dust on soil"
+        ],
+        "pebble": [
+          "pebble (individual pebbles)",
+          "blueberries (individual berries)",
+          "blueberries (on rock)",
+          "blueberries (on soil)",
+          "pebbles (on soil)"
+        ]
+      }
+    },
+    {
+      "key": "FLOAT",
+      "label": "Float",
+      "options": ["float", "in-place"],
+      "visible_when": {"FEATURE": ["rock"]}
+    },
+    {
+      "key": "TEXTURE",
+      "label": "Texture",
+      "options": ["massive", "pitted", "platy", "ventifacted"],
+      "visible_when": {"FEATURE": ["rock"]}
+    },
+    {
+      "key": "DISTANCE",
+      "label": "Distance",
+      "options": ["nearfield", "midfield", "farfield"],
+      "hints": {
+        "nearfield": "nearfield (< 10 m)",
+        "midfield": "midfield (10 m - 50 m)",
+        "farfield": "farfield (> 50 m)"
+      }
+    }
+  ]
+}

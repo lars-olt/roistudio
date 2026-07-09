@@ -3,12 +3,14 @@
 Fields are declared per instrument in MCZ_METADATA_FIELDS and
 PCAM_METADATA_FIELDS - key, label, options, and an optional visibility
 predicate on the other values. Options can be a callable on the metadata for
-lists that depend on another field, like the Pancam feature subtype. The cards
-render from the schema.
+lists that depend on another field, like the Pancam feature subtype.
 """
 
+import json
+import sys
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Tuple, Dict
 
 from PyQt5.QtCore import Qt, QEvent, pyqtSignal
@@ -17,6 +19,7 @@ from PyQt5.QtWidgets import (QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QLineEdit, QScrollArea, QSizePolicy)
 
 from colors import Colors
+from utils.paths import _resource_path
 from utils.scale import Scale, scaled, scaled_font
 
 
@@ -36,11 +39,6 @@ def _is_rock(m): return m.get('FEATURE') == 'rock'
 def _is_soil(m): return m.get('FEATURE') == 'soil'
 
 
-_FEATURE_OPTIONS  = ('rock', 'soil', 'pebble', 'hardware', 'landscape')
-_FLOAT_OPTIONS    = ('float', 'in-place', 'unclear')
-_DISTANCE_OPTIONS = ('nearfield', 'midfield', 'farfield')
-_GRAIN_SIZES      = ('fine (grains not resolvable)', 'coarse (grains resolvable)', 'mixed')
-
 _SOIL_SUBTYPES = (
     'undisturbed regolith', 'on rock', 'wheel track compressed',
     'wheel track disturbed', 'disturbed surface (not wheel track)',
@@ -57,16 +55,6 @@ _ZCAM_SUBTYPES = {
     'soil': _SOIL_SUBTYPES,
 }
 
-# Pancam has no LIBS or gDRT - otherwise the subtype sets match ZCAM.
-_PCAM_SUBTYPES = {
-    'rock': (
-        'bright natural surface', 'dark natural surface', 'thick dust',
-        'abraded surface', 'coating (not dust)', 'clast/inclusion',
-        'tailings', 'broken/scuffed surface',
-    ),
-    'soil': _SOIL_SUBTYPES,
-}
-
 _ZCAM_FORMATIONS = (
     'Maaz', 'Seitah', 'delta', 'margin unit', 'Neretva Vallis',
     'Crater Rim', 'Lac de Charmes',
@@ -78,7 +66,7 @@ _ZCAM_MEMBERS = {
     'Seitah': ('Content', 'Bastide', 'Issole'),
 }
 
-_DISTANCE = MetadataField('DISTANCE', 'Distance', _DISTANCE_OPTIONS,
+_DISTANCE = MetadataField('DISTANCE', 'Distance', ('nearfield', 'midfield', 'farfield'),
                           hints={'nearfield': 'nearfield (< 10 m)',
                                  'midfield':  'midfield (10 m - 50 m)',
                                  'farfield':  'farfield (> 50 m)'})
@@ -86,17 +74,17 @@ _DESCRIPTION = MetadataField('DESCRIPTION', 'Description')
 
 
 # Field keys, values, and gating mirror the marslab metadata settings - values
-# are written to FITS headers verbatim, so they must match exactly for
-# Multidex and the marslab pipeline to read them. Field order follows
-# ROI_METADATA_FIELDS there.
+# are written to FITS headers verbatim.
 MCZ_METADATA_FIELDS = (
-    MetadataField('FEATURE', 'Feature', _FEATURE_OPTIONS),
+    MetadataField('FEATURE', 'Feature', ('rock', 'soil', 'pebble', 'hardware', 'landscape')),
     MetadataField('FEATURE_SUBTYPE', 'Feature subtype',
                   lambda m: _ZCAM_SUBTYPES.get(m.get('FEATURE'), ()),
                   visible_when=lambda m: m.get('FEATURE') in _ZCAM_SUBTYPES),
-    MetadataField('FLOAT', 'Float', _FLOAT_OPTIONS, visible_when=_is_rock),
+    MetadataField('FLOAT', 'Float', ('float', 'in-place', 'unclear'), visible_when=_is_rock),
     MetadataField('FORMATION', 'Formation', _ZCAM_FORMATIONS, visible_when=_is_rock),
-    MetadataField('GRAIN_SIZE', 'Grain size', _GRAIN_SIZES, visible_when=_is_soil),
+    MetadataField('GRAIN_SIZE', 'Grain size',
+                  ('fine (grains not resolvable)', 'coarse (grains resolvable)', 'mixed'),
+                  visible_when=_is_soil),
     MetadataField('MEMBER', 'Member',
                   lambda m: _ZCAM_MEMBERS.get(m.get('FORMATION'), ()),
                   visible_when=lambda m: _is_rock(m) and m.get('FORMATION') in _ZCAM_MEMBERS),
@@ -104,18 +92,84 @@ MCZ_METADATA_FIELDS = (
     _DESCRIPTION,
 )
 
-# Pancam: same structure without FORMATION and MEMBER, which have no defined
-# choices for MER.
-PCAM_METADATA_FIELDS = (
-    MetadataField('FEATURE', 'Feature', _FEATURE_OPTIONS),
-    MetadataField('FEATURE_SUBTYPE', 'Feature subtype',
-                  lambda m: _PCAM_SUBTYPES.get(m.get('FEATURE'), ()),
-                  visible_when=lambda m: m.get('FEATURE') in _PCAM_SUBTYPES),
-    MetadataField('FLOAT', 'Float', _FLOAT_OPTIONS, visible_when=_is_rock),
-    MetadataField('GRAIN_SIZE', 'Grain size', _GRAIN_SIZES, visible_when=_is_soil),
-    _DISTANCE,
-    _DESCRIPTION,
-)
+
+# Pancam metadata is defined in resources/pcam_roi_metadata.json.
+_PCAM_SCHEMA_FILE = 'resources\pcam_roi_metadata.json'
+
+
+def _condition(spec):
+    """Convert a visible_when mapping into a predicate on the metadata dict.
+
+    Every listed field must hold one of its listed values, e.g.
+    {"FEATURE": ["rock"]}. A bare string value is accepted as a single option.
+    """
+    if not spec:
+        return None
+    checks = {key: tuple(vals) if isinstance(vals, list) else (vals,)
+              for key, vals in spec.items()}
+    return lambda m: all(m.get(key) in vals for key, vals in checks.items())
+
+
+def _pcam_fields_from_json(path):
+    """Build the Pancam schema from the editable JSON definition.
+
+    Raises ValueError with a message precise enough to act on from GitHub's
+    editor - the file is maintained by scientists, so a typo has to produce
+    something better than a traceback.
+    """
+    spec   = json.loads(Path(path).read_text())
+    fields = []
+    seen   = set()
+    referenced = set()
+
+    for entry in spec.get('fields', []):
+        missing = [k for k in ('key', 'label') if k not in entry]
+        if missing:
+            raise ValueError(f"field entry {entry!r} is missing {missing}")
+        key = entry['key']
+        if key in seen:
+            raise ValueError(f"duplicate field key {key!r}")
+        seen.add(key)
+        referenced.update(entry.get('visible_when', {}))
+
+        visible_when = _condition(entry.get('visible_when'))
+        hints        = entry.get('hints')
+        options      = entry.get('options', [])
+        by           = entry.get('options_by_field')
+
+        if by:
+            if not isinstance(options, dict):
+                raise ValueError(f"{key}: options_by_field requires options to be a map")
+            referenced.add(by)
+            choices = {value: tuple(opts) for value, opts in options.items()}
+
+            def options_fn(m, by=by, choices=choices):
+                return choices.get(m.get(by), ())
+
+            def gated(m, by=by, choices=choices, also=visible_when):
+                return m.get(by) in choices and (also is None or also(m))
+
+            fields.append(MetadataField(key, entry['label'], options_fn, hints, gated))
+        else:
+            fields.append(MetadataField(key, entry['label'], tuple(options), hints, visible_when))
+
+    unknown = referenced - seen
+    if unknown:
+        raise ValueError(f"visible_when/options_by_field reference undefined fields: {sorted(unknown)}")
+    if not fields:
+        raise ValueError("no fields defined")
+    return tuple(fields)
+
+
+def _load_pcam_fields():
+    try:
+        return _pcam_fields_from_json(_resource_path(_PCAM_SCHEMA_FILE))
+    except Exception as e:
+        print(f"roi_metadata: could not load {_PCAM_SCHEMA_FILE} - {e}", file=sys.stderr)
+        return ()
+
+
+PCAM_METADATA_FIELDS = _load_pcam_fields()
 
 
 _INSTRUMENT_METADATA_FIELDS = {
