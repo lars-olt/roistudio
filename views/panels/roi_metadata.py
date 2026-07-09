@@ -188,6 +188,14 @@ def metadata_fields(instrument: str) -> Tuple[MetadataField, ...]:
 _UNSET = ''  # combo userData for the blank option
 
 
+class _NoWheelComboBox(QComboBox):
+    """Combo that ignores the scroll wheel, so scrolling the card list can't
+    silently change a metadata value."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
 class _MetadataCard(QFrame):
     """One ROI's metadata editor - colored left strip, accent border when active."""
 
@@ -238,7 +246,7 @@ class _MetadataCard(QFrame):
             row._label = label
 
             if field.options:
-                editor = QComboBox()
+                editor = _NoWheelComboBox()
                 self._populate_combo(editor, field)
                 editor.currentIndexChanged.connect(partial(self._on_combo_changed, field.key))
             else:
