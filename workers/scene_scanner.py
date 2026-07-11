@@ -1,13 +1,22 @@
 """Background thread for scanning IOF files and generating scene thumbnails."""
 
 import re
+import traceback
 import numpy as np
+import pdr
 from pathlib import Path
 
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 
-from sparc.data.loading import _scan_and_split, _bandset_from_group
+from marslab.imgops.imgutils import crop
+from asdf_settings import rapidlooks
+
+from sparc.core.constants import get_instrument_config
+from sparc.data.loading import (_scan_and_split, _bandset_from_group,
+                                _normalise_pcam_label, _pcam_calibration,
+                                pcam_seq_token)
+from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
 
 
 _PCAM_FILENAME_RE = re.compile(
@@ -58,8 +67,8 @@ class SceneScanThread(QThread):
                             sol     = metadata.get('sol', '?')
                             seq     = metadata.get('sequence', scene_id)
                             full_id = (f"Sol{sol:04d}_{seq}_PMA{pma}"
-                                       if isinstance(sol, int) and pma is not None
-                                       else scene_id)
+                                    if isinstance(sol, int) and pma is not None
+                                    else scene_id)
                             self.scene_found.emit(
                                 full_id, pixmap,
                                 self._label(metadata, path, obs_ix),
@@ -67,7 +76,6 @@ class SceneScanThread(QThread):
                                 complete, self._sort_key(metadata),
                             )
                     except Exception as e:
-                        import traceback
                         self.scan_error.emit(f"Thumbnail failed for {scene_id}: {e}\n{traceback.format_exc()}")
                         continue
             else:
@@ -111,9 +119,6 @@ class SceneScanThread(QThread):
         return scenes
 
     def _load_zcam_thumbnail(self, path, seq_id, obs_ix):
-        from marslab.imgops.imgutils import crop
-        from asdf_settings import rapidlooks
-
         groups = _scan_and_split(path, seq_id)
         if obs_ix >= len(groups):
             return None, None, False
@@ -126,7 +131,6 @@ class SceneScanThread(QThread):
 
         available = bs.metadata['BAND'].tolist()
 
-        from sparc.core.constants import get_instrument_config
         complete  = len(available) >= len(get_instrument_config('ZCAM')['filters'])
 
         band = next((b for b in ('R1', 'L1', 'R0R', 'L0R') if b in available), None)
@@ -166,12 +170,9 @@ class SceneScanThread(QThread):
     # ------------------------------------------------------------------
 
     def _find_pcam_scenes(self, folder_path):
-        from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
-        import pdr as _pdr
-
         def _band_area(path):
             try:
-                d       = _pdr.Data(path)
+                d       = pdr.Data(path)
                 img_key = 'IMAGE' if 'IMAGE' in d.keys() else 'Image_Object'
                 arr     = d[img_key]
                 return arr.shape[0] * arr.shape[1]
@@ -184,9 +185,18 @@ class SceneScanThread(QThread):
             areas.index = representatives.index
             return group['PATH'].map(lambda _: areas.max())
 
+        def _seq_token(observation):
+            # seq_ver isn't in the filename, so read the first file's label to recover
+            # it. Falls back to the filename SEQ_ID when the label can't be read.
+            try:
+                label = pdr.Data(observation.iloc[0]['PATH']).metadata
+                return pcam_seq_token(_normalise_pcam_label(label))
+            except Exception:
+                return str(observation['SEQ_ID'].iloc[0])
+
         scenes = {}
         for parent_dir in {f.parent for f in Path(folder_path).rglob('*')
-                           if f.suffix.upper() in ('.IMG', '.IMQ')}:
+                        if f.suffix.upper() in ('.IMG', '.IMQ')}:
             try:
                 products = scan_pcam_files(parent_dir)
                 for seq_id, group in products.groupby('SEQ_ID'):
@@ -196,16 +206,15 @@ class SceneScanThread(QThread):
                         continue
                     full_frame = group[areas == max_area]
                     for obs_ix, obs in enumerate(split_pcam_observations(full_frame)):
-                        scene_id = f"{seq_id}_{obs_ix:03d}"
+                        # key on the version-folded token so two sequence versions
+                        # stay distinct instead of one clobbering the other
+                        scene_id = f"{_seq_token(obs)}_{obs_ix:03d}"
                         scenes[scene_id] = (parent_dir, seq_id, obs_ix)
             except Exception:
                 continue
         return scenes
 
     def _load_pcam_thumbnail(self, path, seq_id, obs_ix):
-        from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
-        import pdr
-
         products     = scan_pcam_files(path, seq_id=seq_id)
         observations = []
         for _, group in products.groupby('SEQ_ID'):
@@ -230,20 +239,18 @@ class SceneScanThread(QThread):
         fpath = row['PATH']
         d     = pdr.Data(fpath)
         label = d.metadata
-
-        from sparc.data.loading import _normalise_pcam_label, _pcam_calibration
-        norm = _normalise_pcam_label(label)
+        norm  = _normalise_pcam_label(label)
 
         try:
             metadata['sol'] = int(norm['PLANET_DAY_NUMBER'])
         except Exception:
             pass
         try:
-            metadata['sequence'] = str(norm['SEQUENCE_ID']).strip()
+            metadata['sequence'] = pcam_seq_token(norm)
         except Exception:
             pass
         try:
-            metadata['pma'] = int(norm['ROVER_MOTION_COUNTER'][3])  # PMA is index 3: (SITE, DRIVE, IDD, PMA, HGA)
+            metadata['pma'] = int(norm['ROVER_MOTION_COUNTER'][3])
         except Exception:
             pass
 
