@@ -27,3 +27,24 @@ def hex_to_rgb(hex_color):
     """Convert a hex color string to an RGB tuple."""
     hex_color = hex_color.lstrip('#')
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+
+def snap_rect(x, y, w, h, bounds=None):
+    """Snap a float rect to the integer pixel grid by its edges.
+
+    ROIs are pixel selections - the mask formats store whole pixels and the
+    spectra index whole pixels, so a float rect drifts on save/reload and shows
+    spectra from pixels it doesn't quite cover. Rounding the edges rather than
+    the width keeps each border where the user put it; rounding x and w
+    independently can move the far edge by a full pixel.
+
+    bounds is an optional (W, H) that clamps the rect to the image, so the
+    painted mask can never clip away part of what the canvas showed.
+    """
+    x0, y0 = round(x), round(y)
+    x1, y1 = round(x + w), round(y + h)
+    if bounds is not None:
+        W, H = bounds
+        x0, y0 = max(0, x0), max(0, y0)
+        x1, y1 = min(W, x1), min(H, y1)
+    return float(x0), float(y0), float(max(1, x1 - x0)), float(max(1, y1 - y0))

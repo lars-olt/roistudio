@@ -8,6 +8,7 @@ from PyQt5.QtGui import (QPainter, QColor, QKeyEvent, QMouseEvent, QWheelEvent,
 from typing import Optional
 
 from colors import Colors
+from utils.converters import snap_rect
 from utils.scale import scaled, scaled_font, bar_height
 
 
@@ -666,9 +667,13 @@ class CanvasContainer(QWidget):
         if self.interaction_mode == self.MODE_CREATE:
             if self.current_creation_rect:
                 r = self.current_creation_rect
-                if (r.width() >= _MIN_ROI_SIDE and r.height() >= _MIN_ROI_SIDE
-                        and r.width() * r.height() >= _MIN_ROI_AREA):
-                    self.roi_created.emit((r.x(), r.y(), r.width(), r.height()))
+                # snap to the pixel grid on release - drags stay float for
+                # smoothness, but only whole-pixel rects leave the canvas
+                x, y, w, h = snap_rect(r.x(), r.y(), r.width(), r.height(),
+                                       (self.canvas.width(), self.canvas.height()))
+                if (w >= _MIN_ROI_SIDE and h >= _MIN_ROI_SIDE
+                        and w * h >= _MIN_ROI_AREA):
+                    self.roi_created.emit((x, y, w, h))
                 else:
                     self.roi_too_small.emit()
             self.current_creation_rect = None
@@ -683,8 +688,11 @@ class CanvasContainer(QWidget):
                                         int(self.crop_rect.width()),
                                         int(self.crop_rect.height())))
             elif self.selected_roi_index != -1:
-                self.roi_changed.emit(self.selected_roi_index,
-                                      tuple(self.rois[self.selected_roi_index]))
+                snapped = snap_rect(*self.rois[self.selected_roi_index],
+                                    bounds=(self.canvas.width(), self.canvas.height()))
+                self.rois[self.selected_roi_index] = snapped
+                self.roi_changed.emit(self.selected_roi_index, snapped)
+                self.update()
             self.interaction_mode = self.MODE_NONE
 
     def leaveEvent(self, event):
