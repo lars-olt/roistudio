@@ -30,17 +30,7 @@ def hex_to_rgb(hex_color):
 
 
 def snap_rect(x, y, w, h, bounds=None):
-    """Snap a float rect to the integer pixel grid by its edges.
-
-    ROIs are pixel selections - the mask formats store whole pixels and the
-    spectra index whole pixels, so a float rect drifts on save/reload and shows
-    spectra from pixels it doesn't quite cover. Rounding the edges rather than
-    the width keeps each border where the user put it; rounding x and w
-    independently can move the far edge by a full pixel.
-
-    bounds is an optional (W, H) that clamps the rect to the image, so the
-    painted mask can never clip away part of what the canvas showed.
-    """
+    """Snap a float rect to the integer pixel grid by its edges."""
     x0, y0 = round(x), round(y)
     x1, y1 = round(x + w), round(y + h)
     if bounds is not None:
