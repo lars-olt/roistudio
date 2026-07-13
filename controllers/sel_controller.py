@@ -297,6 +297,9 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
         export_sel(view, model, rois_data, color_names, color_manager,
                    output_path=str(output_path / f"{scene_id}.sel"))
 
+        export_fits(view, model, rois_data, color_names,
+                    output_path=str(output_path / f"{scene_id}.fits"))
+
         for camera, mode, rects, label in (
             ('right', 'RGB', right_rects, 'right_rgb'),
             ('left',  'RGB', left_rects,  'left_rgb'),
