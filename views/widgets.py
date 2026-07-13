@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QRectF
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
@@ -377,9 +377,12 @@ class ColorSwatchButton(QWidget):
 
     clicked = pyqtSignal(tuple, str)  # (color, name)
 
-    _SWATCH_SIZE  = 18
-    _RADIUS       = 3
+    _SWATCH_SIZE = 18
+    _RADIUS      = 3
+    # The white ring marks colors still available. Heavier than the hover accent
+    # so availability reads at a glance. Both go through scaled() to track Ctrl +/-.
     _BORDER_WIDTH = 1
+    _UNUSED_WIDTH = 2
 
     def __init__(self, color, name, in_use=False, selected=False, parent=None):
         super().__init__(parent)
@@ -388,28 +391,34 @@ class ColorSwatchButton(QWidget):
         self._in_use   = in_use
         self._selected = selected
         self._hovered  = False
-        sz = scaled(self._SWATCH_SIZE)
-        self.setFixedSize(sz, sz)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip(name)
+        self._apply_scale()
+        Scale.changed.connect(self._apply_scale)
+
+    def _apply_scale(self):
+        sz = scaled(self._SWATCH_SIZE)
+        self.setFixedSize(sz, sz)
+        self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
         radius = scaled(self._RADIUS)
-        rect   = self.rect().adjusted(
-            self._BORDER_WIDTH, self._BORDER_WIDTH,
-            -self._BORDER_WIDTH, -self._BORDER_WIDTH,
-        )
-
         if self._hovered:
-            painter.setPen(QPen(QColor(Colors.ACCENT), self._BORDER_WIDTH))
+            border = scaled(self._BORDER_WIDTH)
+            pen    = QPen(QColor(Colors.ACCENT), border)
         elif not self._in_use:
-            painter.setPen(QPen(QColor("white"), self._BORDER_WIDTH))
+            border = scaled(self._UNUSED_WIDTH)
+            pen    = QPen(QColor("white"), border)
         else:
-            painter.setPen(Qt.NoPen)
+            border = 0
+            pen    = QPen(Qt.NoPen)
 
+        inset = border / 2
+        rect  = QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
+        painter.setPen(pen)
         painter.setBrush(QColor(*self._color))
         painter.drawRoundedRect(rect, radius, radius)
         painter.end()
@@ -440,6 +449,15 @@ class ColorSwatchGrid(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Popup)
+        self._grid = QGridLayout()
+        self.setLayout(self._grid)
+        self._palette       = []
+        self._in_use_names  = []
+        self._selected_name = None
+        self._apply_scale()
+        Scale.changed.connect(self._apply_scale)
+
+    def _apply_scale(self):
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {Colors.PANEL_BACKGROUND};
@@ -447,13 +465,18 @@ class ColorSwatchGrid(QFrame):
                 border-radius: {scaled(4)}px;
             }}
         """)
-        self._grid = QGridLayout()
-        self._grid.setContentsMargins(scaled(6), scaled(6), scaled(6), scaled(6))
+        m = scaled(6)
+        self._grid.setContentsMargins(m, m, m, m)
         self._grid.setSpacing(scaled(3))
-        self.setLayout(self._grid)
+        # swatches size themselves off Scale.changed too, so just resettle the frame
+        self.adjustSize()
 
     def populate(self, palette, in_use_names, selected_name=None):
         """Rebuild the grid from a (color, name) palette list."""
+        self._palette       = palette
+        self._in_use_names  = in_use_names
+        self._selected_name = selected_name
+
         for i in reversed(range(self._grid.count())):
             w = self._grid.itemAt(i).widget()
             if w:
