@@ -374,8 +374,6 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
                 hdr['EXTNAME']  = f'{color_name.upper()} {eye.upper()}'
                 hdr['IMAGEREF'] = scene_id
 
-                # Per-ROI metadata assigned in the ROI Metadata panel. Keys are
-                # already FITS-safe (max 8 chars) - written as-is on both eyes.
                 for key, value in roi_data.get('metadata', {}).items():
                     hdr[key] = value
 
