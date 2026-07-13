@@ -23,6 +23,7 @@ class ParameterSelectionPanel(QFrame):
     view_settings_changed = pyqtSignal(float, float)
     merge_spectra_changed = pyqtSignal(bool)
     line_width_changed    = pyqtSignal(float)
+    exposure_changed      = pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
@@ -52,12 +53,20 @@ class ParameterSelectionPanel(QFrame):
         self.spin_y_max        = self._dbl(0.0,  5.0, 0.4,  0.05)
         self.chk_merge_spectra = self._chk(True)
         self.slider_line_width = self._slider(50, 100, 75, step=5)
+        # symmetric around zero - centered means no exposure change, and it's the
+        # value a new scene resets to
+        self.slider_exposure   = self._slider(-100, 100, 0, step=5)
 
         self.spin_y_min.valueChanged.connect(self._emit_view_settings)
         self.spin_y_max.valueChanged.connect(self._emit_view_settings)
         self.chk_merge_spectra.toggled.connect(self.merge_spectra_changed.emit)
         self.slider_line_width.valueChanged.connect(
             lambda v: self.line_width_changed.emit(v / 100.0)
+        )
+        # map slider position to a multiplicative factor in stops, so equal steps
+        # left and right brighten and darken by the same perceptual amount
+        self.slider_exposure.valueChanged.connect(
+            lambda v: self.exposure_changed.emit(2.0 ** (v / 100.0))
         )
 
         self._add_section("View Settings", self._form([
@@ -69,6 +78,8 @@ class ParameterSelectionPanel(QFrame):
              "Average stereo bands into one spectrum, or plot each camera separately."),
             ("Line Width",           self.slider_line_width,
              "Thickness of spectrum lines in the spectral plot."),
+            ("Exposure",             self.slider_exposure,
+             "Brighten or darken the RGB stretch image. Resets when a new scene loads."),
         ]))
 
         # Segmentation
@@ -176,7 +187,7 @@ class ParameterSelectionPanel(QFrame):
                      self.spin_contamination, self.spin_freq, self.spin_max_clusters):
             spin.setStyleSheet(spin_style)
 
-        self.slider_line_width.setStyleSheet(f"""
+        slider_style = f"""
             QSlider::groove:horizontal {{
                 height: {scaled(4)}px;
                 background: {Colors.PANEL_ACCENT};
@@ -193,7 +204,9 @@ class ParameterSelectionPanel(QFrame):
                 background: {Colors.ACCENT};
                 border-radius: {scaled(2)}px;
             }}
-        """)
+        """
+        for slider in (self.slider_line_width, self.slider_exposure):
+            slider.setStyleSheet(slider_style)
 
         chk_style = f"""
             QCheckBox {{ color: {Colors.TEXT_PRIMARY}; font-size: {fs}pt; }}
@@ -277,6 +290,10 @@ class ParameterSelectionPanel(QFrame):
 
     def set_use_dcs(self, enabled: bool):
         self.chk_use_dcs.setChecked(enabled)
+
+    def reset_exposure(self):
+        """Return exposure to neutral - called when a new scene loads."""
+        self.slider_exposure.setValue(0)
 
     def get_parameters(self):
         return {

@@ -32,6 +32,7 @@ class Controller(QObject):
         self._pending_recolor_index   = None  # ROI index being recolored, or None for next-color
         self._view_mode               = 'scene_loading'
         self._metadata_active_index   = None  # ROI highlighted by the metadata panel
+        self._exposure                = 1.0   # RGB stretch exposure factor, neutral per scene
 
         self.config_path = _get_config_path()
         self.load_config()
@@ -107,6 +108,7 @@ class Controller(QObject):
         self._view.panel_roi_metadata.metadata_changed.connect(self._on_roi_metadata_changed)
         self._view.panel_roi_metadata.roi_activated.connect(self._on_roi_metadata_activated)
         self._view.mode_changed.connect(self._on_view_mode_changed)
+        self._view.panel_parameter_selection.exposure_changed.connect(self._on_exposure_changed)
 
     def _connect_controller_signals(self):
         sc = self.scene_controller
@@ -152,6 +154,8 @@ class Controller(QObject):
         self._split_screen_rois_dirty = False
         self._pending_recolor_index   = None
         self._metadata_active_index   = None
+        self._exposure                = 1.0
+        self._view.panel_parameter_selection.reset_exposure()
         self.color_manager.reset()
         self._view.panel_image_editing.set_rois([], [], [])
         self._view.panel_roi_metadata.set_rois([], [], [])
@@ -479,7 +483,12 @@ class Controller(QObject):
             self._model.sparc_load_result,
             self._view.panel_image_editing,
             self._is_split_screen,
+            exposure=self._exposure,
         )
+
+    def _on_exposure_changed(self, factor):
+        self._exposure = factor
+        self._render_current_images()
 
     def _on_rgb_bands_changed(self, r, g, b, use_dcs, camera):
         self._render_current_images()

@@ -4,13 +4,24 @@ import numpy as np
 from marslab.imgops.imgutils import enhance_color
 from utils.converters import numpy_to_pixmap
 
+# The enhance_color stretch is expensive and exposure-independent, so it's cached
+# per canvas slot ('single'/'left'/'right') and reused while the exposure slider
+# drags.
+_rgb_stretch_cache = {}
 
-def bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False):
+
+def bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False, exposure=1.0,
+                    cache_slot=None, cache_key=None):
     """Stretch three band arrays to a uint8 RGB QPixmap.
 
-    DCS off: enhance_color, matching the default pipeline image.
+    DCS off: enhance_color, matching the default pipeline image. exposure
+    multiplies the stretched result before the 255 clip, so pushing it up
+    brightens and blows out highlights like a real exposure control.
     DCS on: decorrelation stretch (Gillespie et al. 1986) with per-channel
-    0.5-99.5 percentile clip.
+    0.5-99.5 percentile clip. exposure does not apply.
+
+    cache_slot/cache_key enable reuse of the stretched (pre-exposure) result
+    across calls, keeping exposure drags smooth.
     """
     # Strip masks so downstream numpy calls (percentile, isfinite) operate on plain arrays.
     r_arr = np.ma.filled(r_arr, np.nan) if np.ma.is_masked(r_arr) else np.asarray(r_arr)
@@ -20,40 +31,63 @@ def bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False):
     if use_dcs:
         return _dcs_pixmap(r_arr, g_arr, b_arr)
 
-    rgb    = np.stack([r_arr, g_arr, b_arr], axis=-1).astype(float)
-    result = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
+    stretched = None
+    if cache_slot is not None:
+        hit = _rgb_stretch_cache.get(cache_slot)
+        if hit is not None and hit[0] == cache_key:
+            stretched = hit[1]
+
+    if stretched is None:
+        rgb       = np.stack([r_arr, g_arr, b_arr], axis=-1).astype(float)
+        result    = enhance_color(np.ma.masked_invalid(rgb), bounds=(0, 1), stretch=0.1)
+        stretched = np.ma.filled(result, 0).astype(np.float32)
+        if cache_slot is not None:
+            _rgb_stretch_cache[cache_slot] = (cache_key, stretched)
+
     return numpy_to_pixmap(
-        np.ascontiguousarray(np.ma.filled(result, 0) * 255, dtype=np.uint8)
+        np.ascontiguousarray(np.clip(stretched * (exposure * 255), 0, 255), dtype=np.uint8)
     )
 
 
-def make_pixmap(r_band, g_band, b_band, base_bands, use_dcs=False):
+def make_pixmap(r_band, g_band, b_band, base_bands, use_dcs=False, exposure=1.0,
+                cache_slot=None, cache_key=None):
     """Return a QPixmap for the given band names, or None if any band is missing."""
     if not all(b in base_bands for b in (r_band, g_band, b_band)):
         return None
-    return bands_to_pixmap(base_bands[r_band], base_bands[g_band], base_bands[b_band], use_dcs)
+    return bands_to_pixmap(base_bands[r_band], base_bands[g_band], base_bands[b_band],
+                           use_dcs, exposure, cache_slot, cache_key)
 
 
-def render_images(load_result, panel, is_split_screen):
+def render_images(load_result, panel, is_split_screen, exposure=1.0):
     """Push the current band selection as pixmaps to the canvas.
 
-    Called on scene load, band change, and split screen toggle.
+    Called on scene load, band change, split screen toggle, and exposure change.
+    exposure brightens or darkens the RGB stretch; it applies only when bands are
+    selected (the live stretch path). The precomputed rgb_img fallbacks are baked
+    at load time and stay at neutral exposure.
     """
     base_bands = load_result.get('base_bands', {})
+    scene_id   = load_result.get('id')
 
     if is_split_screen:
         r_r, g_r, b_r, dcs_r = panel.get_selected_bands('right')
         r_l, g_l, b_l, dcs_l = panel.get_selected_bands('left')
 
-        right_pixmap = make_pixmap(r_r, g_r, b_r, base_bands, dcs_r) if r_r and g_r and b_r else None
-        left_pixmap  = make_pixmap(r_l, g_l, b_l, base_bands, dcs_l) if r_l and g_l and b_l else None
+        right_pixmap = (make_pixmap(r_r, g_r, b_r, base_bands, dcs_r, exposure,
+                                    cache_slot='right', cache_key=(scene_id, r_r, g_r, b_r))
+                        if r_r and g_r and b_r else None)
+        left_pixmap  = (make_pixmap(r_l, g_l, b_l, base_bands, dcs_l, exposure,
+                                    cache_slot='left', cache_key=(scene_id, r_l, g_l, b_l))
+                        if r_l and g_l and b_l else None)
 
         right_pixmap = right_pixmap or numpy_to_pixmap(load_result.get('right_rgb_img', load_result['rgb_img']))
         left_pixmap  = left_pixmap  or numpy_to_pixmap(load_result.get('left_rgb_img',  load_result['rgb_img']))
         panel.canvas_container.set_camera_images(left_pixmap, right_pixmap)
     else:
         r, g, b, dcs = panel.get_selected_bands('single')
-        pixmap = make_pixmap(r, g, b, base_bands, dcs) if r and g and b else None
+        pixmap = (make_pixmap(r, g, b, base_bands, dcs, exposure,
+                              cache_slot='single', cache_key=(scene_id, r, g, b))
+                  if r and g and b else None)
         panel.set_image(pixmap or numpy_to_pixmap(load_result['rgb_img']))
 
 
