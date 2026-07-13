@@ -525,9 +525,11 @@ class Controller(QObject):
             self._split_screen_rois_dirty = False
 
         if not is_split and self._current_rois_data:
-            homography        = (self._model.sparc_load_result or {}).get('homography_matrix')
+            load_result       = self._model.sparc_load_result or {}
+            homography        = load_result.get('homography_matrix')
             instrument_config = self._get_instrument_config()
-            roi_controller.sync_left_rois(self._current_rois_data, homography)
+            H, W              = load_result['rgb_img'].shape[:2]
+            roi_controller.sync_left_rois(self._current_rois_data, homography, bounds=(W, H))
             for i, roi in enumerate(self._current_rois_data):
                 spec_data = self.sparc_controller.update_roi_spectrum_dual(
                     self._model.sparc_load_result,

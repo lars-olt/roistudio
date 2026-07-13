@@ -4,6 +4,31 @@ import cv2
 import numpy as np
 from sparc.utils.geometry import right_rect_to_left_inscribed
 
+from utils.converters import snap_rect
+
+
+def _image_bounds(load_result):
+    """(W, H) of the scene frame, for clamping derived rects."""
+    H, W = load_result['rgb_img'].shape[:2]
+    return (W, H)
+
+
+def _derive_left(right_rect, homography, bounds):
+    """Left-camera rect for a right rect, snapped to the pixel grid."""
+    if homography is None:
+        return right_rect
+    left = right_rect_to_left_inscribed(tuple(right_rect), homography)
+    if left is None:
+        return right_rect
+    return snap_rect(*left, bounds=bounds)
+
+
+def _derive_right(left_rect, homography, bounds):
+    """Right-camera rect for a left rect, snapped to the pixel grid."""
+    if homography is None:
+        return left_rect
+    return snap_rect(*_left_rect_to_right(left_rect, homography), bounds=bounds)
+
 
 def on_roi_created(rect, camera, load_result, instrument_config, sparc_controller, has_dual_cubes):
     """Build a new roi_data dict from a freshly drawn rectangle."""
@@ -15,13 +40,13 @@ def on_roi_created(rect, camera, load_result, instrument_config, sparc_controlle
 
     if has_dual_cubes:
         homography = load_result.get('homography_matrix')
+        bounds     = _image_bounds(load_result)
         if camera == 'left':
             left_rect  = tuple(rect)
-            right_rect = _left_rect_to_right(left_rect, homography) or left_rect
+            right_rect = _derive_right(left_rect, homography, bounds)
         else:
             right_rect = tuple(rect)
-            left_rect  = (right_rect_to_left_inscribed(right_rect, homography)
-                          if homography is not None else right_rect) or right_rect
+            left_rect  = _derive_left(right_rect, homography, bounds)
         spec_data = sparc_controller.update_roi_spectrum_dual(
             load_result, left_rect, right_rect, instrument_config
         )
@@ -48,17 +73,19 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     roi_data   = existing_roi_data[roi_index]
     instrument = load_result.get('instrument', 'ZCAM')
     homography = load_result.get('homography_matrix') if has_dual_cubes else None
+    bounds     = _image_bounds(load_result)
 
     # single screen edits the displayed camera - left for PCAM, right for ZCAM.
     # The opposite camera's rect is derived from the edit via the homography.
     if camera == 'single':
         if instrument == 'PCAM':
             left_rect  = tuple(new_rect)
-            right_rect = _left_rect_to_right(left_rect, homography) or roi_data['right_rect']
+            right_rect = (_derive_right(left_rect, homography, bounds)
+                          if homography is not None else roi_data['right_rect'])
         else:
             right_rect = tuple(new_rect)
-            left_rect  = (right_rect_to_left_inscribed(right_rect, homography)
-                          if homography is not None else right_rect) or roi_data.get('left_rect', right_rect)
+            left_rect  = (_derive_left(right_rect, homography, bounds)
+                          if homography is not None else roi_data.get('left_rect', right_rect))
     # split screen edits one camera directly - the other side keeps its stored rect.
     elif camera == 'left':
         left_rect  = tuple(new_rect)
@@ -88,7 +115,7 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     }
 
 
-def sync_left_rois(rois_data, homography):
+def sync_left_rois(rois_data, homography, bounds=None):
     """Recompute left_rect for every ROI from its right_rect via the homography.
 
     Called when leaving split screen so both sides are back in sync. ROIs flagged
@@ -99,10 +126,7 @@ def sync_left_rois(rois_data, homography):
     for roi in rois_data:
         if roi.get('left_locked'):
             continue
-        right_rect   = roi['right_rect']
-        left_rect    = (right_rect_to_left_inscribed(right_rect, homography)
-                        if homography is not None else right_rect) or right_rect
-        roi['left_rect'] = left_rect
+        roi['left_rect'] = _derive_left(roi['right_rect'], homography, bounds)
 
 
 def _left_rect_to_right(left_rect, homography_matrix):
