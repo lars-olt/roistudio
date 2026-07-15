@@ -11,7 +11,7 @@ import numpy as np
 from asdf_settings import rapidlooks
 from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 from PyQt5.QtWidgets import QFileDialog
-from sparc.data.loading import create_rgb_stretch, dcs_rgb
+from sparc.data.loading import create_rgb_stretch, dcs_rgb, observation_metadata
 from sparc.visualization.plotting import plot_spectra_with_error
 from sparc.utils.sel_writer import (
     export_sel as _write_sel,
@@ -345,6 +345,7 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
         H, W  = load_result['rgb_img'].shape[:2]
         hdus  = []
         first = True
+        scene_metadata = observation_metadata(load_result)
 
         for eye in ('left', 'right'):
             rect_key = 'left_rect' if eye == 'left' else 'right_rect'
@@ -367,6 +368,8 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
                     hdr[key] = value
 
                 if first:
+                    for key, value in scene_metadata.items():
+                        hdr[key] = value
                     hdus.append(astropy_fits.PrimaryHDU(data=mask, header=hdr))
                     first = False
                 else:
