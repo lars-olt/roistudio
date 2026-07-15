@@ -111,12 +111,7 @@ def _condition(spec):
 
 
 def _pcam_fields_from_json(path):
-    """Build the Pancam schema from the editable JSON definition.
-
-    Raises ValueError with a message precise enough to act on from GitHub's
-    editor - the file is maintained by scientists, so a typo has to produce
-    something better than a traceback.
-    """
+    """Load and validate the editable Pancam metadata schema."""
     spec   = json.loads(Path(path).read_text())
     fields = []
     seen   = set()

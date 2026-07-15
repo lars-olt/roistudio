@@ -207,7 +207,10 @@ class View(QWidget):
     def set_instrument_presets(self, instrument: str):
         """Push instrument presets to the stretch bar overlays."""
         presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
-        self.panel_image_editing.set_overlay_presets(presets)
+        single_side = 'left' if instrument == 'PCAM' else 'right'
+        self.panel_image_editing.set_overlay_presets(
+            presets, single_side=single_side
+        )
 
     def _create_panels(self):
         self.panel_image_selection     = ImageSelectionPanel()

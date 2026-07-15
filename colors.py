@@ -1,4 +1,4 @@
-"""Centralized color palette for ROIStudio. Inspired by Adobe Premiere Pro."""
+"""Centralized color palette for ROIStudio."""
 
 
 class Colors:

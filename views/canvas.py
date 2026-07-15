@@ -19,10 +19,7 @@ _VELOCITY_WINDOW = 5
 _ANGLE_TO_PIXELS = 8    # Qt angleDelta is in eights-of-a-degree; divide to get pixels
 _SCROLL_SPEED    = 0.5  # multiplier for mouse wheel vertical scroll
 
-# ROI size limits, in image pixels. A valid ROI must clear the per-side floor
-# on both dimensions and the area floor overall, which lets it go long and
-# narrow or short and wide while keeping the total footprint about the same as
-# the old square minimum.
+# ROI size limits in image pixels. Width, height, and area are validated separately.
 _MIN_ROI_SIDE = 2
 _MIN_ROI_AREA = 24
 
@@ -40,8 +37,7 @@ class CanvasContainer(QWidget):
     roi_selected  = pyqtSignal(int)
     roi_deleted   = pyqtSignal(int)
     roi_created   = pyqtSignal(tuple)
-    # Emits (zoom, image_cx, image_cy) - viewport center captured at interaction
-    # time so sync handlers always receive a stable snapshot.
+    # Emits the zoom and viewport center captured at interaction time.
     sync_changed  = pyqtSignal(float, float, float)
     roi_too_small = pyqtSignal()
     tool_shortcut = pyqtSignal(str)
@@ -727,8 +723,7 @@ class CanvasContainer(QWidget):
                 super().setCursor(self.tool_cursor)
 
     def focusOutEvent(self, event):
-        # Losing focus while space is held means we never get the release
-        # reset pan state so ROI interaction isn't blocked.
+        # Clear pan state if focus changes before the space-key release event.
         if self.space_pressed or self.is_panning:
             self.space_pressed = False
             if self.is_panning:

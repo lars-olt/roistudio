@@ -308,12 +308,7 @@ class Controller(QObject):
         )
 
     def _canvas_colors(self):
-        """Outline colors for the canvases.
-
-        While the metadata panel is open, every ROI except the one being
-        described dims toward black so the described ROI stands out. All
-        other consumers get the true colors.
-        """
+        """Return ROI colors, dimming inactive outlines in metadata mode."""
         colors = self._current_colors
         ix     = self._metadata_active_index
         if self._view_mode != 'roi_metadata' or ix is None or not (0 <= ix < len(colors)):
@@ -330,7 +325,7 @@ class Controller(QObject):
         self._refresh_canvas_rois()
 
     def _on_roi_metadata_changed(self, roi_index, metadata):
-        """Store metadata on the ROI so it follows it through deletion, recoloring, and export."""
+        """Store metadata on its ROI for subsequent editing and export."""
         if 0 <= roi_index < len(self._current_rois_data):
             self._current_rois_data[roi_index]['metadata'] = dict(metadata)
 
@@ -428,9 +423,8 @@ class Controller(QObject):
         self._update_roi_view()
         self._view.set_export_enabled(True)
 
-        # Stereo scenes: open in split screen so the two cameras' loaded rects are
-        # shown as authored. Mark them dirty (after the toggle, which clears the
-        # flag) so leaving split screen warns before the left rects get re-derived.
+        # Preserve loaded stereo rectangles by opening them in split-screen mode.
+        # Mark them dirty after the toggle so exiting requires confirmation.
         if self._has_dual_cubes() and not self._is_split_screen:
             self._view.panel_image_editing.enter_split_screen()
             if self._is_split_screen:
@@ -506,7 +500,10 @@ class Controller(QObject):
         cameras = (['single', 'left', 'right'] if self._is_split_screen
                    else ['single'])
         for camera in cameras:
-            side  = 'right' if camera in ('single', 'right') else 'left'
+            if camera == 'single':
+                side = 'left' if instrument == 'PCAM' else 'right'
+            else:
+                side = camera
             bands = presets[side][mode]
             self._view.panel_image_editing.apply_preset(
                 camera, bands['r'], bands['g'], bands['b'], bands['dcs']

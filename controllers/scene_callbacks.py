@@ -64,12 +64,8 @@ def _set_band_names(load_result, view, instrument):
     if not band_names:
         return
 
-    right_bands = [b for b in band_names if b.startswith('R')] or band_names
-    left_bands  = [b for b in band_names if b.startswith('L')] or band_names
-
-    # stretch_bands flags whether the preferred RGB bands were all present - if not,
-    # the overlay is populated but disabled so the user knows it's a degraded scene.
-    stretch = load_result.get('stretch_bands', {'left': True, 'right': True})
+    right_bands = [b for b in band_names if b.startswith('R')]
+    left_bands  = [b for b in band_names if b.startswith('L')]
 
     presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
     right   = presets['right']['RGB']
@@ -78,7 +74,6 @@ def _set_band_names(load_result, view, instrument):
     # PCAM single screen shows the left camera; ZCAM shows the right.
     single_bands   = left_bands  if instrument == 'PCAM' else right_bands
     single_presets = left        if instrument == 'PCAM' else right
-    single_stretch = 'left'      if instrument == 'PCAM' else 'right'
 
     view.panel_image_editing.set_band_names(
         single_bands, right_bands, left_bands,
@@ -86,3 +81,10 @@ def _set_band_names(load_result, view, instrument):
         right['r'], right['g'], right['b'],
         left['r'],  left['g'],  left['b'],
     )
+
+    left_ok   = bool(left_bands)
+    right_ok  = bool(right_bands)
+    single_ok = left_ok if instrument == 'PCAM' else right_ok
+    view.panel_image_editing.set_stretch_enabled('single', single_ok)
+    view.panel_image_editing.set_stretch_enabled('right', right_ok)
+    view.panel_image_editing.set_stretch_enabled('left', left_ok)

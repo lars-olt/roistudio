@@ -302,10 +302,7 @@ class ImageEditingPanel(QWidget):
         self.update_cursor()
 
     def set_science_notes(self, notes: str):
-        """Show observation-level science notes on the right of the top bar.
-
-        Empty or None hides the label, leaving the bar exactly as it was.
-        """
+        """Show observation notes in the top bar, or hide them when empty."""
         self._science_notes.set_notes(notes)
 
     # ------------------------------------------------------------------
@@ -474,21 +471,17 @@ class ImageEditingPanel(QWidget):
         )
 
     def set_swatch_palette(self, palette, in_use_names, selected_name=None):
-        """Repopulate the swatch grid and connect its signal if not already done."""
+        """Repopulate the ROI color palette."""
         self._swatch_grid.populate(palette, in_use_names, selected_name)
 
-    def set_overlay_presets(self, presets: dict):
+    def set_overlay_presets(self, presets: dict, single_side: str = 'right'):
         """Push instrument presets to all three overlays."""
-        self._overlay_single.set_presets('right', presets)
+        self._overlay_single.set_presets(single_side, presets)
         self._overlay_right.set_presets('right', presets)
         self._overlay_left.set_presets('left', presets)
 
     def set_stretch_enabled(self, camera: str, enabled: bool):
-        """Enable or disable the manual band selectors for the given camera side.
-
-        Only the manual R/G/B combos are affected - the preset dropdown stays
-        usable since presets may rely on bands other than the missing RGB set.
-        """
+        """Set whether manual band selection is available for a camera."""
         overlay = {'single': self._overlay_single,
                 'right':  self._overlay_right,
                 'left':   self._overlay_left}[camera]

@@ -60,8 +60,6 @@ class SparcRunThread(QThread):
                     max_subclusters         = roi.get('max_subclusters', 10),
                 ),
                 spectral=SpectralConfig(
-                    contamination  = spec.get('contamination', 0.1),
-                    freq_threshold = spec.get('freq_threshold', 0.7),
                     max_components = spec.get('max_components', 9),
                 ),
             )

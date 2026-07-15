@@ -72,10 +72,7 @@ def run_algorithm(model, view, scene_controller, sparc_controller, current_scene
 
 
 def _apply_crop(load_result: dict, crop_rect: tuple) -> dict:
-    """
-    Return a shallow-copied load_result with all cubes and the rgb_img
-    cropped to crop_rect, and the homography recomputed for the new frame.
-    """
+    """Crop scene arrays and translate the homography into the cropped frame."""
     import copy
     import cv2
     import numpy as np

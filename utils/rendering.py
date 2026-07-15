@@ -4,24 +4,16 @@ import numpy as np
 from marslab.imgops.imgutils import enhance_color
 from utils.converters import numpy_to_pixmap
 
-# The enhance_color stretch is expensive and exposure-independent, so it's cached
-# per canvas slot ('single'/'left'/'right') and reused while the exposure slider
-# drags.
+# Cache exposure-independent color stretches by canvas slot.
 _rgb_stretch_cache = {}
 
 
 def bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False, exposure=1.0,
                     cache_slot=None, cache_key=None):
-    """Stretch three band arrays to a uint8 RGB QPixmap.
+    """Render three bands using color enhancement or decorrelation stretch.
 
-    DCS off: enhance_color, matching the default pipeline image. exposure
-    multiplies the stretched result before the 255 clip, so pushing it up
-    brightens and blows out highlights like a real exposure control.
-    DCS on: decorrelation stretch (Gillespie et al. 1986) with per-channel
-    0.5-99.5 percentile clip. exposure does not apply.
-
-    cache_slot/cache_key enable reuse of the stretched (pre-exposure) result
-    across calls, keeping exposure drags smooth.
+    Exposure applies only to color enhancement. 'cache_slot' and 'cache_key'
+    reuse its exposure-independent intermediate result.
     """
     # Strip masks so downstream numpy calls (percentile, isfinite) operate on plain arrays.
     r_arr = np.ma.filled(r_arr, np.nan) if np.ma.is_masked(r_arr) else np.asarray(r_arr)
@@ -59,13 +51,7 @@ def make_pixmap(r_band, g_band, b_band, base_bands, use_dcs=False, exposure=1.0,
 
 
 def render_images(load_result, panel, is_split_screen, exposure=1.0):
-    """Push the current band selection as pixmaps to the canvas.
-
-    Called on scene load, band change, split screen toggle, and exposure change.
-    exposure brightens or darkens the RGB stretch; it applies only when bands are
-    selected (the live stretch path). The precomputed rgb_img fallbacks are baked
-    at load time and stay at neutral exposure.
-    """
+    """Render the selected bands into the active canvas or canvases."""
     base_bands = load_result.get('base_bands', {})
     scene_id   = load_result.get('id')
 

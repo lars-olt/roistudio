@@ -131,7 +131,6 @@ Switch to the **ROI Processing** panel via **Window > ROI Processing** to access
 - **Albedo Ratio** - brightness similarity threshold between left and right camera bands.
 
 **Spectral Analysis**
-- **Contamination** - expected fraction of outlier spectra.
 - **Max Clusters** - maximum number of spectral clusters the GMM may find.
 
 Press **Run** to start the SPARC pipeline. Progress is shown in the status bar at the bottom of the window.

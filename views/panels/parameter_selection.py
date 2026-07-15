@@ -79,7 +79,7 @@ class ParameterSelectionPanel(QFrame):
             ("Line Width",           self.slider_line_width,
              "Thickness of spectrum lines in the spectral plot."),
             ("Exposure",             self.slider_exposure,
-             "Brighten or darken the RGB stretch image. Resets when a new scene loads."),
+             "Brighten or darken the RGB stretch image."),
         ]))
 
         # Segmentation
@@ -130,15 +130,9 @@ class ParameterSelectionPanel(QFrame):
         ]))
 
         # Spectral Analysis
-        self.spin_contamination = self._dbl(0.0, 0.5, 0.1, 0.01)
-        self.spin_freq          = self._dbl(0.0, 1.0, 0.7, 0.05)
         self.spin_max_clusters  = self._int(1,   50,  9)
 
         self._add_section("Spectral Analysis", self._form([
-            ("Contamination", self.spin_contamination,
-             "Expected fraction of outlier spectra."),
-            ("Freq Thresh",   self.spin_freq,
-             "High-frequency power threshold for noise filtering."),
             ("Max Clusters",  self.spin_max_clusters,
              "Maximum number of spectral clusters the GMM may find."),
         ]))
@@ -184,7 +178,7 @@ class ParameterSelectionPanel(QFrame):
                      self.spin_edge, self.spin_variance, self.spin_area_thresh,
                      self.spin_albedo, self.spin_min_cluster, self.spin_min_clean,
                      self.spin_morph, self.spin_subclusters,
-                     self.spin_contamination, self.spin_freq, self.spin_max_clusters):
+                     self.spin_max_clusters):
             spin.setStyleSheet(spin_style)
 
         slider_style = f"""
@@ -314,8 +308,6 @@ class ParameterSelectionPanel(QFrame):
                 'max_subclusters':         self.spin_subclusters.value(),
             },
             'spectral': {
-                'contamination':  self.spin_contamination.value(),
-                'freq_threshold': self.spin_freq.value(),
                 'max_components': self.spin_max_clusters.value(),
             },
         }

@@ -47,14 +47,7 @@ class SparcController(QObject):
         return np.nanmean(crop, axis=(1, 2)), np.nanstd(crop, axis=(1, 2))
 
     def compute_dual_spectrum(self, load_result, left_rect, right_rect):
-        """
-        Compute merged and per-camera spectra from the band recipe.
-
-        Returns:
-            merged: (spectrum, std) - stereo bands averaged, shape (n_bands,)
-            left:   (spectrum, std, wavelengths) - all left-camera bands incl. stereo
-            right:  (spectrum, std, wavelengths) - all right-camera bands incl. stereo
-        """
+        """Return merged, left-camera, and right-camera spectra for paired rectangles."""
         recipe     = load_result['merged_band_recipe']
         left_keys  = load_result['left_band_keys']
         right_keys = load_result['right_band_keys']

@@ -7,12 +7,7 @@ from utils.converters import hex_to_rgb
 
 
 class ColorManager:
-    """Hands out colors from the MERSpect palette using a priority-ordered deque.
-
-    The deque is built with preferred colors first, remainder after. On recycle,
-    a color is only re-added if not already present - preferred colors go to the
-    front, others to the back.
-    """
+    """Allocate and recycle colors from the MERSpect palette."""
 
     def __init__(self, instrument):
         self._palette          = []
@@ -110,7 +105,7 @@ class ColorManager:
         return self._merspect_indices[name]
 
     def reserve(self, names: list):
-        """Mark a set of color names as in-use so next() skips over them."""
+        """Reserve color names so they are not returned by :meth:`next`."""
         self._reserved = set(names)
         self._rebuild_deque()
 
@@ -129,7 +124,7 @@ class ColorManager:
         return self._palette[0], self._name_palette[0]
 
     def set_next(self, name: str):
-        """Force a specific color to be returned by the next next() call."""
+        """Place a specific color at the front of the allocation queue."""
         if name not in self._name_palette:
             return
         idx   = self._name_palette.index(name)
@@ -143,10 +138,7 @@ class ColorManager:
         return list(zip(self._palette, self._name_palette))
 
     def recycle(self, color, name):
-        """Return a color to the deque if not already present.
-
-        Preferred colors go to the front, others to the back.
-        """
+        """Return an unqueued color, prioritizing preferred colors."""
         if name in self._deque_names():
             return
         if name in self._preferred_set:
@@ -155,7 +147,7 @@ class ColorManager:
             self._deque.append((color, name))
 
     def consume(self, name: str):
-        """Remove a specific color from the deque - used when assigning it directly."""
+        """Remove a directly assigned color from the allocation queue."""
         self._deque = deque(e for e in self._deque if e[1] != name)
 
     def reset(self):

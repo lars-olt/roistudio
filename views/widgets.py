@@ -379,8 +379,7 @@ class ColorSwatchButton(QWidget):
 
     _SWATCH_SIZE = 18
     _RADIUS      = 3
-    # The white ring marks colors still available. Heavier than the hover accent
-    # so availability reads at a glance. Both go through scaled() to track Ctrl +/-.
+    # Use a heavier white ring for available colors and the accent ring for hover.
     _BORDER_WIDTH = 1
     _UNUSED_WIDTH = 2
 
@@ -468,7 +467,7 @@ class ColorSwatchGrid(QFrame):
         m = scaled(6)
         self._grid.setContentsMargins(m, m, m, m)
         self._grid.setSpacing(scaled(3))
-        # swatches size themselves off Scale.changed too, so just resettle the frame
+        # Swatches resize from Scale.changed; update the containing frame here.
         self.adjustSize()
 
     def populate(self, palette, in_use_names, selected_name=None):

@@ -147,13 +147,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
 
 
 def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, color_manager, fits_path=None):
-    """Load ROIs and their metadata from a ROIStudio FITS export.
-
-    Each ROI is a pair of full-frame binary mask HDUs (one per eye) tagged with
-    NAME and EYE headers. Rects are recovered as the bounding box of each mask.
-    Metadata is read from the headers using the panel schema as the key
-    whitelist, which keeps structural FITS keywords out of the ROI metadata.
-    """
+    """Load ROI rectangles and schema-defined metadata from a ROIStudio FITS file."""
     load_result = model.sparc_load_result
     if load_result is None:
         view.show_status_message("No scene loaded - cannot load FITS.")
@@ -327,12 +321,7 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
 
 
 def export_fits(view, model, rois_data, color_names, output_path=None):
-    """Export ROIs as a FITS file with per-color binary masks.
-
-    Each ROI produces two HDUs (left eye, right eye), each a full-frame
-    uint8 mask with 1s inside the ROI rect and 0s elsewhere.
-    All left HDUs are written first, then all right HDUs.
-    """
+    """Export each ROI eye as a full-frame binary-mask FITS HDU."""
     if not rois_data:
         view.show_status_message("No ROIs to export.")
         return

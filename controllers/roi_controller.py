@@ -116,12 +116,9 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
 
 
 def sync_left_rois(rois_data, homography, bounds=None):
-    """Recompute left_rect for every ROI from its right_rect via the homography.
+    """Recompute unlocked left rectangles from their right-camera counterparts.
 
-    Called when leaving split screen so both sides are back in sync. ROIs flagged
-    left_locked keep their stored left_rect - it was authored elsewhere (a loaded
-    .sel) and must not be re-derived through this machine's homography, which
-    would shift and reshape it.
+    'left_locked' rectangles retain coordinates loaded from external files.
     """
     for roi in rois_data:
         if roi.get('left_locked'):

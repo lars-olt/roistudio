@@ -209,6 +209,15 @@ class StretchBar(QWidget):
         self._apply_scale()
 
     def populate(self, band_names, r=None, g=None, b=None):
+        self.combo_preset.blockSignals(True)
+        if self.combo_preset.count():
+            self.combo_preset.setCurrentIndex(0)
+        self.combo_preset.blockSignals(False)
+
+        self.chk_dcs.blockSignals(True)
+        self.chk_dcs.setChecked(False)
+        self.chk_dcs.blockSignals(False)
+
         def _pick(preferred, fallbacks, idx):
             if preferred and preferred in band_names:
                 return preferred
@@ -234,7 +243,11 @@ class StretchBar(QWidget):
         self.set_loaded(True)
 
     def apply_preset(self, r: str, g: str, b: str, dcs: bool):
-        for combo, val in ((self.combo_r, r), (self.combo_g, g), (self.combo_b, b)):
+        selections = ((self.combo_r, r), (self.combo_g, g), (self.combo_b, b))
+        if any(combo.findText(value) < 0 for combo, value in selections):
+            return False
+
+        for combo, val in selections:
             combo.blockSignals(True)
             combo.setCurrentText(val)
             combo.blockSignals(False)
@@ -242,6 +255,7 @@ class StretchBar(QWidget):
         self.chk_dcs.setChecked(dcs)
         self.chk_dcs.blockSignals(False)
         self.changed.emit()
+        return True
 
     def get_selection(self):
         return (self.combo_r.currentText(), self.combo_g.currentText(),
@@ -339,6 +353,13 @@ class StretchBar(QWidget):
                 background-color: {Colors.ACCENT};
                 color: white;
             }}
+            QToolTip {{
+                background-color: {Colors.PANEL_BACKGROUND};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.ACCENT};
+                padding: {scaled(4)}px;
+                font-size: {fs}pt;
+            }}
         """)
         self.combo_preset.setFixedHeight(row_h)
 
@@ -350,8 +371,14 @@ class StretchBar(QWidget):
         bands = self._named_presets.get(label)
         if bands is None:
             return
-        self._style_band_controls(enabled=False)
-        self.apply_preset(bands['r'], bands['g'], bands['b'], bands['dcs'])
+        if self.apply_preset(bands['r'], bands['g'], bands['b'], bands['dcs']):
+            self._style_band_controls(enabled=False)
+            return
+
+        self.combo_preset.blockSignals(True)
+        self.combo_preset.setCurrentIndex(0)
+        self.combo_preset.blockSignals(False)
+        self._style_band_controls(enabled=self._bands_available)
 
     def _show_preset_popup(self):
         QComboBox.showPopup(self.combo_preset)

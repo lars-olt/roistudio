@@ -1,19 +1,4 @@
-"""
-Global UI scale manager.
-
-With AA_EnableHighDpiScaling, Qt multiplies logical pixel values by
-devicePixelRatio when rendering. Two scale factors handle the two cases:
-
-  physical(value)  - for setFixedSize / setIconSize / pixmap.scaled().
-      Pre-divides by DPR so Qt's upscaling lands at the intended size.
-      Responds to Ctrl+/- but not to _DEFAULT_OFFSET, so toolbar buttons
-      and cursor stay at their natural size regardless of the layout default.
-
-  scaled(value)    - for margins, spacing, border radii.
-      Qt does not upscale these; applies the full layout factor only.
-
-  scaled_font(pt)  - font sizes in pt, scaled by the full layout factor.
-"""
+"""Global scaling helpers for Qt dimensions, layout values, and fonts."""
 
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
