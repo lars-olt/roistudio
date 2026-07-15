@@ -37,7 +37,7 @@ class ColorManager:
         ]
         self._merspect_indices = {k: i for i, k in enumerate(merspect_order)}
 
-        # eraser is not a valid ROI color.
+        # Eraser is not a valid ROI color.
         usable = [k for k in merspect_order if k != 'eraser']
 
         preferred = [
@@ -48,9 +48,8 @@ class ColorManager:
 
     def _init_pcam_palette(self):
         # MERSpect's Pancam palette. Each MER color maps to its closest MCZ
-        # equivalent for the RGB lookup, but the label index is the MER list
-        # position so .sel files round-trip with legacy merspect. eraser sits
-        # at the bottom (index 15), unlike MCZ where it leads.
+        # equivalent for the RGB lookup. Label index is the MER list position
+        # so .sel files round-trip with legacy MERSpect.
         mer_to_mcz = [
             ('red',          'red-1'),
             ('light green',  'green'),
@@ -75,7 +74,7 @@ class ColorManager:
         self._merspect_indices = {mcz: i for i, (_mer, mcz) in enumerate(mer_to_mcz) if mcz}
 
         usable = [mcz for _mer, mcz in mer_to_mcz if mcz]
-        # handout follows the MER list order top-to-bottom
+        # Handout follows the MER list from top to bottom.
         self._build_palette(usable, preferred=usable)
 
     def _build_palette(self, usable, preferred):

@@ -31,7 +31,7 @@ def _derive_right(left_rect, homography, bounds):
 
 
 def on_roi_created(rect, camera, load_result, instrument_config, sparc_controller, has_dual_cubes):
-    """Build a new roi_data dict from a freshly drawn rectangle."""
+    """Build a new ROI data dictionary from a freshly drawn rectangle."""
     instrument = load_result.get('instrument', 'ZCAM')
 
     # single screen draws in the displayed camera - left for PCAM, right for ZCAM

@@ -16,7 +16,7 @@ _FRICTION        = 0.88
 _MIN_VELOCITY    = 0.5
 _MOMENTUM_HZ     = 60
 _VELOCITY_WINDOW = 5
-_ANGLE_TO_PIXELS = 8    # Qt angleDelta is in eights-of-a-degree; divide to get pixels
+_ANGLE_TO_PIXELS = 8    # Qt angleDelta is measured in eighths of a degree; divide to get pixels.
 _SCROLL_SPEED    = 0.5  # multiplier for mouse wheel vertical scroll
 
 # ROI size limits in image pixels. Width, height, and area are validated separately.
@@ -27,8 +27,8 @@ _MIN_ROI_AREA = 24
 class CanvasContainer(QWidget):
     """
     Pan/zoom canvas with interactive ROI editing.
-    Supports mouse drag, trackpad two-finger pan with momentum, pinch-to-zoom,
-    and ctrl+scroll zoom.
+    Supports mouse dragging, two-finger trackpad panning with momentum,
+    pinch-to-zoom, and Ctrl+scroll zoom.
     """
 
     scene_dropped = pyqtSignal(str)

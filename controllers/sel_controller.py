@@ -147,7 +147,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
 
 
 def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, color_manager, fits_path=None):
-    """Load ROI rectangles and schema-defined metadata from a ROIStudio FITS file."""
+    """Load ROI rectangles and schema-defined metadata from an ROIStudio FITS file."""
     load_result = model.sparc_load_result
     if load_result is None:
         view.show_status_message("No scene loaded - cannot load FITS.")

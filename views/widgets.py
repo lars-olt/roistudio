@@ -324,7 +324,7 @@ class BandComboBox(QComboBox):
 
 
 class CollapsibleSection(QWidget):
-    """Premiere Pro-style collapsible section with arrow toggle."""
+    """Premiere Pro-style collapsible section with an arrow toggle."""
 
     def __init__(self, title="", parent=None):
         super().__init__(parent)
@@ -373,7 +373,7 @@ class CollapsibleSection(QWidget):
 
 
 class ColorSwatchButton(QWidget):
-    """A single rounded-rect color swatch. Unused colors get a white border; hovered get accent blue."""
+    """A rounded color swatch with white unused and blue hovered borders."""
 
     clicked = pyqtSignal(tuple, str)  # (color, name)
 

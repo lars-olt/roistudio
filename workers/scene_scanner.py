@@ -270,7 +270,7 @@ class SceneScanThread(QThread):
     def _sort_key(metadata):
         """Return (sol, sequence, pointing) for panel ordering.
 
-        Unknown sol sorts to the end. pointing is rsm for ZCAM, pma for PCAM.
+        An unknown SOL sorts to the end. Pointing is RSM for ZCAM and PMA for PCAM.
         """
         sol      = metadata.get('sol', '?')
         sol      = sol if isinstance(sol, int) else float('inf')

@@ -12,7 +12,7 @@ from utils.rendering import render_images
 from utils.paths import _get_config_path
 from presets import INSTRUMENT_PRESETS
 
-# How far non-active ROI outlines dim while the metadata panel is open.
+# How much non-active ROI outlines dim while the metadata panel is open.
 _METADATA_DIM = 0.4
 
 
@@ -29,7 +29,7 @@ class Controller(QObject):
         self._current_color_names = []
         self._is_split_screen         = False
         self._split_screen_rois_dirty = False
-        self._pending_recolor_index   = None  # ROI index being recolored, or None for next-color
+        self._pending_recolor_index   = None  # ROI index being recolored, or None for the next color
         self._view_mode               = 'scene_loading'
         self._metadata_active_index   = None  # ROI highlighted by the metadata panel
         self._exposure                = 1.0   # RGB stretch exposure factor, neutral per scene

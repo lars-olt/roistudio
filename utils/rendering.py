@@ -15,7 +15,7 @@ def bands_to_pixmap(r_arr, g_arr, b_arr, use_dcs=False, exposure=1.0,
     Exposure applies only to color enhancement. 'cache_slot' and 'cache_key'
     reuse its exposure-independent intermediate result.
     """
-    # Strip masks so downstream numpy calls (percentile, isfinite) operate on plain arrays.
+    # Strip masks so downstream NumPy calls (percentile, isfinite) operate on plain arrays.
     r_arr = np.ma.filled(r_arr, np.nan) if np.ma.is_masked(r_arr) else np.asarray(r_arr)
     g_arr = np.ma.filled(g_arr, np.nan) if np.ma.is_masked(g_arr) else np.asarray(g_arr)
     b_arr = np.ma.filled(b_arr, np.nan) if np.ma.is_masked(b_arr) else np.asarray(b_arr)

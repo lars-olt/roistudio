@@ -2,8 +2,8 @@
 
 Fields are declared per instrument in MCZ_METADATA_FIELDS and
 PCAM_METADATA_FIELDS - key, label, options, and an optional visibility
-predicate on the other values. Options can be a callable on the metadata for
-lists that depend on another field, like the Pancam feature subtype.
+predicate based on the other values. Options can be a callable that uses the
+metadata for lists that depend on another field, like the Pancam feature subtype.
 """
 
 import json
