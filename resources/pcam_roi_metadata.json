@@ -35,7 +35,8 @@
           "disturbed soil (not in wheel track)",
           "bedform",
           "soil on rover hardware",
-          "thick dust on soil"
+          "thick dust on soil",
+          "compressed by IDD"
         ],
         "pebble": [
           "pebble (individual pebbles)",
