@@ -16,7 +16,11 @@ from sparc.core.constants import get_instrument_config
 from sparc.data.loading import (_scan_and_split, _bandset_from_group,
                                 _normalise_pcam_label, _pcam_calibration,
                                 pcam_seq_token)
-from sparc.utils.pancam_helpers import scan_pcam_files, split_pcam_observations
+from sparc.utils.pancam_helpers import (
+    observation_name_suffix,
+    scan_pcam_files,
+    split_pcam_observations,
+)
 
 
 _PCAM_FILENAME_RE = re.compile(
@@ -69,6 +73,9 @@ class SceneScanThread(QThread):
                             full_id = (f"Sol{sol:04d}_{seq}_PMA{pma}"
                                     if isinstance(sol, int) and pma is not None
                                     else scene_id)
+                            full_id += observation_name_suffix(
+                                metadata.get('observation_name')
+                            )
                             self.scene_found.emit(
                                 full_id, pixmap,
                                 self._label(metadata, path, obs_ix),
@@ -230,6 +237,8 @@ class SceneScanThread(QThread):
         metadata = {}
         metadata.setdefault('sequence', seq_id or path.name)
         metadata['sol'] = '?'
+        if 'OBSERVATION_NAME' in observation.columns:
+            metadata['observation_name'] = observation['OBSERVATION_NAME'].iloc[0]
 
         band = next((b for b in ('L5', 'L4', 'L6', 'L3') if b in available), None)
         if band is None:
@@ -284,6 +293,8 @@ class SceneScanThread(QThread):
         sequence = metadata.get('sequence', path.name)
         if 'rsm' in metadata:
             return f"Sol {sol} | {sequence} | RSM{metadata['rsm']}"
+        if metadata.get('observation_name'):
+            return f"Sol {sol} | {sequence} | {metadata['observation_name']}"
         if 'pma' in metadata:
             return f"Sol {sol} | {sequence} | PMA{metadata['pma']}"
         return f"Sol {sol} | {sequence} | Obs {obs_ix:03d}"
