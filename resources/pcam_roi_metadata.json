@@ -3,7 +3,7 @@
     {
       "key": "FEATURE",
       "label": "Feature",
-      "options": ["rock", "soil", "pebble"]
+      "options": ["rock", "soil", "pebble", "landscape"]
     },
     {
       "key": "FEATURE_SUBTYPE",
