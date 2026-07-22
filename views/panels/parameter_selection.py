@@ -52,7 +52,7 @@ class ParameterSelectionPanel(QFrame):
         self.spin_y_min        = self._dbl(-0.1, 1.0, 0.0,  0.05)
         self.spin_y_max        = self._dbl(0.0,  5.0, 0.4,  0.05)
         self.chk_merge_spectra = self._chk(True)
-        self.slider_line_width = self._slider(50, 100, 75, step=5)
+        self.slider_line_width = self._slider(50, 300, 75, step=5)
         # symmetric around zero - centered means no exposure change, and it's the
         # value a new scene resets to
         self.slider_exposure   = self._slider(-100, 100, 0, step=5)
