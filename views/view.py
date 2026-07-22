@@ -176,8 +176,12 @@ class View(QWidget):
         self.menu_view.addAction(self.action_delete_all_rois)
 
         self.menu_view.addSeparator()
-        for mode, label in (("RGB", "Set all RGB"), ("DCS", "Set all DCS")):
+        for mode, label, shortcut in (
+            ("RGB", "Set all RGB", "1"),
+            ("DCS", "Set all DCS", "2"),
+        ):
             action = QAction(label, self)
+            action.setShortcut(shortcut)
             action.triggered.connect(lambda checked, m=mode: self.apply_stretch_mode_signal.emit(m))
             action.setEnabled(False)
             self.menu_view.addAction(action)

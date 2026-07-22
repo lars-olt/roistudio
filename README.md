@@ -12,6 +12,8 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 | `R` | Rectangle tool |
 | `F` | Fit canvas to panel |
 | `S` | Toggle sync views |
+| `1` | Set all canvases to RGB |
+| `2` | Set all canvases to DCS |
 | `Escape` | Deselect ROI |
 | `Delete` / `Backspace` | Delete selected ROI |
 | `Ctrl+S` | Export SEL |
