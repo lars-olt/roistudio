@@ -18,3 +18,4 @@ wheels/
 tree.txt
 roistudio_tree.txt
 convert_roi_fits.py
+config.yml
