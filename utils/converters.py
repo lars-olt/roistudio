@@ -38,3 +38,17 @@ def snap_rect(x, y, w, h, bounds=None):
         x0, y0 = max(0, x0), max(0, y0)
         x1, y1 = min(W, x1), min(H, y1)
     return float(x0), float(y0), float(max(1, x1 - x0)), float(max(1, y1 - y0))
+
+
+def move_rect_on_pixel_grid(rect, dx, dy, bounds=None):
+    """Move a rectangle by a drag delta while keeping its origin pixel-aligned."""
+    x, y, w, h = map(float, rect)
+    x = float(round(x + dx))
+    y = float(round(y + dy))
+    if bounds is not None:
+        width, height = bounds
+        max_x = float(max(0, int(float(width) - w)))
+        max_y = float(max(0, int(float(height) - h)))
+        x = min(max(0.0, x), max_x)
+        y = min(max(0.0, y), max_y)
+    return x, y, w, h

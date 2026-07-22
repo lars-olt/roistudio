@@ -8,7 +8,7 @@ from PyQt5.QtGui import (QPainter, QColor, QKeyEvent, QMouseEvent, QWheelEvent,
 from typing import Optional
 
 from colors import Colors
-from utils.converters import snap_rect
+from utils.converters import move_rect_on_pixel_grid, snap_rect
 from utils.scale import scaled, scaled_font, bar_height
 
 
@@ -89,6 +89,8 @@ class CanvasContainer(QWidget):
         self.interaction_tool      = "selection"
         self.creation_start_pos    = None
         self.current_creation_rect = None
+        self._drag_start_image_pos = None
+        self._drag_start_rect      = None
         self.hover_preview_enabled = False
         self.roi_labels_visible    = False
 
@@ -132,6 +134,8 @@ class CanvasContainer(QWidget):
         self.roi_names  = names  if names  else []
         self.selected_roi_index = -1
         self.hovered_roi_index  = -1
+        self._drag_start_image_pos = None
+        self._drag_start_rect = None
         self.update()
 
     def set_tool(self, tool_name):
@@ -140,6 +144,8 @@ class CanvasContainer(QWidget):
         self.hovered_roi_index  = -1
         self.interaction_mode = self.MODE_NONE
         self.current_creation_rect = None
+        self._drag_start_image_pos = None
+        self._drag_start_rect = None
         self.update()
 
     def fit_to_panel(self):
@@ -498,6 +504,8 @@ class CanvasContainer(QWidget):
             if idx != -1:
                 self.selected_roi_index = idx
                 self.interaction_mode   = mode
+                self._drag_start_image_pos = (img_x, img_y)
+                self._drag_start_rect      = tuple(self.rois[idx])
                 self.roi_selected.emit(idx)
                 self.update()
                 return
@@ -547,12 +555,19 @@ class CanvasContainer(QWidget):
             return
 
         if self.interaction_mode != self.MODE_NONE and self.selected_roi_index != -1:
-            r      = list(self.rois[self.selected_roi_index])
-            px, py = self._get_image_coords(self.last_mouse_pos)
-            dx, dy = img_x - px, img_y - py
+            if self._drag_start_image_pos is None or self._drag_start_rect is None:
+                return
+            start_x, start_y = self._drag_start_image_pos
+            dx, dy = img_x - start_x, img_y - start_y
+            r = list(self._drag_start_rect)
 
             if   self.interaction_mode == self.MODE_MOVE:
-                r[0] += dx; r[1] += dy
+                self.rois[self.selected_roi_index] = move_rect_on_pixel_grid(
+                    r, dx, dy,
+                    bounds=(self.canvas.width(), self.canvas.height()),
+                )
+                self.update()
+                return
             elif self.interaction_mode == self.MODE_RESIZE_BR:
                 r[2] += dx; r[3] += dy
             elif self.interaction_mode == self.MODE_RESIZE_TL:
@@ -572,7 +587,6 @@ class CanvasContainer(QWidget):
 
             r[2] = max(_MIN_ROI_SIDE, r[2]); r[3] = max(_MIN_ROI_SIDE, r[3])
             self.rois[self.selected_roi_index] = tuple(r)
-            self.last_mouse_pos = event.pos()
             self.update()
             return
 
@@ -690,6 +704,8 @@ class CanvasContainer(QWidget):
                 self.roi_changed.emit(self.selected_roi_index, snapped)
                 self.update()
             self.interaction_mode = self.MODE_NONE
+            self._drag_start_image_pos = None
+            self._drag_start_rect = None
 
     def leaveEvent(self, event):
         if self.hovered_roi_index != -1:
