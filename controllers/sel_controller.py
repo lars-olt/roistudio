@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 from asdf_settings import rapidlooks
-from marslab.compat.mertools import MERSPECT_M20_COLOR_MAPPINGS
 from PyQt5.QtWidgets import QFileDialog
 from sparc.data.loading import create_rgb_stretch, dcs_rgb, observation_metadata
 from sparc.visualization.plotting import plot_spectra_with_error
@@ -19,7 +18,6 @@ from sparc.utils.sel_writer import (
     filenames_from_load_result,
 )
 from presets import INSTRUMENT_PRESETS
-from utils.converters import hex_to_rgb
 
 _EXPORT_DPI = 150
 
@@ -97,8 +95,6 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
             right_rois = right_rois.copy(); right_rois[:, 0] -= col_off; right_rois[:, 1] -= row_off
             left_rois  = left_rois.copy();  left_rois[:, 0]  -= col_off; left_rois[:, 1]  -= row_off
 
-        index_to_name = {v: k for k, v in color_manager._merspect_indices.items()}
-
         rois_data, colors, color_names = [], [], []
 
         for i, (right_rect, left_rect) in enumerate(zip(right_rois, left_rois)):
@@ -117,9 +113,9 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
             )
 
             label = label_ids[i] if i < len(label_ids) else None
-            name  = index_to_name.get(label)
-            if name and name in color_manager._merspect_indices:
-                color = hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[name])
+            name  = color_manager.name_for_merspect_index(label)
+            if name:
+                color = color_manager.color(name)
             else:
                 color, name = color_manager.next()
 
@@ -194,8 +190,6 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
                 f"{scene_shape[1]}x{scene_shape[0]} - ROIs may not line up."
             )
 
-        name_lookup = {n.lower(): n for n in color_manager._merspect_indices}
-
         rois_data, colors, color_names = [], [], []
 
         for lname, eyes in masks.items():
@@ -218,9 +212,9 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
                 )
             )
 
-            name = name_lookup.get(lname)
+            name = color_manager.resolve_name(lname)
             if name:
-                color = hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[name])
+                color = color_manager.color(name)
             else:
                 color, name = color_manager.next()
 

@@ -13,6 +13,8 @@ class ColorManager:
         self._palette          = []
         self._name_palette     = []
         self._merspect_indices = {}
+        self._colors_by_name   = {}
+        self._aliases          = {}
         self._preferred_set    = set()
         self._reserved         = set()
         self._deque            = deque()
@@ -45,48 +47,68 @@ class ColorManager:
             'lime', 'rust', 'green', 'blue', 'yellow', 'magenta+2', 'magenta-3',
         ]
         self._build_palette(usable, preferred)
+        self._aliases = {name.lower(): name for name in usable}
 
     def _init_pcam_palette(self):
-        # MERSpect's Pancam palette. Each MER color maps to its closest MCZ
-        # equivalent for the RGB lookup. Label index is the MER list position
-        # so .sel files round-trip with legacy MERSpect.
-        mer_to_mcz = [
-            ('red',          'red-1'),
-            ('light green',  'green'),
-            ('light blue',   'blue'),
-            ('light cyan',   'cyan'),
-            ('dark green',   'green-2'),
-            ('yellow',       'yellow'),
-            ('light purple', 'magenta'),
-            ('pink',         'red+2'),
-            ('teal',         'cyan-2'),
-            ('goldenrod',    'orange-1'),
-            ('sienna',       'orange-2'),
-            ('dark blue',    'blue-2'),
-            ('bright red',   'red'),
-            ('dark red',     'red-2'),
-            ('dark purple',  'purple'),
-            ('eraser',       None),
+        # MER label order, MCZ color lookup key, and ROIStudio display name.
+        colors = [
+            ('red',          'red-1',    'red'),
+            ('light green',  'green',    'green'),
+            ('light blue',   'blue',     'blue'),
+            ('light cyan',   'cyan',     'cyan'),
+            ('dark green',   'green-2',  'forest'),
+            ('yellow',       'yellow',   'yellow'),
+            ('light purple', 'magenta',  'magenta'),
+            ('pink',         'red+2',    'salmon'),
+            ('teal',         'cyan-2',   'teal'),
+            ('goldenrod',    'orange-1', 'goldenrod'),
+            ('sienna',       'orange-2', 'sienna'),
+            ('dark blue',    'blue-2',   'navy'),
+            ('bright red',   'red',      'scarlet'),
+            ('dark red',     'red-2',    'maroon'),
+            ('dark purple',  'purple',   'purple'),
+            ('eraser',       None,       None),
         ]
 
-        # Index by MER list position; palette is keyed on the MCZ name so RGB
-        # lookup and SEL import (which read MERSPECT_M20_COLOR_MAPPINGS) work.
-        self._merspect_indices = {mcz: i for i, (_mer, mcz) in enumerate(mer_to_mcz) if mcz}
+        self._merspect_indices = {
+            display: index
+            for index, (_mer, _mcz, display) in enumerate(colors)
+            if display
+        }
+        color_keys = {
+            display: mcz
+            for _mer, mcz, display in colors
+            if display
+        }
+        usable = list(color_keys)
 
-        usable = [mcz for _mer, mcz in mer_to_mcz if mcz]
-        # Handout follows the MER list from top to bottom.
-        self._build_palette(usable, preferred=usable)
+        # Handout follows the MER list.
+        self._build_palette(usable, preferred=usable, color_keys=color_keys)
 
-    def _build_palette(self, usable, preferred):
+        # Accept MER and legacy MCZ names on import when they are unambiguous,
+        # while always returning the ROIStudio display name.
+        self._aliases = {display.lower(): display for display in usable}
+        for mer, _mcz, display in colors:
+            if display:
+                self._aliases.setdefault(mer.lower(), display)
+        for _mer, mcz, display in colors:
+            if display:
+                self._aliases.setdefault(mcz.lower(), display)
+
+    def _build_palette(self, usable, preferred, color_keys=None):
         """Populate palette/name/preferred fields from a usable list and priority order."""
+        color_keys = color_keys or {}
         self._preferred_set = set(preferred)
         ordered   = [k for k in preferred if k in set(usable)]
         remainder = [k for k in usable if k not in self._preferred_set]
 
-        for k in ordered + remainder:
-            if k in MERSPECT_M20_COLOR_MAPPINGS:
-                self._palette.append(hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[k]))
-                self._name_palette.append(k)
+        for name in ordered + remainder:
+            color_key = color_keys.get(name, name)
+            if color_key in MERSPECT_M20_COLOR_MAPPINGS:
+                color = hex_to_rgb(MERSPECT_M20_COLOR_MAPPINGS[color_key])
+                self._palette.append(color)
+                self._name_palette.append(name)
+                self._colors_by_name[name] = color
 
     def _rebuild_deque(self):
         """Rebuild the deque in priority order, skipping reserved names."""
@@ -101,7 +123,26 @@ class ColorManager:
 
     def merspect_index(self, name: str) -> int:
         """Return the MERSpect label index for a color name."""
-        return self._merspect_indices[name]
+        return self._merspect_indices[self.resolve_name(name)]
+
+    def name_for_merspect_index(self, index: int):
+        """Return ROIStudio's name for a MERSpect label index."""
+        return next(
+            (name for name, value in self._merspect_indices.items()
+             if value == index),
+            None,
+        )
+
+    def resolve_name(self, name: str):
+        """Resolve an ROIStudio, MER, or legacy MCZ name to ROIStudio's name."""
+        if not name:
+            return None
+        return self._aliases.get(str(name).strip().lower())
+
+    def color(self, name: str):
+        """Return the RGB tuple for a recognized color name."""
+        resolved = self.resolve_name(name)
+        return self._colors_by_name.get(resolved)
 
     def reserve(self, names: list):
         """Reserve color names so they are not returned by :meth:`next`."""
@@ -158,6 +199,8 @@ class ColorManager:
         self._palette          = []
         self._name_palette     = []
         self._merspect_indices = {}
+        self._colors_by_name   = {}
+        self._aliases          = {}
         self._preferred_set    = set()
         self._reserved         = set()
         self._init_palette(instrument)
