@@ -53,18 +53,30 @@ class _ScaleManager(QObject):
     def physical_factor(self) -> float:
         return self._physical_factor
 
-    def step_up(self):
-        self._user_offset = round(self._user_offset + _STEP, 10)
+    @property
+    def user_offset(self) -> float:
+        return self._user_offset
+
+    def set_user_offset(self, offset: float):
+        """Set the user's Ctrl+/- adjustment, clamped to the supported range."""
+        minimum = _MIN_FACTOR - 1.0
+        maximum = _MAX_FACTOR - 1.0
+        self._user_offset = max(minimum, min(maximum, round(float(offset), 10)))
         self._update()
 
+    def set_scale(self, factor: float):
+        """Set the user-facing scale multiplier used by Ctrl+/-."""
+        self.set_user_offset(float(factor) - 1.0)
+
+    def step_up(self):
+        self.set_user_offset(self._user_offset + _STEP)
+
     def step_down(self):
-        self._user_offset = round(self._user_offset - _STEP, 10)
-        self._update()
+        self.set_user_offset(self._user_offset - _STEP)
 
     def reset(self):
         """Reset Ctrl+/- steps; preserves _DEFAULT_OFFSET."""
-        self._user_offset = 0.0
-        self._update()
+        self.set_user_offset(0.0)
 
 
 Scale = _ScaleManager()

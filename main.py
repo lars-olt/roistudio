@@ -34,6 +34,12 @@ from controllers import Controller
 from colors import Colors
 from utils.paths import _resource_path
 from utils.scale import Scale, scaled_font
+from utils.ui_settings import UISettings
+from utils.launch_options import (
+    add_ui_arguments,
+    apply_scale_override,
+    apply_view_overrides,
+)
 
 
 def _parse_args():
@@ -51,6 +57,7 @@ def _parse_args():
     parser.add_argument('roi_file',     nargs='?', help='Optional .sel or .fits ROI file to load after the scene')
     parser.add_argument('--notes',      default=None,
                         help='Observation-level science notes shown in the toolbar')
+    add_ui_arguments(parser)
     # strip Qt's own args before parsing so --style etc. don't confuse argparse
     args, _ = parser.parse_known_args()
     return args
@@ -78,6 +85,9 @@ if __name__ == '__main__':
     app.setStyle("Fusion")
     app.setWindowIcon(_make_app_icon())
 
+    ui_settings = UISettings()
+    ui_settings.restore_scale()
+    apply_scale_override(args)
     Scale.init()
     _set_app_font()
     Scale.changed.connect(_set_app_font)
@@ -104,6 +114,9 @@ if __name__ == '__main__':
     model      = Model()
     view       = View()
     controller = Controller(model, view)
+    ui_settings.restore_view(view)
+    apply_view_overrides(args, view)
+    app.aboutToQuit.connect(lambda: ui_settings.save(view))
 
     # Ctrl/Cmd +/-/0 adjusts UI scale. Key_Equal is the unshifted + key.
     QShortcut(QKeySequence(Qt.CTRL + Qt.Key_Equal), view).activated.connect(Scale.step_up)
@@ -131,6 +144,7 @@ if __name__ == '__main__':
     shortcut_f.activated.connect(view.panel_image_editing.fit_focused_canvas)
 
     view.show()
+    QTimer.singleShot(0, view.ensure_visible_on_screen)
     Scale.set_window(view.windowHandle())
 
     if args.notes:
@@ -146,7 +160,8 @@ if __name__ == '__main__':
 
             def _on_load_complete(_load_result):
                 controller.scene_controller.load_complete.disconnect(_on_load_complete)
-                view._set_mode('roi_processing')
+                launch_mode = args.upper_left_panel or 'roi-processing'
+                view.set_mode(launch_mode.replace('-', '_'))
                 if args.roi_file:
                     if Path(args.roi_file).suffix.lower() == '.fits':
                         controller._load_fits(fits_path=args.roi_file)

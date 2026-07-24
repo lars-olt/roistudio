@@ -1,6 +1,6 @@
 from PyQt5.QtCore import QRect, Qt, pyqtSignal
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QMenuBar, QMenu, QAction,
-                             QSplitter, QStackedWidget)
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QMenuBar, QMenu,
+                             QAction, QSplitter, QStackedWidget)
 
 from .panels import (SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel,
                      StatusPanel, ParameterSelectionPanel, ROIMetadataPanel)
@@ -193,19 +193,19 @@ class View(QWidget):
         self.action_mode_scene = QAction("Scene Loading", self)
         self.action_mode_scene.setCheckable(True)
         self.action_mode_scene.setChecked(True)
-        self.action_mode_scene.triggered.connect(lambda: self._set_mode('scene_loading'))
+        self.action_mode_scene.triggered.connect(lambda: self.set_mode('scene_loading'))
         self.menu_window.addAction(self.action_mode_scene)
 
         self.action_mode_roi = QAction("ROI Processing", self)
         self.action_mode_roi.setCheckable(True)
         self.action_mode_roi.setChecked(False)
-        self.action_mode_roi.triggered.connect(lambda: self._set_mode('roi_processing'))
+        self.action_mode_roi.triggered.connect(lambda: self.set_mode('roi_processing'))
         self.menu_window.addAction(self.action_mode_roi)
 
         self.action_mode_metadata = QAction("ROI Metadata", self)
         self.action_mode_metadata.setCheckable(True)
         self.action_mode_metadata.setChecked(False)
-        self.action_mode_metadata.triggered.connect(lambda: self._set_mode('roi_metadata'))
+        self.action_mode_metadata.triggered.connect(lambda: self.set_mode('roi_metadata'))
         self.menu_window.addAction(self.action_mode_metadata)
 
     def set_instrument_presets(self, instrument: str):
@@ -242,9 +242,7 @@ class View(QWidget):
         self.panel_image_editing.tool_changed_signal.connect(self._on_tool_changed)
         self.panel_image_editing.split_screen_toggled.connect(self._on_split_screen_toggled)
 
-        self.action_roi_labels.triggered.connect(
-            lambda checked: self.panel_image_editing.set_roi_labels_visible(checked)
-        )
+        self.action_roi_labels.triggered.connect(self.set_roi_labels_visible)
         self.action_fit_canvas.triggered.connect(self.panel_image_editing.fit_focused_canvas)
 
     def _splitter_stylesheet(self):
@@ -300,7 +298,13 @@ class View(QWidget):
 
     _MODES = {'scene_loading': 0, 'roi_processing': 1, 'roi_metadata': 2}
 
-    def _set_mode(self, mode: str):
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def set_mode(self, mode: str):
+        if mode not in self._MODES:
+            return
         if mode == self._mode:
             return
         self._mode = mode
@@ -350,6 +354,31 @@ class View(QWidget):
     def enable_presets(self, enabled: bool):
         for action, _ in self._preset_actions:
             action.setEnabled(enabled)
+
+    def set_roi_labels_visible(self, visible: bool):
+        self.action_roi_labels.setChecked(visible)
+        self.panel_image_editing.set_roi_labels_visible(visible)
+
+    def set_panel_ratios(self, *, left=None, upper=None):
+        """Set relative splitter positions using values between zero and one."""
+        if left is not None:
+            self.main_splitter.setSizes([
+                round(float(left) * 1000),
+                round((1.0 - float(left)) * 1000),
+            ])
+        if upper is not None:
+            self.left_splitter.setSizes([
+                round(float(upper) * 1000),
+                round((1.0 - float(upper)) * 1000),
+            ])
+
+    def ensure_visible_on_screen(self):
+        """Move a restored window onto the primary screen if its old monitor is gone."""
+        if any(screen.availableGeometry().intersects(self.frameGeometry())
+               for screen in QApplication.screens()):
+            return
+        available = QApplication.primaryScreen().availableGeometry()
+        self.move(available.center() - self.rect().center())
 
     def start_loading(self):
         self.panel_image_editing.start_loading()

@@ -24,6 +24,43 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 > [!Note]
 > Trackpad users can pinch to zoom, and pan around a canvas with two fingers.
 
+ROIStudio remembers the GUI scale, window layout, active upper-left panel,
+collapsed parameter sections, ROI-label visibility, and spectral display
+preferences between sessions.
+
+### Command-line UI overrides
+
+Saved UI settings remain the defaults, but any of them can be overridden when
+ROIStudio is launched from a terminal. Explicit overrides become the new saved
+state when the application exits.
+
+```bash
+uv run python main.py --ui-scale 1.2 --window-size 1600 900 --left-panel-ratio 0.35 --upper-left-panel roi-processing --spectral-y-min 0.0 --spectral-y-max 1.0 --spectral-line-width 1.5 --no-merge-spectra
+```
+
+Available UI options:
+
+| Option | Value |
+|--------|-------|
+| `--ui-scale` | GUI scale from `0.5` to `3.0` |
+| `--window-size` | Width and height in pixels |
+| `--window-position` | X and Y screen coordinates |
+| `--maximized` / `--no-maximized` | Maximized window state |
+| `--left-panel-ratio` | Left-panel fraction from `0.05` to `0.95` |
+| `--upper-panel-ratio` | Upper-left-panel fraction from `0.05` to `0.95` |
+| `--upper-left-panel` | `scene-loading`, `roi-processing`, or `roi-metadata` |
+| `--view-settings-section` | `expanded` or `collapsed` |
+| `--segmentation-section` | `expanded` or `collapsed` |
+| `--roi-extraction-section` | `expanded` or `collapsed` |
+| `--spectral-analysis-section` | `expanded` or `collapsed` |
+| `--roi-labels` / `--no-roi-labels` | ROI-label visibility |
+| `--spectral-y-min` | Spectral Y-axis minimum |
+| `--spectral-y-max` | Spectral Y-axis maximum |
+| `--spectral-line-width` | Spectral line width from `0.5` to `3.0` |
+| `--merge-spectra` / `--no-merge-spectra` | Merge-camera-spectra state |
+
+Run `uv run python main.py --help` for the complete launch syntax.
+
 ---
 
 ## Table of Contents

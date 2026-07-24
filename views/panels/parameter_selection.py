@@ -28,6 +28,7 @@ class ParameterSelectionPanel(QFrame):
     def __init__(self):
         super().__init__()
         self._wheel_filter = _WheelFilter(self)
+        self._sections = {}
         self._build_ui()
         Scale.changed.connect(self._apply_scale)
 
@@ -69,7 +70,7 @@ class ParameterSelectionPanel(QFrame):
             lambda v: self.exposure_changed.emit(2.0 ** (v / 100.0))
         )
 
-        self._add_section("View Settings", self._form([
+        self._add_section("view_settings", "View Settings", self._form([
             ("Y-Axis Min",           self.spin_y_min,
              "Minimum value for the spectral plot Y-axis (Reflectance)."),
             ("Y-Axis Max",           self.spin_y_max,
@@ -88,7 +89,7 @@ class ParameterSelectionPanel(QFrame):
         self.spin_points     = self._int(16, 64,  32)
         self.spin_iou        = self._dbl(0.0, 1.0, 0.88, 0.01)
 
-        self._add_section("Segmentation", self._form([
+        self._add_section("segmentation", "Segmentation", self._form([
             ("Use DCS",      self.chk_use_dcs,
              "Apply decorrelation stretch to the input image before segmentation. "
              "Enhances spectral contrast. On by default for Pancam."),
@@ -110,7 +111,7 @@ class ParameterSelectionPanel(QFrame):
         self.spin_morph       = self._int(0,   5000,  1000)
         self.spin_subclusters = self._int(1,   50,    10)
 
-        self._add_section("ROI Extraction", self._form([
+        self._add_section("roi_extraction", "ROI Extraction", self._form([
             ("Edge Offset",  self.spin_edge,
              "Pixels eroded from segment boundaries to avoid edge artifacts."),
             ("Variance",     self.spin_variance,
@@ -132,7 +133,7 @@ class ParameterSelectionPanel(QFrame):
         # Spectral Analysis
         self.spin_max_clusters  = self._int(1,   50,  9)
 
-        self._add_section("Spectral Analysis", self._form([
+        self._add_section("spectral_analysis", "Spectral Analysis", self._form([
             ("Max Clusters",  self.spin_max_clusters,
              "Maximum number of spectral clusters the GMM may find."),
         ]))
@@ -274,13 +275,44 @@ class ParameterSelectionPanel(QFrame):
         w.setLayout(form)
         return w
 
-    def _add_section(self, title, content_widget):
+    def _add_section(self, key, title, content_widget):
         section = CollapsibleSection(title)
         section.add_widget(content_widget)
         self.content_layout.addWidget(section)
+        self._sections[key] = section
 
     def _emit_view_settings(self):
         self.view_settings_changed.emit(self.spin_y_min.value(), self.spin_y_max.value())
+
+    def display_preferences(self):
+        return {
+            'y_min':         self.spin_y_min.value(),
+            'y_max':         self.spin_y_max.value(),
+            'merge_spectra': self.chk_merge_spectra.isChecked(),
+            'line_width':    self.slider_line_width.value() / 100.0,
+        }
+
+    def apply_display_preferences(self, *, y_min=None, y_max=None,
+                                  merge_spectra=None, line_width=None):
+        """Apply saved display values; keyword arguments also suit future CLI overrides."""
+        if y_min is not None:
+            self.spin_y_min.setValue(float(y_min))
+        if y_max is not None:
+            self.spin_y_max.setValue(float(y_max))
+        if merge_spectra is not None:
+            self.chk_merge_spectra.setChecked(bool(merge_spectra))
+        if line_width is not None:
+            self.slider_line_width.setValue(round(float(line_width) * 100))
+
+    def section_states(self):
+        return {key: section.is_expanded()
+                for key, section in self._sections.items()}
+
+    def apply_section_states(self, states):
+        for key, expanded in states.items():
+            section = self._sections.get(key)
+            if section is not None:
+                section.set_expanded(bool(expanded))
 
     def set_use_dcs(self, enabled: bool):
         self.chk_use_dcs.setChecked(enabled)

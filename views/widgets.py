@@ -368,6 +368,14 @@ class CollapsibleSection(QWidget):
         self.toggle_button.setArrowType(Qt.DownArrow if not checked else Qt.RightArrow)
         self.content_area.setVisible(not checked)
 
+    def is_expanded(self) -> bool:
+        return self.toggle_button.isChecked()
+
+    def set_expanded(self, expanded: bool):
+        self.toggle_button.setChecked(expanded)
+        self.toggle_button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self.content_area.setVisible(expanded)
+
     def add_widget(self, widget):
         self.content_layout.addWidget(widget)
 
