@@ -56,7 +56,7 @@
     {
       "key": "TEXTURE",
       "label": "Texture",
-      "options": ["massive", "pitted/knobby", "platy/layered", "pitted", "knobby", "platy", "ventifacted"],
+      "options": ["massive", "pitted/knobby", "platy/layered", "ventifacted"],
       "visible_when": {"FEATURE": ["rock"]}
     },
     {
