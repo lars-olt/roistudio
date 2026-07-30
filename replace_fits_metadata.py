@@ -2,12 +2,14 @@
 
 import argparse
 import csv
+import re
 from pathlib import Path
 
 from astropy.io import fits
 
 
 BACKUP_PREFIX = "OLD_METADATA_"
+VERSION_SUFFIX = re.compile(r"_v(\d+)$", re.IGNORECASE)
 
 
 def parse_replacement(value):
@@ -42,25 +44,43 @@ def replace_values(hdul, key, replacements):
     return changes
 
 
-def find_observations(hdul, path, key, value):
-    """Return one row per matching ROI."""
-    observations = {}
+def observation_name(path):
+    """Return the observation name and saved version."""
+    folder_name = path.parent.name
+    match = VERSION_SUFFIX.search(folder_name)
+    if match is None:
+        return folder_name, 1
+    return folder_name[:match.start()], int(match.group(1))
 
+
+def find_observations(hdul, path, key, value):
+    """Return the visible ROIs matching value."""
+    rois = {}
     for index, hdu in enumerate(hdul):
         header = hdu.header
-        if str(header.get(key, "")).strip().lower() != value.lower():
+        if "NAME" not in header or "EYE" not in header:
             continue
 
-        roi_name = str(header.get("NAME", header.get("EXTNAME", f"HDU {index}"))).strip()
-        image_ref = str(header.get("IMAGEREF", "")).strip()
-        identity = (roi_name.lower(), image_ref.lower())
-        observations.setdefault(identity, {
+        roi_name = str(header["NAME"]).strip() or f"HDU {index}"
+        eye = str(header["EYE"]).strip().lower()
+        metadata_value = str(header.get(key, "")).strip()
+        rois.setdefault(roi_name.lower(), {})[eye] = (roi_name, metadata_value)
+
+    name, version = observation_name(path)
+    rows = []
+    for eyes in rois.values():
+        visible = eyes.get("right") or eyes.get("left")
+        if visible is None or visible[1].lower() != value.lower():
+            continue
+
+        rows.append({
             "file_path": str(path.resolve()),
-            "image_ref": image_ref,
-            "roi_name": roi_name,
+            "observation": name,
+            "roi_name": visible[0],
         })
 
-    return list(observations.values())
+    identity = (str(path.parent.parent.resolve()).lower(), name.lower())
+    return identity, version, rows
 
 
 def next_backup_path(path):
@@ -94,7 +114,7 @@ def process_file(path, key, replacements, report_value):
 
 def iter_fits_files(root):
     """Yield every active FITS file below root."""
-    for path in root.rglob("*"):
+    for path in sorted(root.rglob("*")):
         if (
             path.is_file()
             and path.suffix.lower() == ".fits"
@@ -107,7 +127,7 @@ def write_report(observations, output_path):
     """Write a CSV report."""
     columns = (
         "file_path",
-        "image_ref",
+        "observation",
         "roi_name",
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,11 +137,26 @@ def write_report(observations, output_path):
         writer.writerows(sorted(
             observations,
             key=lambda row: (
-                row["file_path"].lower(),
-                row["image_ref"].lower(),
+                row["observation"].lower(),
                 row["roi_name"].lower(),
+                row["file_path"].lower(),
             ),
         ))
+
+
+def current_observations(candidates):
+    """Return matching ROIs from each observation's newest saved version."""
+    current = {}
+    for identity, version, rows in candidates:
+        previous = current.get(identity)
+        if previous is None or version > previous[0]:
+            current[identity] = (version, rows)
+
+    return [
+        row
+        for _, rows in current.values()
+        for row in rows
+    ]
 
 
 def parse_args():
@@ -140,9 +175,8 @@ def parse_args():
         "--replace",
         action="append",
         type=parse_replacement,
-        required=True,
         metavar="OLD=NEW",
-        help="replacement to apply; repeat for multiple values",
+        help="replacement to apply; omit for report-only use",
     )
     parser.add_argument(
         "--report-value",
@@ -164,8 +198,8 @@ def main():
         raise FileNotFoundError(f"Directory not found: {args.root}")
 
     key = args.key.strip().upper()
-    replacements = dict(args.replace)
-    observations = []
+    replacements = dict(args.replace or ())
+    report_candidates = []
     counts = {
         "converted": 0,
         "unchanged": 0,
@@ -181,7 +215,7 @@ def main():
                 args.report_value,
             )
             counts[status] += 1
-            observations.extend(matches)
+            report_candidates.append(matches)
 
             if changes:
                 print(f"{status.upper()}: {path}")
@@ -192,13 +226,14 @@ def main():
             print(f"FAILED: {path}")
             print(f"    {type(exc).__name__}: {exc}")
 
+    observations = current_observations(report_candidates)
     write_report(observations, args.report)
 
     print("\nDone")
     for status, count in counts.items():
         if count:
             print(f"    {status}: {count}")
-    print(f"    matching observations: {len(observations)}")
+    print(f"    matching ROIs: {len(observations)}")
     print(f"    report: {args.report.resolve()}")
 
 
