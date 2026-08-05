@@ -229,6 +229,7 @@ class CanvasContainer(QWidget):
             self._draw_crop_overlay(painter)
 
         painter.restore()
+        self._draw_navigator(painter)
         self._draw_zoom_indicator(painter)
 
     def _draw_rois(self, painter):
@@ -341,12 +342,91 @@ class CanvasContainer(QWidget):
             name,
         )
 
+    def _visible_image_rect(self) -> QRectF:
+        """Return the visible viewport in image coordinates."""
+        if self.canvas.image is None:
+            return QRectF()
+
+        top_left     = self._get_image_coords(QPointF(0, 0))
+        bottom_right = self._get_image_coords(QPointF(self.width(), self.height()))
+        image_w      = float(self.canvas.width())
+        image_h      = float(self.canvas.height())
+
+        left   = max(0.0, min(image_w, top_left[0]))
+        top    = max(0.0, min(image_h, top_left[1]))
+        right  = max(0.0, min(image_w, bottom_right[0]))
+        bottom = max(0.0, min(image_h, bottom_right[1]))
+        return QRectF(left, top, max(0.0, right - left), max(0.0, bottom - top))
+
+    def _navigator_geometry(self):
+        """Return outer and image rectangles for the navigator, or None."""
+        if self.canvas.image is None:
+            return None
+
+        image_w = self.canvas.width()
+        image_h = self.canvas.height()
+        if (image_w * self.zoom_level <= self.width()
+                and image_h * self.zoom_level <= self.height()):
+            return None
+
+        margin  = scaled(10)
+        padding = scaled(4)
+        bottom  = self.height() - bar_height() - scaled(16)
+        max_w   = min(scaled(180), self.width() - 2 * (margin + padding))
+        max_h   = min(scaled(130), bottom - margin - 2 * padding)
+        if max_w < scaled(48) or max_h < scaled(36):
+            return None
+
+        scale   = min(max_w / image_w, max_h / image_h)
+        thumb_w = image_w * scale
+        thumb_h = image_h * scale
+        outer   = QRectF(
+            self.width() - margin - thumb_w - 2 * padding,
+            bottom - thumb_h - 2 * padding,
+            thumb_w + 2 * padding,
+            thumb_h + 2 * padding,
+        )
+        image = outer.adjusted(padding, padding, -padding, -padding)
+        return outer, image
+
+    def _draw_navigator(self, painter):
+        geometry = self._navigator_geometry()
+        if geometry is None:
+            return
+
+        outer, image = geometry
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor(Colors.PANEL_ACCENT), 1))
+        painter.setBrush(QColor(20, 20, 20, 220))
+        painter.drawRoundedRect(outer, scaled(3), scaled(3))
+        painter.drawPixmap(image, self.canvas.image, QRectF(self.canvas.image.rect()))
+
+        visible = self._visible_image_rect()
+        if not visible.isEmpty():
+            viewport = QRectF(
+                image.left() + visible.left() / self.canvas.width() * image.width(),
+                image.top() + visible.top() / self.canvas.height() * image.height(),
+                visible.width() / self.canvas.width() * image.width(),
+                visible.height() / self.canvas.height() * image.height(),
+            )
+            fill = QColor(Colors.ACCENT)
+            fill.setAlpha(40)
+            painter.setPen(QPen(QColor(Colors.ACCENT), scaled(2)))
+            painter.setBrush(fill)
+            painter.drawRect(viewport)
+        painter.restore()
+
     def _zoom_indicator_rect(self) -> QRect:
         font  = QFont("Arial", scaled_font(9))
         box_h = bar_height()
         box_w = QFontMetrics(font).horizontalAdvance("10.00x") + 2 * scaled(3)
+        bottom = self.height() - scaled(10)
+        navigator = self._navigator_geometry()
+        if navigator is not None:
+            bottom = int(navigator[0].top()) - scaled(6)
         return QRect(self.width()  - box_w - scaled(10),
-                     self.height() - box_h - scaled(10),
+                     bottom - box_h,
                      box_w, box_h)
 
     def _draw_zoom_indicator(self, painter):
