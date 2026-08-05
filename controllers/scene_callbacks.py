@@ -47,7 +47,15 @@ def on_scene_load_complete(load_result, scene_id, model, view):
     view.panel_spectral_view.clear_roi_spectra()
     view.panel_spectral_view.clear_plot()
     view.stop_loading()
-    view.show_status_message(f"Scene loaded: {load_result['id']}")
+    message = f"Scene loaded: {load_result['id']}"
+    if instrument == 'ZCAM':
+        pixmap_status = (
+            "pixel maps applied"
+            if load_result.get('using_pixmaps')
+            else "no pixel maps found"
+        )
+        message = f"{message} ({pixmap_status})"
+    view.show_status_message(message)
 
 
 def on_scene_load_error(error_msg, view):
