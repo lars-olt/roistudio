@@ -160,7 +160,7 @@ if __name__ == '__main__':
 
             def _on_load_complete(_load_result):
                 controller.scene_controller.load_complete.disconnect(_on_load_complete)
-                launch_mode = args.upper_left_panel or 'roi-processing'
+                launch_mode = args.upper_left_panel or 'settings'
                 view.set_mode(launch_mode.replace('-', '_'))
                 if args.roi_file:
                     if Path(args.roi_file).suffix.lower() == '.fits':

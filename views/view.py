@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QMenuBar, QMenu
                              QAction, QSplitter, QStackedWidget)
 
 from .panels import (SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel,
-                     StatusPanel, ParameterSelectionPanel, ROIMetadataPanel)
+                     StatusPanel, SettingsPanel, ROIMetadataPanel)
 from colors import Colors
 from presets import INSTRUMENT_PRESETS
 from utils.scale import Scale, scaled, scaled_font
@@ -196,11 +196,11 @@ class View(QWidget):
         self.action_mode_scene.triggered.connect(lambda: self.set_mode('scene_loading'))
         self.menu_window.addAction(self.action_mode_scene)
 
-        self.action_mode_roi = QAction("ROI Processing", self)
-        self.action_mode_roi.setCheckable(True)
-        self.action_mode_roi.setChecked(False)
-        self.action_mode_roi.triggered.connect(lambda: self.set_mode('roi_processing'))
-        self.menu_window.addAction(self.action_mode_roi)
+        self.action_mode_settings = QAction("Settings", self)
+        self.action_mode_settings.setCheckable(True)
+        self.action_mode_settings.setChecked(False)
+        self.action_mode_settings.triggered.connect(lambda: self.set_mode('settings'))
+        self.menu_window.addAction(self.action_mode_settings)
 
         self.action_mode_metadata = QAction("ROI Metadata", self)
         self.action_mode_metadata.setCheckable(True)
@@ -221,19 +221,19 @@ class View(QWidget):
         self.panel_image_editing       = ImageEditingPanel()
         self.panel_spectral_view       = SpectralViewPanel()
         self.panel_status              = StatusPanel()
-        self.panel_parameter_selection = ParameterSelectionPanel()
+        self.panel_settings            = SettingsPanel()
         self.panel_roi_metadata        = ROIMetadataPanel()
 
         self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)
         self.panel_image_selection.scene_double_clicked.connect(self.scene_double_clicked_signal.emit)
 
-        self.panel_parameter_selection.view_settings_changed.connect(
+        self.panel_settings.view_settings_changed.connect(
             self.panel_spectral_view.set_y_range
         )
-        self.panel_parameter_selection.merge_spectra_changed.connect(
+        self.panel_settings.merge_spectra_changed.connect(
             self.panel_spectral_view.set_merge_spectra
         )
-        self.panel_parameter_selection.line_width_changed.connect(
+        self.panel_settings.line_width_changed.connect(
             self.panel_spectral_view.set_line_width
         )
 
@@ -273,7 +273,7 @@ class View(QWidget):
         # Top slot switches between panels via a stacked widget - indices match _MODES.
         self.top_stack = QStackedWidget()
         self.top_stack.addWidget(self.panel_image_selection)      # scene loading
-        self.top_stack.addWidget(self.panel_parameter_selection)  # roi processing
+        self.top_stack.addWidget(self.panel_settings)             # settings
         self.top_stack.addWidget(self.panel_roi_metadata)         # roi metadata
 
         self.left_splitter.addWidget(self.top_stack)
@@ -296,20 +296,23 @@ class View(QWidget):
         self.layout.addWidget(self.main_splitter)
         self.layout.addWidget(self.panel_status)
 
-    _MODES = {'scene_loading': 0, 'roi_processing': 1, 'roi_metadata': 2}
+    _MODES = {'scene_loading': 0, 'settings': 1, 'roi_metadata': 2}
 
     @property
     def mode(self) -> str:
         return self._mode
 
     def set_mode(self, mode: str):
+        # Migrate UI state saved before ROI Processing became application Settings.
+        if mode == 'roi_processing':
+            mode = 'settings'
         if mode not in self._MODES:
             return
         if mode == self._mode:
             return
         self._mode = mode
         self.action_mode_scene.setChecked(mode == 'scene_loading')
-        self.action_mode_roi.setChecked(mode == 'roi_processing')
+        self.action_mode_settings.setChecked(mode == 'settings')
         self.action_mode_metadata.setChecked(mode == 'roi_metadata')
         self.top_stack.setCurrentIndex(self._MODES[mode])
         self.mode_changed.emit(mode)

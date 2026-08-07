@@ -35,7 +35,7 @@ ROIStudio is launched from a terminal. Explicit overrides become the new saved
 state when the application exits.
 
 ```bash
-uv run python main.py --ui-scale 1.2 --window-size 1600 900 --left-panel-ratio 0.35 --upper-left-panel roi-processing --spectral-y-min 0.0 --spectral-y-max 1.0 --spectral-line-width 1.5 --no-merge-spectra
+uv run python main.py --ui-scale 1.2 --window-size 1600 900 --left-panel-ratio 0.35 --upper-left-panel settings --spectral-y-min 0.0 --spectral-y-max 1.0 --spectral-line-width 1.5 --no-merge-spectra
 ```
 
 Available UI options:
@@ -48,7 +48,7 @@ Available UI options:
 | `--maximized` / `--no-maximized` | Maximized window state |
 | `--left-panel-ratio` | Left-panel fraction from `0.05` to `0.95` |
 | `--upper-panel-ratio` | Upper-left-panel fraction from `0.05` to `0.95` |
-| `--upper-left-panel` | `scene-loading`, `roi-processing`, or `roi-metadata` |
+| `--upper-left-panel` | `scene-loading`, `settings`, or `roi-metadata` |
 | `--view-settings-section` | `expanded` or `collapsed` |
 | `--segmentation-section` | `expanded` or `collapsed` |
 | `--roi-extraction-section` | `expanded` or `collapsed` |
@@ -119,7 +119,7 @@ ROIStudio requires a SAM model checkpoint to run the SPARC pipeline. Download `s
 
 ROIStudio is divided into three main areas:
 
-**Left panel (top)** — switches between the Scene Loading view (thumbnail grid) and the ROI Processing view (algorithm parameters). Toggle between them via **Window > Scene Loading** and **Window > ROI Processing**.
+**Left panel (top)** — switches between Scene Loading (thumbnail grid), Settings (application display and ROI processing options), and ROI Metadata. Toggle between them from the **Window** menu.
 
 **Left panel (bottom)** — the Spectral View, showing reflectance spectra for all active ROIs. Hover over the canvas to preview the spectrum at the cursor position.
 
@@ -149,9 +149,9 @@ The **View** menu also provides **Set all RGB** and **Set all DCS** options to a
 
 ## Running SPARC
 
-Switch to the **ROI Processing** panel via **Window > ROI Processing** to access the algorithm parameters for optional tuning.
+Switch to the **Settings** panel via **Window > Settings** to access the algorithm parameters for optional tuning.
 
-<img width="1602" height="923" alt="Screenshot of the ROI Processing parameter panel" src="https://github.com/user-attachments/assets/25728c21-ae4a-4682-b329-81df95e7d61e" />
+<img width="1602" height="923" alt="Screenshot of the application Settings panel" src="https://github.com/user-attachments/assets/25728c21-ae4a-4682-b329-81df95e7d61e" />
 
 > [!Note]
 > For new users, we recommend leaving these as-is for now.
@@ -220,7 +220,7 @@ The spectral panel plots reflectance (R* = IOF/cos θ) against wavelength for al
 
 ### View Settings
 
-In the **ROI Processing** panel, the **View Settings** section controls:
+In the application **Settings** panel, the **View Settings** section controls:
 
 - **Y-Axis Min/Max** - reflectance axis range.
 - **Merge camera spectra** - average stereo bands into one spectrum, or plot left and right cameras separately.

@@ -17,8 +17,8 @@ class _WheelFilter(QObject):
         return False
 
 
-class ParameterSelectionPanel(QFrame):
-    """Algorithm parameter and view settings panel."""
+class SettingsPanel(QFrame):
+    """Application-wide display and ROI processing settings."""
 
     view_settings_changed = pyqtSignal(float, float)
     merge_spectra_changed = pyqtSignal(bool)

@@ -108,7 +108,7 @@ class Controller(QObject):
         self._view.panel_roi_metadata.metadata_changed.connect(self._on_roi_metadata_changed)
         self._view.panel_roi_metadata.roi_activated.connect(self._on_roi_metadata_activated)
         self._view.mode_changed.connect(self._on_view_mode_changed)
-        self._view.panel_parameter_selection.exposure_changed.connect(self._on_exposure_changed)
+        self._view.panel_settings.exposure_changed.connect(self._on_exposure_changed)
 
     def _connect_controller_signals(self):
         sc = self.scene_controller
@@ -155,7 +155,7 @@ class Controller(QObject):
         self._pending_recolor_index   = None
         self._metadata_active_index   = None
         self._exposure                = 1.0
-        self._view.panel_parameter_selection.reset_exposure()
+        self._view.panel_settings.reset_exposure()
         self.color_manager.reset()
         self._view.panel_image_editing.set_rois([], [], [])
         self._view.panel_roi_metadata.set_rois([], [], [])
@@ -197,7 +197,7 @@ class Controller(QObject):
             self.scene_controller, self.sparc_controller,
             self._current_scene_id,
             self.config.get('sam_model_path', ''),
-            self._view.panel_parameter_selection.get_parameters(),
+            self._view.panel_settings.get_parameters(),
             crop_rect = self._view.panel_image_editing.get_crop_rect(),
         )
 

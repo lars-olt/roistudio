@@ -21,6 +21,17 @@ def _positive_int(value):
     return number
 
 
+def _upper_left_panel(value):
+    """Accept the former panel name while normalizing it to Settings."""
+    if value == 'roi-processing':
+        return 'settings'
+    if value in ('scene-loading', 'settings', 'roi-metadata'):
+        return value
+    raise argparse.ArgumentTypeError(
+        "must be one of: scene-loading, settings, roi-metadata"
+    )
+
+
 def add_ui_arguments(parser):
     group = parser.add_argument_group(
         'UI overrides',
@@ -63,7 +74,8 @@ def add_ui_arguments(parser):
     )
     group.add_argument(
         '--upper-left-panel',
-        choices=('scene-loading', 'roi-processing', 'roi-metadata'),
+        type=_upper_left_panel,
+        metavar='{scene-loading,settings,roi-metadata}',
         help='panel shown in the upper-left area',
     )
     for key, label in (
@@ -146,8 +158,8 @@ def apply_view_overrides(args, view):
         state = getattr(args, f'{key}_section')
         if state is not None:
             section_states[key] = state == 'expanded'
-    view.panel_parameter_selection.apply_section_states(section_states)
-    view.panel_parameter_selection.apply_display_preferences(
+    view.panel_settings.apply_section_states(section_states)
+    view.panel_settings.apply_display_preferences(
         y_min=args.spectral_y_min,
         y_max=args.spectral_y_max,
         line_width=args.spectral_line_width,

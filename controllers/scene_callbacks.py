@@ -42,7 +42,7 @@ def on_scene_load_complete(load_result, scene_id, model, view):
     instrument = load_result.get('instrument', 'ZCAM')
     _set_band_names(load_result, view, instrument)
     view.set_instrument_presets(instrument)
-    view.panel_parameter_selection.set_use_dcs(instrument == 'PCAM')
+    view.panel_settings.set_use_dcs(instrument == 'PCAM')
     view.panel_image_editing.set_rois([], [], [])
     view.panel_spectral_view.clear_roi_spectra()
     view.panel_spectral_view.clear_plot()

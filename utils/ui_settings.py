@@ -66,7 +66,7 @@ class UISettings:
             )
         )
 
-        panel = view.panel_parameter_selection
+        panel = view.panel_settings
         sections = panel.section_states()
         panel.apply_section_states({
             key: self._value(f'sections/{key}', expanded, bool)
@@ -90,7 +90,7 @@ class UISettings:
         )
 
     def save(self, view):
-        panel = view.panel_parameter_selection
+        panel = view.panel_settings
         display = panel.display_preferences()
 
         self._settings.setValue('version', _SETTINGS_VERSION)
