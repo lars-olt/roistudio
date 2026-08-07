@@ -20,6 +20,8 @@ from sparc.utils.sel_writer import (
 from presets import INSTRUMENT_PRESETS
 
 _EXPORT_DPI = 150
+_ROI_LABEL_FONT_SIZE = 8
+_ROI_LABEL_PADDING = 0.2
 
 
 def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
@@ -254,7 +256,7 @@ def _mask_rect(mask):
 
 
 def export_context(view, model, rois_data, colors, color_names, color_manager):
-    """Export a context folder: SEL file + four annotated images + spectra plot."""
+    """Export a context folder with ROI data, annotated images, and spectra."""
     if not rois_data:
         view.show_status_message("No ROIs to export.")
         return
@@ -298,6 +300,14 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
             arr   = _render_bands(bands['r'], bands['g'], bands['b'], base_bands, dcs=bands['dcs'])
             if arr is not None:
                 _save_annotated(arr, rects, mpl_colors, output_path / f"{scene_id}_{label}.png")
+                if mode == 'RGB':
+                    _save_annotated(
+                        arr,
+                        rects,
+                        mpl_colors,
+                        output_path / f"{scene_id}_{label}_with_roi_names.png",
+                        roi_names=color_names,
+                    )
 
         spectra = np.array([r['spectrum'] for r in rois_data])
         stds    = np.array([r['std']      for r in rois_data])
@@ -387,20 +397,43 @@ def _render_bands(r_name, g_name, b_name, base_bands, dcs):
     return create_rgb_stretch(np.stack([r, g, b]))
 
 
-def _save_annotated(arr, rects, mpl_colors, filepath):
-    """Save a uint8 RGB array with colored ROI rectangles overlaid."""
+def _save_annotated(arr, rects, mpl_colors, filepath, roi_names=None):
+    """Save an RGB array with colored ROI rectangles and optional names overlaid."""
     fig, ax = plt.subplots(figsize=(12, 9), dpi=_EXPORT_DPI)
     fig.patch.set_facecolor('black')
     ax.set_facecolor('black')
     ax.imshow(arr)
     ax.axis('off')
     for i, (x, y, w, h) in enumerate(rects):
+        color = mpl_colors[i % len(mpl_colors)]
         ax.add_patch(mpatches.Rectangle(
             (x, y), w, h,
             linewidth=1.5,
-            edgecolor=mpl_colors[i % len(mpl_colors)],
+            edgecolor=color,
             facecolor='none',
         ))
+        if roi_names is not None and i < len(roi_names):
+            padding_points = _ROI_LABEL_FONT_SIZE * _ROI_LABEL_PADDING
+            ax.annotate(
+                str(roi_names[i]),
+                xy=(x, y),
+                xytext=(padding_points, padding_points),
+                textcoords='offset points',
+                color=color,
+                fontfamily='Arial',
+                fontsize=_ROI_LABEL_FONT_SIZE,
+                fontweight='normal',
+                horizontalalignment='left',
+                verticalalignment='bottom',
+                clip_on=False,
+                annotation_clip=False,
+                bbox={
+                    'boxstyle': f'square,pad={_ROI_LABEL_PADDING}',
+                    'facecolor': (20 / 255, 20 / 255, 20 / 255),
+                    'edgecolor': 'none',
+                    'alpha': 200 / 255,
+                },
+            )
     fig.savefig(filepath, bbox_inches='tight', pad_inches=0, dpi=_EXPORT_DPI)
     plt.close(fig)
 
