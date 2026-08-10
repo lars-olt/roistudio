@@ -93,6 +93,7 @@ class CanvasContainer(QWidget):
         self._drag_start_rect      = None
         self.hover_preview_enabled = False
         self.roi_labels_visible    = False
+        self.zoom_context_visible  = True
 
         # crop tool state - persists across tool switches, reset on image load
         self.crop_rect: Optional[QRectF] = None  # None = full frame
@@ -390,6 +391,9 @@ class CanvasContainer(QWidget):
         return outer, image
 
     def _draw_navigator(self, painter):
+        if not self.zoom_context_visible:
+            return
+
         geometry = self._navigator_geometry()
         if geometry is None:
             return
@@ -422,7 +426,7 @@ class CanvasContainer(QWidget):
         box_h = bar_height()
         box_w = QFontMetrics(font).horizontalAdvance("10.00x") + 2 * scaled(3)
         bottom = self.height() - scaled(10)
-        navigator = self._navigator_geometry()
+        navigator = self._navigator_geometry() if self.zoom_context_visible else None
         if navigator is not None:
             bottom = int(navigator[0].top()) - scaled(6)
         return QRect(self.width()  - box_w - scaled(10),
@@ -843,6 +847,10 @@ class CanvasContainer(QWidget):
         self.roi_labels_visible = visible
         self.update()
 
+    def set_zoom_context_visible(self, visible: bool):
+        self.zoom_context_visible = visible
+        self.update()
+
 
 class ImageCanvas(QWidget):
     """Holds the image pixmap and defines canvas dimensions."""
@@ -1102,6 +1110,10 @@ class DualCanvasContainer(QWidget):
     def set_roi_labels_visible(self, visible: bool):
         for c in (self.canvas_single, self.canvas_left, self.canvas_right):
             c.set_roi_labels_visible(visible)
+
+    def set_zoom_context_visible(self, visible: bool):
+        for c in (self.canvas_single, self.canvas_left, self.canvas_right):
+            c.set_zoom_context_visible(visible)
 
     @property
     def canvas(self):

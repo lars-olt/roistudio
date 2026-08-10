@@ -208,6 +208,13 @@ class View(QWidget):
         self.action_mode_metadata.triggered.connect(lambda: self.set_mode('roi_metadata'))
         self.menu_window.addAction(self.action_mode_metadata)
 
+        self.menu_window.addSeparator()
+        self.action_zoom_context = QAction("Zoom Context", self)
+        self.action_zoom_context.setCheckable(True)
+        self.action_zoom_context.setChecked(True)
+        self.action_zoom_context.setShortcut("Z")
+        self.menu_window.addAction(self.action_zoom_context)
+
     def set_instrument_presets(self, instrument: str):
         """Push instrument presets to the stretch bar overlays."""
         presets = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
@@ -243,6 +250,7 @@ class View(QWidget):
         self.panel_image_editing.split_screen_toggled.connect(self._on_split_screen_toggled)
 
         self.action_roi_labels.triggered.connect(self.set_roi_labels_visible)
+        self.action_zoom_context.triggered.connect(self.set_zoom_context_visible)
         self.action_fit_canvas.triggered.connect(self.panel_image_editing.fit_focused_canvas)
 
     def _splitter_stylesheet(self):
@@ -361,6 +369,10 @@ class View(QWidget):
     def set_roi_labels_visible(self, visible: bool):
         self.action_roi_labels.setChecked(visible)
         self.panel_image_editing.set_roi_labels_visible(visible)
+
+    def set_zoom_context_visible(self, visible: bool):
+        self.action_zoom_context.setChecked(visible)
+        self.panel_image_editing.set_zoom_context_visible(visible)
 
     def set_panel_ratios(self, *, left=None, upper=None):
         """Set relative splitter positions using values between zero and one."""

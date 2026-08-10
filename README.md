@@ -12,6 +12,7 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 | `R` | Rectangle tool |
 | `F` | Fit canvas to panel |
 | `S` | Toggle sync views |
+| `Z` | Toggle zoom context navigator |
 | `1` | Set all canvases to RGB |
 | `2` | Set all canvases to DCS |
 | `Escape` | Deselect ROI |
@@ -144,6 +145,8 @@ The floating overlay at the bottom of the canvas lets you select which bands to 
 <img width="258" height="99" alt="Screenshot of the band selector overlay with the preset dropdown open" src="https://github.com/user-attachments/assets/7ddb14a5-a0ec-488a-9c26-7e91104a2c12" />
 
 The **View** menu also provides **Set all RGB** and **Set all DCS** options to apply a stretch to all visible canvases at once.
+
+The zoom-level indicator is always visible. Use **Window > Zoom Context** (or `Z`) to show or hide the navigator thumbnail that appears when the scaled image is larger than its panel.
 
 ---
 

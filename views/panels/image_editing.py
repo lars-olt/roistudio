@@ -518,3 +518,6 @@ class ImageEditingPanel(QWidget):
 
     def set_roi_labels_visible(self, visible: bool):
         self.canvas_container.set_roi_labels_visible(visible)
+
+    def set_zoom_context_visible(self, visible: bool):
+        self.canvas_container.set_zoom_context_visible(visible)
