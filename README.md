@@ -10,11 +10,13 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 |----------|--------|
 | `V` | Selection tool |
 | `R` | Rectangle tool |
+| `G` | Set all canvases to RGB |
+| `D` | Set all canvases to DCS |
+| `1` | Show Scene Loading |
+| `2` | Show Settings |
+| `3` | Show ROI Metadata |
 | `F` | Fit canvas to panel |
-| `S` | Toggle sync views |
 | `Z` | Toggle zoom context navigator |
-| `1` | Set all canvases to RGB |
-| `2` | Set all canvases to DCS |
 | `Escape` | Deselect ROI |
 | `Delete` / `Backspace` | Delete selected ROI |
 | `Ctrl+S` | Export SEL |
@@ -242,7 +244,7 @@ Click the split screen button at the bottom of the toolbar to view left and righ
 
 <img width="1602" height="923" alt="Screenshot of split screen mode with left and right images and ROIs on both sides" src="https://github.com/user-attachments/assets/66d00f65-8c3c-44cc-8047-dc8b98d9b8f5" />
 
-In split screen mode, ROIs are shown on both cameras simultaneously. Drawing or editing an ROI on one side updates both. Use **View > Sync Views** (or `S`) to lock location, pan, and zoom between the two canvases.
+In split screen mode, ROIs are shown on both cameras simultaneously. Drawing or editing an ROI on one side updates both. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
 
 > [!Caution]
 > When you return to single screen mode, ROIs that were moved or resized in split screen will prompt a confirmation before redrawing.

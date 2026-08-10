@@ -177,8 +177,8 @@ class View(QWidget):
 
         self.menu_view.addSeparator()
         for mode, label, shortcut in (
-            ("RGB", "Set all RGB", "1"),
-            ("DCS", "Set all DCS", "2"),
+            ("RGB", "Set all RGB", "G"),
+            ("DCS", "Set all DCS", "D"),
         ):
             action = QAction(label, self)
             action.setShortcut(shortcut)
@@ -193,18 +193,21 @@ class View(QWidget):
         self.action_mode_scene = QAction("Scene Loading", self)
         self.action_mode_scene.setCheckable(True)
         self.action_mode_scene.setChecked(True)
+        self.action_mode_scene.setShortcut("1")
         self.action_mode_scene.triggered.connect(lambda: self.set_mode('scene_loading'))
         self.menu_window.addAction(self.action_mode_scene)
 
         self.action_mode_settings = QAction("Settings", self)
         self.action_mode_settings.setCheckable(True)
         self.action_mode_settings.setChecked(False)
+        self.action_mode_settings.setShortcut("2")
         self.action_mode_settings.triggered.connect(lambda: self.set_mode('settings'))
         self.menu_window.addAction(self.action_mode_settings)
 
         self.action_mode_metadata = QAction("ROI Metadata", self)
         self.action_mode_metadata.setCheckable(True)
         self.action_mode_metadata.setChecked(False)
+        self.action_mode_metadata.setShortcut("3")
         self.action_mode_metadata.triggered.connect(lambda: self.set_mode('roi_metadata'))
         self.menu_window.addAction(self.action_mode_metadata)
 
