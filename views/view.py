@@ -160,6 +160,7 @@ class View(QWidget):
         self.action_roi_labels = QAction("ROI Labels", self)
         self.action_roi_labels.setCheckable(True)
         self.action_roi_labels.setChecked(False)
+        self.action_roi_labels.setShortcut("L")
         self.menu_view.addAction(self.action_roi_labels)
 
         self.action_sync_views = QAction("Sync Views", self)
@@ -177,7 +178,7 @@ class View(QWidget):
 
         self.menu_view.addSeparator()
         for mode, label, shortcut in (
-            ("RGB", "Set all RGB", "G"),
+            ("RGB", "Set all RGB", "C"),
             ("DCS", "Set all DCS", "D"),
         ):
             action = QAction(label, self)
