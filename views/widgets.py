@@ -126,7 +126,7 @@ class ToolbarButton(QPushButton):
         super().changeEvent(event)
         from PyQt5.QtCore import QEvent
         if event.type() == QEvent.EnabledChange:
-            self.setCursor(Qt.PointingHandCursor if self.isEnabled() else Qt.ArrowCursor)
+            self.setCursor(Qt.PointingHandCursor)
 
     def enterEvent(self, event):
         self._hovered = True
