@@ -12,7 +12,7 @@ from utils.rendering import render_images
 from utils.paths import _get_config_path
 from presets import INSTRUMENT_PRESETS
 
-# How much non-active ROI outlines dim while the metadata panel is open.
+# How much non-active ROI visuals dim while the metadata panel is open.
 _METADATA_DIM = 0.4
 
 
@@ -318,11 +318,20 @@ class Controller(QObject):
 
     def _on_roi_metadata_activated(self, roi_index):
         self._metadata_active_index = roi_index
-        self._refresh_canvas_rois()
+        self._refresh_metadata_highlight()
 
     def _on_view_mode_changed(self, mode):
         self._view_mode = mode
+        self._refresh_metadata_highlight()
+
+    def _refresh_metadata_highlight(self):
         self._refresh_canvas_rois()
+        ix = self._metadata_active_index
+        active_index = (ix if self._view_mode == 'roi_metadata'
+                        and ix is not None
+                        and 0 <= ix < len(self._current_colors)
+                        else None)
+        self._view.panel_spectral_view.set_active_roi(active_index, _METADATA_DIM)
 
     def _on_roi_metadata_changed(self, roi_index, metadata):
         """Store metadata on its ROI for subsequent editing and export."""

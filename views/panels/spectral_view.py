@@ -25,6 +25,8 @@ class SpectralViewPanel(QWidget):
         self.y_max       = 0.4
         self.merge_spectra = True
         self.line_width  = 0.75
+        self.active_roi_index = None
+        self.active_roi_dim_factor = 0.4
         self.init_ui()
         Scale.changed.connect(self._apply_scale)
 
@@ -87,7 +89,7 @@ class SpectralViewPanel(QWidget):
             roi_data_list, color_list = self.roi_spectra_data
             for i, roi_data in enumerate(roi_data_list):
                 color = color_list[i] if i < len(color_list) else (255, 255, 255)
-                self._plot_roi(self.ax, roi_data, tuple(c / 255.0 for c in color))
+                self._plot_roi(self.ax, roi_data, self._display_color(i, color))
         self._fit_layout()
 
     def set_y_range(self, y_min, y_max):
@@ -107,6 +109,25 @@ class SpectralViewPanel(QWidget):
         if self.roi_spectra_data is not None:
             roi_data_list, color_list = self.roi_spectra_data
             self.plot_roi_spectra(roi_data_list, color_list)
+
+    def set_active_roi(self, roi_index, dim_factor=0.4):
+        """Highlight one spectrum by dimming all other stored ROI colors."""
+        roi_index = None if roi_index is None else int(roi_index)
+        dim_factor = max(0.0, min(1.0, float(dim_factor)))
+        if (roi_index == self.active_roi_index
+                and dim_factor == self.active_roi_dim_factor):
+            return
+        self.active_roi_index = roi_index
+        self.active_roi_dim_factor = dim_factor
+        if self.roi_spectra_data is not None:
+            roi_data_list, color_list = self.roi_spectra_data
+            self.plot_roi_spectra(roi_data_list, color_list)
+
+    def _display_color(self, roi_index, color):
+        color = tuple(c / 255.0 for c in color)
+        if self.active_roi_index is not None and roi_index != self.active_roi_index:
+            color = tuple(c * self.active_roi_dim_factor for c in color)
+        return color
 
     @staticmethod
     def _sort_spectrum(wavelengths, spectrum, std):
@@ -164,7 +185,7 @@ class SpectralViewPanel(QWidget):
         self.setup_plot_style()
         for i, roi_data in enumerate(roi_data_list):
             color = color_list[i] if i < len(color_list) else (255, 255, 255)
-            self._plot_roi(self.ax, roi_data, tuple(c / 255.0 for c in color))
+            self._plot_roi(self.ax, roi_data, self._display_color(i, color))
         self.canvas.draw()
 
     def plot_preview_spectrum_separate(self, wavelengths, reflectances,
@@ -176,7 +197,7 @@ class SpectralViewPanel(QWidget):
             roi_data_list, color_list = self.roi_spectra_data
             for i, roi_data in enumerate(roi_data_list):
                 color = color_list[i] if i < len(color_list) else (255, 255, 255)
-                self._plot_roi(self.ax, roi_data, tuple(c / 255.0 for c in color))
+                self._plot_roi(self.ax, roi_data, self._display_color(i, color))
 
         wls  = np.array(wavelengths, dtype=float)
         spec = np.array(reflectances, dtype=float)
