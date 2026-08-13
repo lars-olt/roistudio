@@ -154,8 +154,10 @@ class ImageEditingPanel(QWidget):
         self.run_button.clicked.connect(self.run_algorithm_signal.emit)
         t_layout.addWidget(self.run_button)
 
+        t_layout.addSpacing(scaled(4))
         self.loading_indicator = LoadingIndicator()
-        t_layout.addWidget(self.loading_indicator)
+        self.loading_indicator.setAccessibleName("Background activity in progress")
+        t_layout.addWidget(self.loading_indicator, 0, Qt.AlignHCenter)
 
         t_layout.addStretch()
 
@@ -249,9 +251,6 @@ class ImageEditingPanel(QWidget):
         """)
 
         self.update_cursor()
-
-    def set_science_notes(self, notes: str):
-        """Retained for callers now that the former notes bar is removed."""
 
     # ------------------------------------------------------------------
     # Overlays

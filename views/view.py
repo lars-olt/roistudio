@@ -409,7 +409,7 @@ class View(QWidget):
         self.panel_status.show_status_message(message)
 
     def set_science_notes(self, notes: str):
-        self.panel_image_editing.set_science_notes(notes)
+        self.panel_status.set_science_notes(notes)
 
     def add_scene_thumbnail(self, scene_id, pixmap, filename, complete=False, sort_key=None):
         self.panel_image_selection.add_thumbnail(scene_id, pixmap, filename, complete, sort_key)

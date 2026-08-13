@@ -181,7 +181,7 @@ Switch to the **Settings** panel via **Window > Settings** to access the algorit
 
 Press **Run** to start the SPARC pipeline. Progress is shown in the status bar at the bottom of the window.
 > [!Tip]
-> When any intensive code is running, a spinning filter wheel will appear next to the **Run** button.
+> When any intensive code is running, a spinning filter wheel will appear below the upper toolbar buttons.
 
 <img width="1602" height="923" alt="Screenshot of the canvas after SPARC has run, with colored ROI rectangles overlaid on the image" src="https://github.com/user-attachments/assets/5c788b53-92f4-4f95-93de-2852010b356e" />
 After running SPARC on a scene, you should see ROIs drawn on the canvas, and corresponding spectra plotted in the spectra view panel.

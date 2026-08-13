@@ -56,7 +56,7 @@ def _parse_args():
                         help='Instrument (default: ZCAM)')
     parser.add_argument('roi_file',     nargs='?', help='Optional .sel or .fits ROI file to load after the scene')
     parser.add_argument('--notes',      default=None,
-                        help='Observation-level science notes shown in the toolbar')
+                        help='Observation-level science notes shown in the status panel')
     add_ui_arguments(parser)
     # strip Qt's own args before parsing so --style etc. don't confuse argparse
     args, _ = parser.parse_known_args()

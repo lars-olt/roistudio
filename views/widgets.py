@@ -26,7 +26,7 @@ class LoadingIndicator(QLabel):
         Scale.changed.connect(self._apply_scale)
 
     def _apply_scale(self):
-        sz = physical(22)
+        sz = physical(26)
         self.setFixedSize(sz, sz)
         self.movie.setScaledSize(QSize(sz, sz))
         self.setStyleSheet(
