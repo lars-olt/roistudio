@@ -50,20 +50,20 @@ class LoadingIndicator(QLabel):
 
 
 class ToolbarButton(QPushButton):
-    """Toolbar button with normal, hover, and selected icon states."""
+    """Toolbar button with hover and optional selected icon states."""
 
-    def __init__(self, normal_icon_path, selected_icon_path, hover_icon_path=None, selected_hover_icon_path=None, parent=None):
+    def __init__(self, normal_icon_path, selected_icon_path=None, hover_icon_path=None, selected_hover_icon_path=None, parent=None):
         super().__init__(parent)
         if hover_icon_path is None:
             stem, ext       = normal_icon_path.rsplit('.', 1)
             hover_icon_path = f"{stem}_hover.{ext}"
         self._path_normal         = normal_icon_path
-        self._path_selected       = selected_icon_path
+        self._path_selected       = selected_icon_path or normal_icon_path
         self._path_hover          = hover_icon_path
         self._path_selected_hover = selected_hover_icon_path
         self.is_selected = False
         self._hovered    = False
-        self.setCheckable(True)
+        self.setCheckable(selected_icon_path is not None)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(
             "QPushButton { border: none; background-color: transparent; "
@@ -107,7 +107,7 @@ class ToolbarButton(QPushButton):
         self.update_icon()
 
     def update_icon(self):
-        selected = self.is_selected or self.isChecked()
+        selected = self.isCheckable() and (self.is_selected or self.isChecked())
         if self._hovered and selected and self.selected_hover_icon:
             self.setIcon(self.selected_hover_icon)
         elif self._hovered and not selected:
@@ -118,8 +118,8 @@ class ToolbarButton(QPushButton):
             self.setIcon(self.normal_icon)
 
     def set_selected(self, selected):
-        self.is_selected = selected
-        self.setChecked(selected)
+        self.is_selected = selected if self.isCheckable() else False
+        self.setChecked(self.is_selected)
         self.update_icon()
 
     def changeEvent(self, event):

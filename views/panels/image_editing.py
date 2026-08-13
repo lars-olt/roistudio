@@ -1,13 +1,12 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QPointF, QRectF, QSize
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QLabel, QComboBox, QFrame)
-from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap, QFontMetrics, QFont
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap
 
 from colors import Colors
 from utils.paths import _resource_path
 from utils.scale import Scale, physical, scaled, scaled_font
 from ..canvas import DualCanvasContainer
-from ..widgets import ToolbarButton, LoadingIndicator, BandComboBox, ColorSwatchGrid
+from ..widgets import ToolbarButton, LoadingIndicator, ColorSwatchGrid
 from .stretch_bar import StretchBar
 
 _CURSOR_NATIVE_W = 32
@@ -65,32 +64,6 @@ class _ActiveColorSwatch(QWidget):
             self.clicked.emit()
 
 
-class _ScienceNotes(QLabel):
-    """Right-aligned toolbar label for science notes."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.hide()
-
-    def set_notes(self, notes: str):
-        notes = ' '.join((notes or '').split())   # collapse newlines and repeated whitespace
-        self.setText(notes)
-        self.setToolTip(notes)
-        self.setVisible(bool(notes))
-
-    def minimumSizeHint(self):
-        # A small floor lets the layout squeeze the label freely - the full
-        # text elides rather than forcing a wider window.
-        return QSize(scaled(30), super().minimumSizeHint().height())
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setPen(self.palette().color(self.foregroundRole()))
-        elided = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, self.width())
-        painter.drawText(self.rect(), int(self.alignment()), elided)
-
-
 class ImageEditingPanel(QWidget):
     """Image canvas panel with toolbar and per-camera band selector overlays."""
 
@@ -124,24 +97,6 @@ class ImageEditingPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.setLayout(layout)
-
-        # Top bar
-        self.top_bar = QWidget()
-        self.top_bar.setStyleSheet(f"background-color: {Colors.PANEL_ACCENT};")
-        tb_layout = QHBoxLayout()
-        self.top_bar.setLayout(tb_layout)
-
-        self.run_button = QPushButton("Run")
-        self.run_button.clicked.connect(self.run_algorithm_signal.emit)
-        tb_layout.addWidget(self.run_button)
-
-        self.loading_indicator = LoadingIndicator()
-        tb_layout.addWidget(self.loading_indicator)
-        tb_layout.addStretch()
-
-        self._science_notes = _ScienceNotes()
-        tb_layout.addWidget(self._science_notes)
-        layout.addWidget(self.top_bar)
 
         # Content area - side toolbar + canvas
         content  = QWidget()
@@ -190,6 +145,17 @@ class ImageEditingPanel(QWidget):
         self._color_swatch = _ActiveColorSwatch()
         self._color_swatch.clicked.connect(self._on_active_color_clicked)
         t_layout.addWidget(self._color_swatch)
+
+        self.run_button = ToolbarButton(
+            _resource_path("graphics/toolbar_run.png"),
+            hover_icon_path=_resource_path("graphics/toolbar_run_hover.png"),
+        )
+        self.run_button.setToolTip("Run SPARC")
+        self.run_button.clicked.connect(self.run_algorithm_signal.emit)
+        t_layout.addWidget(self.run_button)
+
+        self.loading_indicator = LoadingIndicator()
+        t_layout.addWidget(self.loading_indicator)
 
         t_layout.addStretch()
 
@@ -264,10 +230,6 @@ class ImageEditingPanel(QWidget):
         self._overlay_right.set_focused(self._is_split and self._focused_camera == 'right')
 
     def _apply_scale(self):
-        tb = self.top_bar.layout()
-        tb.setContentsMargins(scaled(8), scaled(4), scaled(8), scaled(4))
-        tb.setSpacing(scaled(8))
-
         btn_w = physical(46)
         self.toolbar.setFixedWidth(btn_w + scaled(8))
         self.toolbar.layout().setContentsMargins(0, scaled(4), 0, scaled(4))
@@ -286,24 +248,10 @@ class ImageEditingPanel(QWidget):
             }}
         """)
 
-        self.run_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {Colors.ACCENT}; color: white;
-                border: none; border-radius: {scaled(3)}px;
-                padding: {scaled(2)}px {scaled(10)}px;
-                font-weight: bold; font-size: {scaled_font(9)}pt;
-            }}
-            QPushButton:hover   {{ background-color: {Colors.ACCENT_HOVER}; }}
-            QPushButton:pressed {{ background-color: {Colors.ACCENT_PRESSED}; }}
-        """)
-        self._science_notes.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; font-size: {scaled_font(9)}pt; font-style: italic;"
-        )
         self.update_cursor()
 
     def set_science_notes(self, notes: str):
-        """Show observation notes in the top bar, or hide them when empty."""
-        self._science_notes.set_notes(notes)
+        """Retained for callers now that the former notes bar is removed."""
 
     # ------------------------------------------------------------------
     # Overlays
