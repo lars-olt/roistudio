@@ -140,6 +140,10 @@ if __name__ == '__main__':
     shortcut_f.setContext(Qt.ApplicationShortcut)
     shortcut_f.activated.connect(view.panel_image_editing.fit_focused_canvas)
 
+    shortcut_m = QShortcut(QKeySequence(Qt.Key_M), view)
+    shortcut_m.setContext(Qt.ApplicationShortcut)
+    shortcut_m.activated.connect(view.panel_settings.chk_merge_spectra.toggle)
+
     view.show()
     QTimer.singleShot(0, view.ensure_visible_on_screen)
     Scale.set_window(view.windowHandle())
