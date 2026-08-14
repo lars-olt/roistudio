@@ -50,7 +50,7 @@
     {
       "key": "FLOAT",
       "label": "Float",
-      "options": ["float", "in-place"],
+      "options": ["float", "in-place", "unclear"],
       "visible_when": {"FEATURE": ["rock"]}
     },
     {
