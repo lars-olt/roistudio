@@ -1,5 +1,5 @@
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication, QPushButton
 import matplotlib
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 import numpy as np
 
 from colors import Colors
-from utils.scale import Scale, scaled_font
+from utils.scale import Scale, scaled, scaled_font
 
 
 def _dpr():
@@ -27,6 +27,7 @@ class SpectralViewPanel(QWidget):
         self.line_width  = 0.75
         self.active_roi_index = None
         self.active_roi_dim_factor = 0.4
+        self._hidden_roi_indices = set()
         self.init_ui()
         Scale.changed.connect(self._apply_scale)
 
@@ -46,6 +47,13 @@ class SpectralViewPanel(QWidget):
         self.setup_plot_style()
 
         layout.addWidget(self.canvas)
+
+        self.show_all_spectra_button = QPushButton("Show all spectra", self)
+        self.show_all_spectra_button.setCursor(Qt.PointingHandCursor)
+        self.show_all_spectra_button.setAccessibleName("Show all hidden spectra")
+        self.show_all_spectra_button.clicked.connect(self.show_all_spectra)
+        self.show_all_spectra_button.hide()
+        self._style_show_all_button()
 
         # Defer the first tight_layout until after the widget has its real
         # size from the layout pass - avoids the clipped-on-load issue.
@@ -76,10 +84,12 @@ class SpectralViewPanel(QWidget):
                 self.figure.tight_layout(pad=1.5)
         except Exception:
             pass
+        self._position_show_all_button()
         self.canvas.draw_idle()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._position_show_all_button()
         self._fit_layout()
 
     def _apply_scale(self):
@@ -88,9 +98,54 @@ class SpectralViewPanel(QWidget):
         if self.roi_spectra_data is not None:
             roi_data_list, color_list = self.roi_spectra_data
             for i, roi_data in enumerate(roi_data_list):
+                if i in self._hidden_roi_indices:
+                    continue
                 color = color_list[i] if i < len(color_list) else (255, 255, 255)
                 self._plot_roi(self.ax, roi_data, self._display_color(i, color))
+        self._style_show_all_button()
         self._fit_layout()
+
+    def _style_show_all_button(self):
+        self.show_all_spectra_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT}; color: white;
+                border: none;
+                border-radius: {scaled(3)}px;
+                padding: {scaled(2)}px {scaled(10)}px;
+                font-weight: bold; font-size: {scaled_font(9)}pt;
+            }}
+            QPushButton:hover   {{ background-color: {Colors.ACCENT_HOVER}; }}
+            QPushButton:pressed {{ background-color: {Colors.ACCENT_PRESSED}; }}
+        """)
+        self.show_all_spectra_button.adjustSize()
+        self._position_show_all_button()
+
+    def _position_show_all_button(self):
+        button = self.show_all_spectra_button
+        inset = scaled(20)
+        axes = self.ax.get_position()
+        graph_right = self.canvas.x() + round(axes.x1 * self.canvas.width())
+        graph_top = self.canvas.y() + round((1.0 - axes.y1) * self.canvas.height())
+        button.move(
+            max(0, graph_right - button.width() - inset),
+            max(0, graph_top + inset),
+        )
+        if not button.isHidden():
+            button.raise_()
+
+    def _sync_show_all_button(self):
+        count = len(self._hidden_roi_indices)
+        self.show_all_spectra_button.setToolTip(
+            f"Restore {count} hidden {'spectrum' if count == 1 else 'spectra'}"
+        )
+        self.show_all_spectra_button.setVisible(count > 0)
+        self._position_show_all_button()
+
+    def _redraw_roi_spectra(self):
+        if self.roi_spectra_data is None:
+            return
+        roi_data_list, color_list = self.roi_spectra_data
+        self.plot_roi_spectra(roi_data_list, color_list)
 
     def set_y_range(self, y_min, y_max):
         self.y_min = y_min
@@ -128,6 +183,44 @@ class SpectralViewPanel(QWidget):
         if self.active_roi_index is not None and roi_index != self.active_roi_index:
             color = tuple(c * self.active_roi_dim_factor for c in color)
         return color
+
+    def hide_spectrum(self, roi_index):
+        """Hide one ROI spectrum without changing its ROI or stored data."""
+        count = len(self.roi_spectra_data[0]) if self.roi_spectra_data else 0
+        roi_index = int(roi_index)
+        if not 0 <= roi_index < count or roi_index in self._hidden_roi_indices:
+            return
+        self._hidden_roi_indices.add(roi_index)
+        self._sync_show_all_button()
+        self._redraw_roi_spectra()
+
+    def show_spectrum(self, roi_index):
+        roi_index = int(roi_index)
+        if roi_index not in self._hidden_roi_indices:
+            return
+        self._hidden_roi_indices.remove(roi_index)
+        self._sync_show_all_button()
+        self._redraw_roi_spectra()
+
+    def is_spectrum_hidden(self, roi_index):
+        return int(roi_index) in self._hidden_roi_indices
+
+    def show_all_spectra(self):
+        if not self._hidden_roi_indices:
+            return
+        self._hidden_roi_indices.clear()
+        self._sync_show_all_button()
+        self._redraw_roi_spectra()
+
+    def roi_removed(self, roi_index):
+        """Keep transient hidden indices aligned after an ROI is deleted."""
+        roi_index = int(roi_index)
+        self._hidden_roi_indices = {
+            i - 1 if i > roi_index else i
+            for i in self._hidden_roi_indices
+            if i != roi_index
+        }
+        self._sync_show_all_button()
 
     @staticmethod
     def _sort_spectrum(wavelengths, spectrum, std):
@@ -181,9 +274,13 @@ class SpectralViewPanel(QWidget):
 
     def plot_roi_spectra(self, roi_data_list, color_list):
         self.roi_spectra_data = (roi_data_list, color_list)
+        self._hidden_roi_indices.intersection_update(range(len(roi_data_list)))
+        self._sync_show_all_button()
         self.ax.clear()
         self.setup_plot_style()
         for i, roi_data in enumerate(roi_data_list):
+            if i in self._hidden_roi_indices:
+                continue
             color = color_list[i] if i < len(color_list) else (255, 255, 255)
             self._plot_roi(self.ax, roi_data, self._display_color(i, color))
         self.canvas.draw()
@@ -196,6 +293,8 @@ class SpectralViewPanel(QWidget):
         if self.roi_spectra_data is not None:
             roi_data_list, color_list = self.roi_spectra_data
             for i, roi_data in enumerate(roi_data_list):
+                if i in self._hidden_roi_indices:
+                    continue
                 color = color_list[i] if i < len(color_list) else (255, 255, 255)
                 self._plot_roi(self.ax, roi_data, self._display_color(i, color))
 
@@ -219,6 +318,8 @@ class SpectralViewPanel(QWidget):
 
     def clear_roi_spectra(self):
         self.roi_spectra_data = None
+        self._hidden_roi_indices.clear()
+        self._sync_show_all_button()
 
     def clear_plot(self):
         self.ax.clear()

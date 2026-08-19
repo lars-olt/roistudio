@@ -411,6 +411,7 @@ class ImageEditingPanel(QWidget):
         self._color_swatch.set_color(color)
 
     def _on_active_color_clicked(self):
+        self._swatch_grid.set_spectrum_action(False)
         self._swatch_grid.show_at(
             self._color_swatch.mapToGlobal(
                 self._color_swatch.rect().bottomLeft()

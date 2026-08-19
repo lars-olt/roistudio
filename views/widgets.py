@@ -2,7 +2,8 @@ from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QRectF
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
-from PyQt5.QtGui import QIcon, QMovie, QPainter, QPen, QPixmap, QColor, QDrag
+from PyQt5.QtGui import (QIcon, QMovie, QPainter, QPainterPath, QPen,
+                         QPixmap, QColor, QDrag)
 
 from colors import Colors
 from utils.paths import _resource_path
@@ -445,19 +446,33 @@ class ColorSwatchButton(QWidget):
 
 class ColorSwatchGrid(QFrame):
     """
-    Floating palette grid for picking ROI colors.
+    Floating palette for picking ROI colors and acting on a specific ROI.
     Emits color_selected when a swatch is clicked, then hides itself.
     In-use colors are shown dimmed but remain selectable.
     """
 
     color_selected = pyqtSignal(tuple, str)  # (color, name)
+    spectrum_action_requested = pyqtSignal()
 
     _COLS = 8
 
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Popup)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setObjectName("roiContextPopup")
+        self._layout = QVBoxLayout()
+        self.setLayout(self._layout)
+
         self._grid = QGridLayout()
-        self.setLayout(self._grid)
+        self._layout.addLayout(self._grid)
+
+        self._spectrum_action = QPushButton("Hide spectrum")
+        self._spectrum_action.setCursor(Qt.PointingHandCursor)
+        self._spectrum_action.setAccessibleName("Change spectrum visibility")
+        self._spectrum_action.clicked.connect(self._on_spectrum_action_clicked)
+        self._spectrum_action.hide()
+        self._layout.addWidget(self._spectrum_action)
+
         self._palette       = []
         self._in_use_names  = []
         self._selected_name = None
@@ -466,17 +481,48 @@ class ColorSwatchGrid(QFrame):
 
     def _apply_scale(self):
         self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {Colors.PANEL_BACKGROUND};
-                border: 1px solid {Colors.PANEL_ACCENT};
-                border-radius: {scaled(4)}px;
+            QFrame#roiContextPopup {{
+                background: transparent;
+                border: none;
             }}
         """)
         m = scaled(6)
-        self._grid.setContentsMargins(m, m, m, m)
+        self._layout.setContentsMargins(m, m, m, m)
+        self._layout.setSpacing(scaled(5))
+        self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setSpacing(scaled(3))
+        self._spectrum_action.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.SUBTLE_PANEL_ACCENT};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.PANEL_ACCENT};
+                border-radius: {scaled(3)}px;
+                padding: {scaled(4)}px {scaled(8)}px;
+                font-size: {scaled_font(9)}pt;
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.PANEL_ACCENT};
+                border-color: {Colors.ACCENT};
+            }}
+            QPushButton:pressed {{ background-color: {Colors.DEFAULT_FEATURE}; }}
+        """)
         # Swatches resize from Scale.changed; update the containing frame here.
         self.adjustSize()
+
+    def paintEvent(self, event):
+        """Paint the same antialiased rounded edge used by the preset bar."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QPainterPath()
+        path.addRoundedRect(rect, scaled(3), scaled(3))
+        painter.setClipPath(path)
+        painter.fillPath(path, QColor(Colors.PANEL_BACKGROUND))
+        painter.setClipping(False)
+        painter.setPen(QPen(QColor(Colors.PANEL_ACCENT), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(path)
+        painter.end()
 
     def populate(self, palette, in_use_names, selected_name=None):
         """Rebuild the grid from a (color, name) palette list."""
@@ -502,6 +548,18 @@ class ColorSwatchGrid(QFrame):
 
     def _on_swatch_clicked(self, color, name):
         self.color_selected.emit(color, name)
+        self.hide()
+
+    def set_spectrum_action(self, visible, spectrum_hidden=False):
+        """Configure the per-ROI spectrum action shown below the swatches."""
+        text = "Show spectrum" if spectrum_hidden else "Hide spectrum"
+        self._spectrum_action.setText(text)
+        self._spectrum_action.setToolTip(text)
+        self._spectrum_action.setVisible(bool(visible))
+        self.adjustSize()
+
+    def _on_spectrum_action_clicked(self):
+        self.spectrum_action_requested.emit()
         self.hide()
 
     def show_at(self, pos):

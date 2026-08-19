@@ -104,6 +104,9 @@ class Controller(QObject):
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)
         panel.roi_right_clicked.connect(self._on_roi_right_clicked)
         panel._swatch_grid.color_selected.connect(self._on_color_selected)
+        panel._swatch_grid.spectrum_action_requested.connect(
+            self._on_spectrum_action_requested
+        )
 
         self._view.panel_roi_metadata.metadata_changed.connect(self._on_roi_metadata_changed)
         self._view.panel_roi_metadata.roi_activated.connect(self._on_roi_metadata_activated)
@@ -265,6 +268,7 @@ class Controller(QObject):
             name  = self._current_color_names.pop(roi_index)
             self.color_manager.recycle(color, name)
             self._current_rois_data.pop(roi_index)
+            self._view.panel_spectral_view.roi_removed(roi_index)
             self._update_roi_view()
             self._view.set_export_enabled(bool(self._current_rois_data))
             self._view.show_status_message(f"ROI {roi_index + 1} deleted")
@@ -350,7 +354,9 @@ class Controller(QObject):
         )
 
     def _on_roi_right_clicked(self, roi_index, global_pos):
-        """Open the palette to recolor an existing ROI."""
+        """Open the palette and spectrum action for an existing ROI."""
+        if not 0 <= roi_index < len(self._current_rois_data):
+            return
         self._pending_recolor_index = roi_index
         panel = self._view.panel_image_editing
         panel.set_swatch_palette(
@@ -358,7 +364,26 @@ class Controller(QObject):
             in_use_names  = self._current_color_names,
             selected_name = self._current_color_names[roi_index],
         )
+        panel._swatch_grid.set_spectrum_action(
+            True,
+            self._view.panel_spectral_view.is_spectrum_hidden(roi_index),
+        )
         panel._swatch_grid.show_at(global_pos)
+
+    def _on_spectrum_action_requested(self):
+        roi_index = self._pending_recolor_index
+        self._pending_recolor_index = None
+        if roi_index is None or not 0 <= roi_index < len(self._current_rois_data):
+            return
+        panel = self._view.panel_spectral_view
+        if panel.is_spectrum_hidden(roi_index):
+            panel.show_spectrum(roi_index)
+            action = "shown"
+        else:
+            panel.hide_spectrum(roi_index)
+            action = "hidden"
+        name = self._current_color_names[roi_index]
+        self._view.show_status_message(f"Spectrum for {name} {action}")
 
     def _on_color_selected(self, color, name):
         """Handle a swatch pick - either recolor an ROI or set the next color."""
@@ -428,6 +453,7 @@ class Controller(QObject):
     def _apply_loaded_rois(self, outcome):
         if outcome is None:
             return
+        self._view.panel_spectral_view.show_all_spectra()
         self._current_rois_data, self._current_colors, self._current_color_names = outcome
         self._update_roi_view()
         self._view.set_export_enabled(True)
