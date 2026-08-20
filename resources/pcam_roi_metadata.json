@@ -16,8 +16,10 @@
           "thick dust on rock",
           "RAT brushed rock",
           "RAT brushed rock average",
+          "RAT brushed blueberries",
           "RAT abraded rock",
           "RAT abraded rock average",
+          "RAT abraded blueberries",
           "RAT tailings",
           "broken rock surface",
           "clast/grain within rock",
@@ -34,6 +36,7 @@
           "disturbed soil in wheel track",
           "disturbed soil (not in wheel track)",
           "bedform",
+          "bedform (with blueberries)",
           "soil on rover hardware",
           "thick dust on soil",
           "compressed by IDD"
@@ -43,7 +46,10 @@
           "blueberries (individual berries)",
           "blueberries (on rock)",
           "blueberries (on soil)",
-          "pebbles (on soil)"
+          "pebbles (on soil)",
+          "pebbles (on rock)",
+          "blueberries and pebbles (on soil)",
+          "blueberries and pebbles (on rock)"
         ]
       }
     },
