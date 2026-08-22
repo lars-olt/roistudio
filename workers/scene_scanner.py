@@ -24,7 +24,7 @@ from sparc.utils.pancam_helpers import (
 
 
 _PCAM_FILENAME_RE = re.compile(
-    r'^\d P \d{9} [A-Z]{3} [A-Z0-9]{4} [A-Z]\d{4} [LR]\d [A-Z0-9].+$',
+    r'^\d P \d{9} [A-Z]{3} [A-Z0-9_#]{4} [A-Z]\d{4} [LR]\d [A-Z0-9].+$',
     re.IGNORECASE | re.VERBOSE,
 )
 
