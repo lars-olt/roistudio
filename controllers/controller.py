@@ -10,6 +10,7 @@ from .color_manager import ColorManager
 from . import scene_callbacks, sparc_callbacks, roi_controller, sel_controller
 from utils.rendering import render_images
 from utils.paths import _get_config_path
+from roi_groups import group_roi_regions, class_index_for_region
 from presets import INSTRUMENT_PRESETS
 
 # How much non-active ROI visuals dim while the metadata panel is open.
@@ -27,8 +28,12 @@ class Controller(QObject):
         self._current_rois_data = []
         self._current_colors    = []
         self._current_color_names = []
+        self._selection_data          = []
+        self._selection_colors        = []
+        self._selection_names         = []
         self._is_split_screen         = False
-        self._split_screen_rois_dirty = False
+        self._split_pair_color_name   = None
+        self._split_pair_eyes         = set()
         self._pending_recolor_index   = None  # ROI index being recolored, or None for the next color
         self._view_mode               = 'scene_loading'
         self._metadata_active_index   = None  # ROI highlighted by the metadata panel
@@ -103,6 +108,9 @@ class Controller(QObject):
         panel.split_screen_toggled.connect(self._on_split_screen_toggled)
         panel.rgb_bands_changed.connect(self._on_rgb_bands_changed)
         panel.roi_right_clicked.connect(self._on_roi_right_clicked)
+        panel.active_color_palette_requested.connect(
+            self._on_active_color_palette_requested
+        )
         panel._swatch_grid.color_selected.connect(self._on_color_selected)
         panel._swatch_grid.spectrum_action_requested.connect(
             self._on_spectrum_action_requested
@@ -154,7 +162,11 @@ class Controller(QObject):
         self._current_rois_data       = []
         self._current_colors          = []
         self._current_color_names     = []
-        self._split_screen_rois_dirty = False
+        self._selection_data          = []
+        self._selection_colors        = []
+        self._selection_names         = []
+        self._split_pair_color_name   = None
+        self._split_pair_eyes         = set()
         self._pending_recolor_index   = None
         self._metadata_active_index   = None
         self._exposure                = 1.0
@@ -206,6 +218,8 @@ class Controller(QObject):
 
     def _on_sparc_complete(self, result):
         try:
+            self._split_pair_color_name = None
+            self._split_pair_eyes = set()
             # reserve colors already in use so new ROIs get distinct colors
             self.color_manager.reserve(self._current_color_names)
             outcome = sparc_callbacks.on_sparc_complete(
@@ -254,24 +268,63 @@ class Controller(QObject):
             self._current_rois_data.append(roi_data)
             self._current_colors.append(color)
             self._current_color_names.append(name)
+            self._update_split_color_cycle(name, camera)
             self._update_roi_view()
             self._view.set_export_enabled(True)
             self._view.show_status_message("ROI created")
         except Exception as e:
             self._view.show_status_message(f"Error creating ROI: {e}")
 
-    def _on_roi_deleted(self, roi_index):
+    def _on_roi_deleted(self, roi_index, camera):
         if not (0 <= roi_index < len(self._current_rois_data)):
             return
         try:
-            color = self._current_colors.pop(roi_index)
-            name  = self._current_color_names.pop(roi_index)
-            self.color_manager.recycle(color, name)
-            self._current_rois_data.pop(roi_index)
-            self._view.panel_spectral_view.roi_removed(roi_index)
+            name = self._current_color_names[roi_index]
+            color = self._current_colors[roi_index]
+            class_index = class_index_for_region(
+                group_roi_regions(
+                    self._current_rois_data,
+                    self._current_colors,
+                    self._current_color_names,
+                ),
+                roi_index,
+            )
+
+            removed_region = camera == 'single'
+            if camera in {'left', 'right'}:
+                roi = dict(self._current_rois_data[roi_index])
+                roi[f'{camera}_rect'] = None
+                if roi.get('left_rect') is None and roi.get('right_rect') is None:
+                    removed_region = True
+                else:
+                    load_result = self._model.sparc_load_result
+                    spec_data = roi_controller.spectrum_data(
+                        roi.get('left_rect'), roi.get('right_rect'),
+                        load_result, self._get_instrument_config(),
+                        self.sparc_controller, self._has_dual_cubes(),
+                    )
+                    roi['roi'] = roi_controller.canvas_rect(
+                        roi, load_result.get('instrument', 'ZCAM')
+                    )
+                    self._current_rois_data[roi_index] = {**roi, **spec_data}
+
+            if removed_region:
+                self._current_colors.pop(roi_index)
+                self._current_color_names.pop(roi_index)
+                self._current_rois_data.pop(roi_index)
+                if name not in self._current_color_names:
+                    self.color_manager.recycle(color, name)
+                    if class_index is not None:
+                        self._view.panel_spectral_view.roi_removed(class_index)
+
             self._update_roi_view()
             self._view.set_export_enabled(bool(self._current_rois_data))
-            self._view.show_status_message(f"ROI {roi_index + 1} deleted")
+            if camera in {'left', 'right'}:
+                self._view.show_status_message(
+                    f"{name} region removed from {camera} eye"
+                )
+            else:
+                self._view.show_status_message(f"{name} region deleted")
         except Exception as e:
             self._view.show_status_message(f"Error deleting ROI: {e}")
 
@@ -287,24 +340,65 @@ class Controller(QObject):
                 self.sparc_controller,
                 self._has_dual_cubes(),
             )
-            if self._is_split_screen:
-                self._split_screen_rois_dirty = True
-            self._view.panel_spectral_view.plot_roi_spectra(
-                self._current_rois_data, self._current_colors
-            )
+            # The canvas has already applied this geometry interactively. A
+            # full refresh would call CanvasContainer.set_rois(), which clears
+            # its selected index and makes the resize handles disappear on
+            # mouse release. Geometry edits do not change class membership or
+            # eye coverage, so only the aggregate spectral data needs refresh.
+            self._update_roi_view(refresh_canvas=False, refresh_metadata=False)
         except Exception as e:
             self._view.show_status_message(f"Error updating ROI: {e}")
 
-    def _update_roi_view(self):
-        self._view.panel_roi_metadata.set_rois(
-            self._current_rois_data, self._current_colors, self._current_color_names,
-            instrument=self._model.instrument,
-        )
-        self._refresh_canvas_rois()
+    def _update_roi_view(self, refresh_canvas=True, refresh_metadata=True):
+        self._rebuild_selection_data()
+        if refresh_metadata:
+            self._view.panel_roi_metadata.set_rois(
+                self._selection_data, self._selection_colors,
+                self._selection_names, instrument=self._model.instrument,
+            )
+        if refresh_canvas:
+            self._refresh_canvas_rois()
         self._view.panel_spectral_view.plot_roi_spectra(
-            self._current_rois_data, self._current_colors
+            self._selection_data, self._selection_colors
         )
         self._refresh_swatch()
+
+    def _rebuild_selection_data(self):
+        """Aggregate same-color region geometry, metadata, and spectra."""
+        groups = group_roi_regions(
+            self._current_rois_data,
+            self._current_colors,
+            self._current_color_names,
+        )
+        load_result = self._model.sparc_load_result
+        instrument_config = self._get_instrument_config() if load_result is not None else {}
+        selection_data = []
+        for group in groups:
+            left_rects = group['left_rects'] or None
+            right_rects = group['right_rects'] or None
+            spec_data = (
+                roi_controller.spectrum_data(
+                    left_rects, right_rects, load_result, instrument_config,
+                    self.sparc_controller, self._has_dual_cubes(),
+                ) if load_result is not None else {}
+            )
+            instrument = (load_result or {}).get('instrument', self._model.instrument)
+            geometry = {
+                'left_rect': group['left_rects'][0] if group['left_rects'] else None,
+                'right_rect': group['right_rects'][0] if group['right_rects'] else None,
+            }
+            selection_data.append({
+                'roi': roi_controller.canvas_rect(geometry, instrument),
+                **geometry,
+                'left_rects': group['left_rects'],
+                'right_rects': group['right_rects'],
+                'metadata': group['metadata'],
+                'region_count': len(group['regions']),
+                **spec_data,
+            })
+        self._selection_data = selection_data
+        self._selection_colors = [group['color'] for group in groups]
+        self._selection_names = [group['name'] for group in groups]
 
     def _refresh_canvas_rois(self):
         self._view.panel_image_editing.set_rois(
@@ -315,10 +409,15 @@ class Controller(QObject):
         """Return ROI colors, dimming inactive outlines in metadata mode."""
         colors = self._current_colors
         ix     = self._metadata_active_index
-        if self._view_mode != 'roi_metadata' or ix is None or not (0 <= ix < len(colors)):
+        if (self._view_mode != 'roi_metadata' or ix is None
+                or not (0 <= ix < len(self._selection_names))):
             return colors
-        return [c if i == ix else tuple(int(v * _METADATA_DIM) for v in c)
-                for i, c in enumerate(colors)]
+        active_name = self._selection_names[ix]
+        return [
+            color if self._current_color_names[i] == active_name
+            else tuple(int(v * _METADATA_DIM) for v in color)
+            for i, color in enumerate(colors)
+        ]
 
     def _on_roi_metadata_activated(self, roi_index):
         self._metadata_active_index = roi_index
@@ -333,14 +432,18 @@ class Controller(QObject):
         ix = self._metadata_active_index
         active_index = (ix if self._view_mode == 'roi_metadata'
                         and ix is not None
-                        and 0 <= ix < len(self._current_colors)
+                        and 0 <= ix < len(self._selection_colors)
                         else None)
         self._view.panel_spectral_view.set_active_roi(active_index, _METADATA_DIM)
 
-    def _on_roi_metadata_changed(self, roi_index, metadata):
-        """Store metadata on its ROI for subsequent editing and export."""
-        if 0 <= roi_index < len(self._current_rois_data):
-            self._current_rois_data[roi_index]['metadata'] = dict(metadata)
+    def _on_roi_metadata_changed(self, class_index, metadata):
+        """Store one metadata record on every region in a selection class."""
+        if not 0 <= class_index < len(self._selection_names):
+            return
+        name = self._selection_names[class_index]
+        for index, region_name in enumerate(self._current_color_names):
+            if region_name == name:
+                self._current_rois_data[index]['metadata'] = dict(metadata)
 
     def _refresh_swatch(self):
         """Sync the active color swatch and palette grid with current state."""
@@ -353,7 +456,7 @@ class Controller(QObject):
             selected_name = next_name,
         )
 
-    def _on_roi_right_clicked(self, roi_index, global_pos):
+    def _on_roi_right_clicked(self, roi_index, global_pos, camera):
         """Open the palette and spectrum action for an existing ROI."""
         if not 0 <= roi_index < len(self._current_rois_data):
             return
@@ -364,25 +467,31 @@ class Controller(QObject):
             in_use_names  = self._current_color_names,
             selected_name = self._current_color_names[roi_index],
         )
+        class_index = self._selection_names.index(self._current_color_names[roi_index])
         panel._swatch_grid.set_spectrum_action(
             True,
-            self._view.panel_spectral_view.is_spectrum_hidden(roi_index),
+            self._view.panel_spectral_view.is_spectrum_hidden(class_index),
         )
         panel._swatch_grid.show_at(global_pos)
+
+    def _on_active_color_palette_requested(self):
+        """Make the toolbar palette unambiguously target the next draw."""
+        self._pending_recolor_index = None
 
     def _on_spectrum_action_requested(self):
         roi_index = self._pending_recolor_index
         self._pending_recolor_index = None
         if roi_index is None or not 0 <= roi_index < len(self._current_rois_data):
             return
+        name = self._current_color_names[roi_index]
+        class_index = self._selection_names.index(name)
         panel = self._view.panel_spectral_view
-        if panel.is_spectrum_hidden(roi_index):
-            panel.show_spectrum(roi_index)
+        if panel.is_spectrum_hidden(class_index):
+            panel.show_spectrum(class_index)
             action = "shown"
         else:
-            panel.hide_spectrum(roi_index)
+            panel.hide_spectrum(class_index)
             action = "hidden"
-        name = self._current_color_names[roi_index]
         self._view.show_status_message(f"Spectrum for {name} {action}")
 
     def _on_color_selected(self, color, name):
@@ -393,14 +502,48 @@ class Controller(QObject):
             if idx < len(self._current_rois_data):
                 old_color = self._current_colors[idx]
                 old_name  = self._current_color_names[idx]
-                self.color_manager.recycle(old_color, old_name)
+                if old_name != name and self._current_color_names.count(old_name) == 1:
+                    self.color_manager.recycle(old_color, old_name)
                 self.color_manager.consume(name)
                 self._current_colors[idx]      = color
                 self._current_color_names[idx] = name
+                target_metadata = next(
+                    (r.get('metadata', {}) for i, r in enumerate(self._current_rois_data)
+                     if i != idx and self._current_color_names[i] == name),
+                    self._current_rois_data[idx].get('metadata', {}),
+                )
+                self._current_rois_data[idx]['metadata'] = dict(target_metadata)
                 self._update_roi_view()
         else:
+            held_name = self._split_pair_color_name
+            if held_name is not None and held_name != name:
+                # Choosing another color is how the user finishes an
+                # intentional single-eye selection without drawing a mate.
+                self.color_manager.consume(held_name)
+                self._split_pair_color_name = None
+                self._split_pair_eyes = set()
             self.color_manager.set_next(name)
             self._refresh_swatch()
+
+    def _update_split_color_cycle(self, name, camera):
+        """Hold a split-view color until it has been drawn in both eyes."""
+        if camera not in {'left', 'right'}:
+            self._split_pair_color_name = None
+            self._split_pair_eyes = set()
+            return
+
+        if self._split_pair_color_name != name:
+            self._split_pair_color_name = name
+            self._split_pair_eyes = set()
+        self._split_pair_eyes.add(camera)
+
+        if self._split_pair_eyes == {'left', 'right'}:
+            self._split_pair_color_name = None
+            self._split_pair_eyes = set()
+        else:
+            # next() consumed the color for this draw; put it back at the
+            # front so the complementary eye receives the same class.
+            self.color_manager.set_next(name)
 
     # ------------------------------------------------------------------
     # SEL / FITS export / import
@@ -428,6 +571,8 @@ class Controller(QObject):
             self._current_colors,
             self._current_color_names,
             self.color_manager,
+            selection_data=self._selection_data,
+            selection_colors=self._selection_colors,
         )
 
     def _load_sel(self, sel_path=None):
@@ -453,17 +598,16 @@ class Controller(QObject):
     def _apply_loaded_rois(self, outcome):
         if outcome is None:
             return
+        self._split_pair_color_name = None
+        self._split_pair_eyes = set()
         self._view.panel_spectral_view.show_all_spectra()
         self._current_rois_data, self._current_colors, self._current_color_names = outcome
         self._update_roi_view()
         self._view.set_export_enabled(True)
 
-        # Preserve loaded stereo rectangles by opening them in split-screen mode.
-        # Mark them dirty after the toggle so exiting requires confirmation.
+        # Open both cameras so every loaded selection region is immediately visible.
         if self._has_dual_cubes() and not self._is_split_screen:
             self._view.panel_image_editing.enter_split_screen()
-            if self._is_split_screen:
-                self._split_screen_rois_dirty = True
 
     # ------------------------------------------------------------------
     # Hover preview
@@ -545,56 +689,32 @@ class Controller(QObject):
             )
 
     def _on_split_screen_exit_requested(self):
-        if self._split_screen_rois_dirty and self._current_rois_data:
-            from PyQt5.QtWidgets import QMessageBox
-            dlg = QMessageBox(self._view)
-            dlg.setWindowTitle("Leave Split Screen")
-            dlg.setText("ROIs that have been resized or moved will be reset.\nAre you sure you want to continue?")
-            dlg.setIcon(QMessageBox.NoIcon)
-            dlg.setStyleSheet("QLabel { qproperty-alignment: AlignCenter; }")
-            cancel    = dlg.addButton("Cancel",   QMessageBox.AcceptRole)
-            continue_ = dlg.addButton("Continue", QMessageBox.DestructiveRole)
-            dlg.setDefaultButton(cancel)
-            dlg.exec_()
-            if dlg.clickedButton() is not continue_:
-                return
         self._view.panel_image_editing.confirm_split_screen_exit()
 
     def _on_split_screen_toggled(self, is_split):
         self._is_split_screen = is_split
-        if is_split:
-            self._split_screen_rois_dirty = False
 
-        if not is_split and self._current_rois_data:
-            load_result       = self._model.sparc_load_result or {}
-            homography        = load_result.get('homography_matrix')
-            instrument_config = self._get_instrument_config()
-            H, W              = load_result['rgb_img'].shape[:2]
-            roi_controller.sync_left_rois(self._current_rois_data, homography, bounds=(W, H))
-            for i, roi in enumerate(self._current_rois_data):
-                spec_data = self.sparc_controller.update_roi_spectrum_dual(
-                    self._model.sparc_load_result,
-                    roi['left_rect'], roi['right_rect'],
-                    instrument_config,
-                )
-                self._current_rois_data[i] = {**roi, **spec_data}
-            if self._model.instrument == 'PCAM':
-                for roi in self._current_rois_data:
-                    roi['roi'] = roi['left_rect']
+        if not is_split and self._split_pair_color_name is not None:
+            # Leaving split view completes an intentional one-eye cycle.
+            self.color_manager.consume(self._split_pair_color_name)
+            self._split_pair_color_name = None
+            self._split_pair_eyes = set()
+            self._refresh_swatch()
 
         if self._model.sparc_load_result is not None:
             self._render_current_images()
             self._view.panel_image_editing.set_rois(
                 self._current_rois_data, self._canvas_colors(), self._current_color_names
             )
-            if self._current_rois_data:
+            if self._selection_data:
                 self._view.panel_spectral_view.plot_roi_spectra(
-                    self._current_rois_data, self._current_colors
+                    self._selection_data, self._selection_colors
                 )
             if not is_split:
                 self._view.panel_image_editing.set_crop_enabled(True)
         self._view.show_status_message(
-            f"Switched to {'split-screen' if is_split else 'single'} mode"
+            ("Split screen: edits affect one eye only"
+             if is_split else "Single screen: drawing creates paired regions")
         )
 
     # ------------------------------------------------------------------
@@ -605,6 +725,11 @@ class Controller(QObject):
         self._current_rois_data   = []
         self._current_colors      = []
         self._current_color_names = []
+        self._selection_data      = []
+        self._selection_colors    = []
+        self._selection_names     = []
+        self._split_pair_color_name = None
+        self._split_pair_eyes       = set()
         self.color_manager.reset()
         self._update_roi_view()
         self._view.set_export_enabled(False)

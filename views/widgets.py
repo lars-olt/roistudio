@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QRectF
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QSize, QMimeData, QRectF, QTimer
 from PyQt5.QtWidgets import (QLabel, QPushButton, QComboBox, QWidget,
                              QVBoxLayout, QGridLayout, QFrame, QToolButton,
                              QSizePolicy, QListView)
@@ -399,8 +399,11 @@ class ColorSwatchButton(QWidget):
         self._in_use   = in_use
         self._selected = selected
         self._hovered  = False
+        self._pressed  = False
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip(name)
+        self.setToolTip(
+            f"{name} - add to this selection" if in_use else name
+        )
         self._apply_scale()
         Scale.changed.connect(self._apply_scale)
 
@@ -441,7 +444,21 @@ class ColorSwatchButton(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.clicked.emit(self._color, self._name)
+            self._pressed = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._pressed:
+            self._pressed = False
+            clicked = self.rect().contains(event.pos())
+            event.accept()
+            if clicked:
+                self.clicked.emit(self._color, self._name)
+            return
+        self._pressed = False
+        super().mouseReleaseEvent(event)
 
 
 class ColorSwatchGrid(QFrame):
@@ -491,7 +508,7 @@ class ColorSwatchGrid(QFrame):
         self._layout.setSpacing(scaled(5))
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setSpacing(scaled(3))
-        self._spectrum_action.setStyleSheet(f"""
+        action_style = f"""
             QPushButton {{
                 background-color: {Colors.SUBTLE_PANEL_ACCENT};
                 color: {Colors.TEXT_PRIMARY};
@@ -504,8 +521,14 @@ class ColorSwatchGrid(QFrame):
                 background-color: {Colors.PANEL_ACCENT};
                 border-color: {Colors.ACCENT};
             }}
+            QPushButton:checked {{
+                background-color: {Colors.DEFAULT_FEATURE};
+                border-color: {Colors.ACCENT};
+                color: white;
+            }}
             QPushButton:pressed {{ background-color: {Colors.DEFAULT_FEATURE}; }}
-        """)
+        """
+        self._spectrum_action.setStyleSheet(action_style)
         # Swatches resize from Scale.changed; update the containing frame here.
         self.adjustSize()
 
@@ -547,6 +570,14 @@ class ColorSwatchGrid(QFrame):
         self.adjustSize()
 
     def _on_swatch_clicked(self, color, name):
+        # Keep the popup alive until the swatch's release event has completely
+        # finished. Hiding it during mouse-down/release can expose a toolbar
+        # button beneath the popup to the tail end of the same click.
+        QTimer.singleShot(
+            0, lambda c=color, n=name: self._commit_swatch_selection(c, n)
+        )
+
+    def _commit_swatch_selection(self, color, name):
         self.color_selected.emit(color, name)
         self.hide()
 

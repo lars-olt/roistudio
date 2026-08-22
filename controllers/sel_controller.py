@@ -1,6 +1,7 @@
 """SEL file export and import."""
 
 import traceback
+import importlib
 from pathlib import Path
 
 import matplotlib
@@ -18,10 +19,147 @@ from sparc.utils.sel_writer import (
     filenames_from_load_result,
 )
 from presets import INSTRUMENT_PRESETS
+from roi_groups import group_roi_regions
 
 _EXPORT_DPI = 150
 _ROI_LABEL_FONT_SIZE = 8
 _ROI_LABEL_PADDING = 0.2
+_sel_writer_module = importlib.import_module('sparc.utils.sel_writer')
+_EMPTY_RECT = (0, 0, 0, 0)
+
+
+def _rect_or_empty(roi_data, key):
+    rect = roi_data.get(key)
+    return tuple(rect) if rect is not None else _EMPTY_RECT
+
+
+def _rect_or_none(rect):
+    values = tuple(int(v) for v in rect)
+    return values if values[2] > 0 and values[3] > 0 else None
+
+
+def _shift_present_rois(rois, col_delta, row_delta):
+    """Shift only painted ROI rows, leaving missing-eye placeholders empty."""
+    shifted = np.asarray(rois, dtype=np.int32).copy()
+    if shifted.size == 0:
+        return shifted.reshape(0, 4)
+    present = (shifted[:, 2] > 0) & (shifted[:, 3] > 0)
+    shifted[present, 0] += int(col_delta)
+    shifted[present, 1] += int(row_delta)
+    return shifted
+
+
+def _read_sel_aligned(sel_path, instrument):
+    """Read both SEL eye masks and align rectangles by their label IDs.
+
+    The public SPARC reader historically compacted each eye independently,
+    which loses the pairing when an ROI is absent from the middle of one eye's
+    mask.  Newer/private mask helpers expose the IDs needed for exact alignment;
+    the public reader remains a compatibility fallback.
+    """
+    required = ('_read_template', '_rois_from_block', '_normalize_instrument',
+                '_MASK_DEFAULTS', '_LSEL_IDX', '_RSEL_IDX')
+    if not all(hasattr(_sel_writer_module, name) for name in required):
+        return read_sel(sel_path, instrument)
+
+    inst_key = _sel_writer_module._normalize_instrument(instrument)
+    background = _sel_writer_module._MASK_DEFAULTS[inst_key]['background']
+    blocks = _sel_writer_module._read_template(Path(sel_path))
+    right_rois, right_ids = _sel_writer_module._rois_from_block(
+        blocks[_sel_writer_module._RSEL_IDX].decompressed, background
+    )
+    left_rois, left_ids = _sel_writer_module._rois_from_block(
+        blocks[_sel_writer_module._LSEL_IDX].decompressed, background
+    )
+
+    label_ids = sorted(set(right_ids) | set(left_ids))
+    right_by_id = dict(zip(right_ids, right_rois))
+    left_by_id = dict(zip(left_ids, left_rois))
+    right = np.array(
+        [right_by_id.get(label, _EMPTY_RECT) for label in label_ids],
+        dtype=np.int32,
+    ).reshape(-1, 4)
+    left = np.array(
+        [left_by_id.get(label, _EMPTY_RECT) for label in label_ids],
+        dtype=np.int32,
+    ).reshape(-1, 4)
+    return right, left, label_ids
+
+
+def _rect_components_from_block(block, background):
+    """Return every connected rectangle and label from one SEL eye mask."""
+    payload = block.decompressed
+    if not payload:
+        return []
+    try:
+        W, H, header_size = _sel_writer_module._parse_mask_header(payload)
+    except (TypeError, ValueError, IndexError):
+        return []
+    mask = np.frombuffer(
+        payload[header_size:header_size + H * W], dtype=np.uint8
+    ).reshape(H, W)
+    components = []
+    for label_id in sorted(int(v) for v in np.unique(mask) if v != background):
+        for x, mask_y, w, h in _component_rects(mask == label_id):
+            components.append(((x, H - mask_y - h, w, h), label_id))
+    return components
+
+
+def _read_sel_regions(sel_path, instrument):
+    """Read independently editable regions while preserving color classes."""
+    required = ('_read_template', '_parse_mask_header', '_normalize_instrument',
+                '_MASK_DEFAULTS', '_LSEL_IDX', '_RSEL_IDX')
+    if not all(hasattr(_sel_writer_module, name) for name in required):
+        return _read_sel_aligned(sel_path, instrument)
+
+    inst_key = _sel_writer_module._normalize_instrument(instrument)
+    background = _sel_writer_module._MASK_DEFAULTS[inst_key]['background']
+    blocks = _sel_writer_module._read_template(Path(sel_path))
+    right_components = _rect_components_from_block(
+        blocks[_sel_writer_module._RSEL_IDX], background
+    )
+    left_components = _rect_components_from_block(
+        blocks[_sel_writer_module._LSEL_IDX], background
+    )
+
+    rows = [
+        (rect, _EMPTY_RECT, label_id)
+        for rect, label_id in right_components
+    ] + [
+        (_EMPTY_RECT, rect, label_id)
+        for rect, label_id in left_components
+    ]
+    rows.sort(key=lambda row: (row[2], row[0] == _EMPTY_RECT, row[0], row[1]))
+    right = np.array([row[0] for row in rows], dtype=np.int32).reshape(-1, 4)
+    left = np.array([row[1] for row in rows], dtype=np.int32).reshape(-1, 4)
+    return right, left, [row[2] for row in rows]
+
+
+def _empty_spectrum_data():
+    return {
+        'spectrum': [], 'std': [], 'wavelengths': [],
+        'bayer_spectrum': [], 'bayer_std': [], 'bayer_wavelengths': [],
+        'left_spectrum': [], 'left_std': [], 'left_wavelengths': [],
+        'right_spectrum': [], 'right_std': [], 'right_wavelengths': [],
+    }
+
+
+def _spectrum_for_eyes(sparc_controller, load_result, left_rect, right_rect,
+                       instrument_config, has_dual_cubes):
+    if has_dual_cubes:
+        return sparc_controller.update_roi_spectrum_dual(
+            load_result, left_rect, right_rect, instrument_config
+        )
+    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+    rect = left_rect if instrument == 'PCAM' else right_rect
+    if rect is None:
+        return _empty_spectrum_data()
+    data = dict(sparc_controller.update_roi_spectrum(
+        load_result['cube'], rect, instrument_config
+    ))
+    for key in ('roi', 'left_rect', 'right_rect'):
+        data.pop(key, None)
+    return data
 
 
 def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
@@ -45,13 +183,17 @@ def export_sel(view, model, rois_data, color_names, color_manager, output_path=N
     try:
         instrument = load_result.get('instrument', 'ZCAM').strip().upper()
         n_rois     = len(rois_data)
-        right_rois = np.array([r['right_rect']                     for r in rois_data], dtype=np.int32)
-        left_rois  = np.array([r.get('left_rect', r['right_rect']) for r in rois_data], dtype=np.int32)
+        right_rois = np.array(
+            [_rect_or_empty(r, 'right_rect') for r in rois_data], dtype=np.int32
+        )
+        left_rois = np.array(
+            [_rect_or_empty(r, 'left_rect') for r in rois_data], dtype=np.int32
+        )
 
         col_off, row_off, full_H, full_W = _sensor_offsets(load_result, instrument)
         if col_off or row_off:
-            right_rois = right_rois.copy(); right_rois[:, 0] += col_off; right_rois[:, 1] += row_off
-            left_rois  = left_rois.copy();  left_rois[:, 0]  += col_off; left_rois[:, 1]  += row_off
+            right_rois = _shift_present_rois(right_rois, col_off, row_off)
+            left_rois  = _shift_present_rois(left_rois, col_off, row_off)
 
         # Use each ROI's MERSpect color index so colors round-trip correctly in MERSpect.
         label_ids = [color_manager.merspect_index(name) for name in color_names]
@@ -90,36 +232,36 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
 
     try:
         instrument               = load_result.get('instrument', 'ZCAM').strip().upper()
-        right_rois, left_rois, label_ids = read_sel(sel_path, instrument)
+        right_rois, left_rois, label_ids = _read_sel_regions(sel_path, instrument)
 
         col_off, row_off, _, _ = _sensor_offsets(load_result, instrument)
         if col_off or row_off:
-            right_rois = right_rois.copy(); right_rois[:, 0] -= col_off; right_rois[:, 1] -= row_off
-            left_rois  = left_rois.copy();  left_rois[:, 0]  -= col_off; left_rois[:, 1]  -= row_off
+            right_rois = _shift_present_rois(right_rois, -col_off, -row_off)
+            left_rois  = _shift_present_rois(left_rois, -col_off, -row_off)
 
         rois_data, colors, color_names = [], [], []
+        label_colors = {}
 
         for i, (right_rect, left_rect) in enumerate(zip(right_rois, left_rois)):
-            right_rect = tuple(int(v) for v in right_rect)
-            left_rect  = tuple(int(v) for v in left_rect)
+            right_rect = _rect_or_none(right_rect)
+            left_rect  = _rect_or_none(left_rect)
+            if right_rect is None and left_rect is None:
+                continue
 
-            spec_data = (
-                sparc_controller.update_roi_spectrum_dual(
-                    load_result, left_rect, right_rect, instrument_config
-                ) if has_dual_cubes else
-                sparc_controller.update_roi_spectrum(
-                    load_result['cube'],
-                    left_rect if instrument == 'PCAM' else right_rect,
-                    instrument_config
-                )
+            spec_data = _spectrum_for_eyes(
+                sparc_controller, load_result, left_rect, right_rect,
+                instrument_config, has_dual_cubes,
             )
 
             label = label_ids[i] if i < len(label_ids) else None
             name  = color_manager.name_for_merspect_index(label)
             if name:
                 color = color_manager.color(name)
+            elif label in label_colors:
+                color, name = label_colors[label]
             else:
                 color, name = color_manager.next()
+                label_colors[label] = (color, name)
 
             canvas_rect = left_rect if instrument == 'PCAM' else right_rect
             rois_data.append({
@@ -127,7 +269,6 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
                 'right_rect':  right_rect,
                 'left_rect':   left_rect,
                 'mineral':     'Loaded ROI',
-                'left_locked': True,   # left_rect came from the file - don't re-derive it
                 **spec_data,
             })
             colors.append(color)
@@ -165,8 +306,9 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
         instrument = load_result.get('instrument', 'ZCAM').strip().upper()
         fields     = metadata_fields(instrument)
 
-        # name -> {eye: (rect, metadata)}, in first-appearance order (ROI order)
+        # name -> {eye: (mask, metadata)}; ROIINDEX preserves class order.
         masks       = {}
+        mask_order  = {}
         frame_shape = None
         with astropy_fits.open(fits_path) as hdul:
             for hdu in hdul:
@@ -176,10 +318,24 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
                 frame_shape = hdu.data.shape
                 name = str(hdr['NAME']).strip().lower()
                 eye  = str(hdr['EYE']).strip().lower()
-                masks.setdefault(name, {})[eye] = (
-                    _mask_rect(hdu.data),
-                    {f.key: str(hdr[f.key]) for f in fields if f.key in hdr},
-                )
+                try:
+                    order = int(hdr.get('ROIINDEX', len(mask_order)))
+                except (TypeError, ValueError):
+                    order = len(mask_order)
+                mask_order.setdefault(name, order)
+                eye_masks = masks.setdefault(name, {})
+                incoming_mask = np.asarray(hdu.data) != 0
+                incoming_metadata = {
+                    f.key: str(hdr[f.key]) for f in fields if f.key in hdr
+                }
+                if eye in eye_masks:
+                    existing_mask, existing_metadata = eye_masks[eye]
+                    eye_masks[eye] = (
+                        np.asarray(existing_mask, dtype=bool) | incoming_mask,
+                        existing_metadata or incoming_metadata,
+                    )
+                else:
+                    eye_masks[eye] = (incoming_mask, incoming_metadata)
 
         if not masks:
             view.show_status_message(f"No ROI masks found in {fits_path}")
@@ -194,25 +350,10 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
 
         rois_data, colors, color_names = [], [], []
 
-        for lname, eyes in masks.items():
-            right_rect, right_meta = eyes.get('right', (None, {}))
-            left_rect,  left_meta  = eyes.get('left',  (None, {}))
-            right_rect = right_rect or left_rect
-            left_rect  = left_rect  or right_rect
-            if right_rect is None:
-                continue
+        for lname, eyes in sorted(masks.items(), key=lambda item: mask_order[item[0]]):
+            right_mask, right_meta = eyes.get('right', (None, {}))
+            left_mask,  left_meta  = eyes.get('left',  (None, {}))
             metadata = right_meta or left_meta
-
-            spec_data = (
-                sparc_controller.update_roi_spectrum_dual(
-                    load_result, left_rect, right_rect, instrument_config
-                ) if has_dual_cubes else
-                sparc_controller.update_roi_spectrum(
-                    load_result['cube'],
-                    left_rect if instrument == 'PCAM' else right_rect,
-                    instrument_config
-                )
-            )
 
             name = color_manager.resolve_name(lname)
             if name:
@@ -220,20 +361,34 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
             else:
                 color, name = color_manager.next()
 
-            canvas_rect = left_rect if instrument == 'PCAM' else right_rect
-            roi = {
-                'roi':         canvas_rect,
-                'right_rect':  right_rect,
-                'left_rect':   left_rect,
-                'mineral':     'Loaded ROI',
-                'left_locked': True,   # left_rect came from the file - don't re-derive it
-                **spec_data,
-            }
-            if metadata:
-                roi['metadata'] = metadata
-            rois_data.append(roi)
-            colors.append(color)
-            color_names.append(name)
+            # A class mask may contain several disconnected rectangles. Keep
+            # each component independently editable and use the shared color
+            # name to restore its selection-class identity. Do not guess eye
+            # pairings: that could create exactly the cross-eye edit side
+            # effects that single-eye regions are intended to avoid.
+            regions = [
+                (None, rect) for rect in _mask_rects(right_mask)
+            ] + [
+                (rect, None) for rect in _mask_rects(left_mask)
+            ]
+            for left_rect, right_rect in regions:
+                spec_data = _spectrum_for_eyes(
+                    sparc_controller, load_result, left_rect, right_rect,
+                    instrument_config, has_dual_cubes,
+                )
+                canvas_rect = left_rect if instrument == 'PCAM' else right_rect
+                roi = {
+                    'roi':         canvas_rect,
+                    'right_rect':  right_rect,
+                    'left_rect':   left_rect,
+                    'mineral':     'Loaded ROI',
+                    **spec_data,
+                }
+                if metadata:
+                    roi['metadata'] = dict(metadata)
+                rois_data.append(roi)
+                colors.append(color)
+                color_names.append(name)
 
         color_manager.reset()
         color_manager.reserve(color_names)
@@ -246,16 +401,82 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
         return None
 
 
-def _mask_rect(mask):
-    """Bounding (x, y, w, h) of the nonzero region, or None for an empty mask."""
-    ys, xs = np.nonzero(mask)
-    if ys.size == 0:
-        return None
-    return (int(xs.min()), int(ys.min()),
-            int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1))
+def _mask_rects(mask):
+    """Bounding rectangles for all connected nonzero regions in a mask."""
+    if mask is None:
+        return []
+    return _component_rects(np.asarray(mask) != 0)
 
 
-def export_context(view, model, rois_data, colors, color_names, color_manager):
+def _component_rects(mask):
+    """Return 4-connected component bounds using row runs and union-find.
+
+    Keeping this small routine local avoids making SEL/FITS loading depend on
+    SciPy merely to recover the rectangles stored in a class mask.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    if mask.ndim != 2 or not mask.any():
+        return []
+
+    parents = []
+    bounds = []  # inclusive x0/y0/x1/y1 per horizontal run
+
+    def find(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(first, second):
+        a, b = find(first), find(second)
+        if a != b:
+            parents[b] = a
+
+    previous = []  # (x0, x1, run index)
+    for y, row in enumerate(mask):
+        transitions = np.diff(np.pad(row.astype(np.int8), (1, 1)))
+        starts = np.flatnonzero(transitions == 1)
+        stops = np.flatnonzero(transitions == -1)
+        current = []
+        previous_start = 0
+        for x0, x1_exclusive in zip(starts, stops):
+            x1 = int(x1_exclusive - 1)
+            x0 = int(x0)
+            index = len(parents)
+            parents.append(index)
+            bounds.append([x0, y, x1, y])
+            current.append((x0, x1, index))
+
+            while (previous_start < len(previous)
+                   and previous[previous_start][1] < x0):
+                previous_start += 1
+            cursor = previous_start
+            while cursor < len(previous) and previous[cursor][0] <= x1:
+                union(index, previous[cursor][2])
+                cursor += 1
+        previous = current
+
+    merged = {}
+    for index, (x0, y0, x1, y1) in enumerate(bounds):
+        root = find(index)
+        if root not in merged:
+            merged[root] = [x0, y0, x1, y1]
+        else:
+            box = merged[root]
+            box[0] = min(box[0], x0)
+            box[1] = min(box[1], y0)
+            box[2] = max(box[2], x1)
+            box[3] = max(box[3], y1)
+
+    return sorted(
+        ((x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+         for x0, y0, x1, y1 in merged.values()),
+        key=lambda rect: (rect[1], rect[0]),
+    )
+
+
+def export_context(view, model, rois_data, colors, color_names, color_manager,
+                   selection_data=None, selection_colors=None):
     """Export a context folder with ROI data, annotated images, and spectra."""
     if not rois_data:
         view.show_status_message("No ROIs to export.")
@@ -281,8 +502,15 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
         base_bands  = load_result.get('base_bands', {})
         presets     = INSTRUMENT_PRESETS.get(instrument, INSTRUMENT_PRESETS['ZCAM'])
         mpl_colors  = [tuple(c / 255.0 for c in color) for color in colors]
-        right_rects = [r['right_rect']                     for r in rois_data]
-        left_rects  = [r.get('left_rect', r['right_rect']) for r in rois_data]
+        eye_annotations = {}
+        for eye in ('right', 'left'):
+            key = f'{eye}_rect'
+            items = [
+                (roi[key], mpl_colors[i], color_names[i])
+                for i, roi in enumerate(rois_data)
+                if roi.get(key) is not None
+            ]
+            eye_annotations[eye] = items
 
         export_sel(view, model, rois_data, color_names, color_manager,
                    output_path=str(output_path / f"{scene_id}.sel"))
@@ -290,32 +518,50 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
         export_fits(view, model, rois_data, color_names,
                     output_path=str(output_path / f"{scene_id}.fits"))
 
-        for camera, mode, rects, label in (
-            ('right', 'RGB', right_rects, 'right_rgb'),
-            ('left',  'RGB', left_rects,  'left_rgb'),
-            ('right', 'DCS', right_rects, 'right_dcs'),
-            ('left',  'DCS', left_rects,  'left_dcs'),
+        for camera, mode, label in (
+            ('right', 'RGB', 'right_rgb'),
+            ('left',  'RGB', 'left_rgb'),
+            ('right', 'DCS', 'right_dcs'),
+            ('left',  'DCS', 'left_dcs'),
         ):
+            annotations = eye_annotations[camera]
+            rects       = [item[0] for item in annotations]
+            eye_colors  = [item[1] for item in annotations]
+            eye_names   = [item[2] for item in annotations]
             bands = presets[camera][mode]
             arr   = _render_bands(bands['r'], bands['g'], bands['b'], base_bands, dcs=bands['dcs'])
             if arr is not None:
-                _save_annotated(arr, rects, mpl_colors, output_path / f"{scene_id}_{label}.png")
+                _save_annotated(arr, rects, eye_colors, output_path / f"{scene_id}_{label}.png")
                 if mode == 'RGB':
                     _save_annotated(
                         arr,
                         rects,
-                        mpl_colors,
+                        eye_colors,
                         output_path / f"{scene_id}_{label}_with_roi_names.png",
-                        roi_names=color_names,
+                        roi_names=eye_names,
                     )
 
-        spectra = np.array([r['spectrum'] for r in rois_data])
-        stds    = np.array([r['std']      for r in rois_data])
-        wls     = rois_data[0]['wavelengths']
-
-        fig = plot_spectra_with_error(spectra, stds, wavelengths=wls, colors=mpl_colors, show=False)
-        fig.savefig(output_path / f"{scene_id}_spectra.png", bbox_inches='tight', dpi=_EXPORT_DPI)
-        plt.close(fig)
+        spectrum_rows = selection_data if selection_data is not None else rois_data
+        spectrum_rgb = selection_colors if selection_colors is not None else colors
+        spectrum_colors = [tuple(c / 255.0 for c in color) for color in spectrum_rgb]
+        valid_rows = [
+            (row, spectrum_colors[i])
+            for i, row in enumerate(spectrum_rows)
+            if len(row.get('spectrum', [])) > 0 and i < len(spectrum_colors)
+        ]
+        if valid_rows:
+            spectra = np.array([row['spectrum'] for row, _ in valid_rows])
+            stds = np.array([row['std'] for row, _ in valid_rows])
+            wls = valid_rows[0][0]['wavelengths']
+            fig = plot_spectra_with_error(
+                spectra, stds, wavelengths=wls,
+                colors=[color for _, color in valid_rows], show=False,
+            )
+            fig.savefig(
+                output_path / f"{scene_id}_spectra.png",
+                bbox_inches='tight', dpi=_EXPORT_DPI,
+            )
+            plt.close(fig)
 
         view.show_status_message(f"Context exported to {output_path}")
 
@@ -325,7 +571,7 @@ def export_context(view, model, rois_data, colors, color_names, color_manager):
 
 
 def export_fits(view, model, rois_data, color_names, output_path=None):
-    """Export each ROI eye as a full-frame binary-mask FITS HDU."""
+    """Export one union-mask FITS HDU per selection class and present eye."""
     if not rois_data:
         view.show_status_message("No ROIs to export.")
         return
@@ -351,24 +597,36 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
         first = True
         scene_metadata = observation_metadata(load_result)
 
+        groups = group_roi_regions(
+            rois_data, [(255, 255, 255)] * len(rois_data), color_names
+        )
         for eye in ('left', 'right'):
             rect_key = 'left_rect' if eye == 'left' else 'right_rect'
-            for roi_data, color_name in zip(rois_data, color_names):
-                mask       = np.zeros((H, W), dtype=np.uint8)
-                x, y, w, h = (int(v) for v in roi_data.get(rect_key, roi_data['roi']))
-                x0, x1     = max(0, x), min(W, x + w)
-                y0, y1     = max(0, y), min(H, y + h)
-                if x1 > x0 and y1 > y0:
-                    mask[y0:y1, x0:x1] = 1
+            for class_index, group in enumerate(groups):
+                rects = [
+                    roi_data[rect_key]
+                    for roi_data in group['regions']
+                    if roi_data.get(rect_key) is not None
+                ]
+                if not rects:
+                    continue
+                mask = np.zeros((H, W), dtype=np.uint8)
+                for rect in rects:
+                    x, y, w, h = (int(v) for v in rect)
+                    x0, x1 = max(0, x), min(W, x + w)
+                    y0, y1 = max(0, y), min(H, y + h)
+                    if x1 > x0 and y1 > y0:
+                        mask[y0:y1, x0:x1] = 1
 
                 hdr             = astropy_fits.Header()
-                hdr['NAME']     = color_name.lower()
+                hdr['NAME']     = group['name'].lower()
                 hdr['EYE']      = eye
                 hdr['SOURCEFN'] = 'ROIStudio'
-                hdr['EXTNAME']  = f'{color_name.upper()} {eye.upper()}'
+                hdr['EXTNAME']  = f"{group['name'].upper()} {eye.upper()}"
                 hdr['IMAGEREF'] = scene_id
+                hdr['ROIINDEX'] = class_index
 
-                for key, value in roi_data.get('metadata', {}).items():
+                for key, value in group['metadata'].items():
                     hdr[key] = value
 
                 if first:
@@ -380,7 +638,9 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
                     hdus.append(astropy_fits.ImageHDU(data=mask, header=hdr))
 
         astropy_fits.HDUList(hdus).writeto(output_path, overwrite=True)
-        view.show_status_message(f"Exported {len(rois_data)} ROI(s) to {output_path}")
+        view.show_status_message(
+            f"Exported {len(groups)} selection class(es) to {output_path}"
+        )
 
     except Exception as e:
         view.show_status_message(f"FITS export failed: {e}")

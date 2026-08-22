@@ -81,6 +81,7 @@ class CanvasContainer(QWidget):
         self._momentum_timer.timeout.connect(self._momentum_tick)
 
         self.rois               = []
+        self.roi_indices        = []  # local canvas index -> logical ROI index
         self.roi_colors         = []
         self.roi_names          = []
         self.selected_roi_index = -1
@@ -131,8 +132,9 @@ class CanvasContainer(QWidget):
 
     def set_rois(self, rois, colors=None, names=None):
         self.rois       = [tuple(map(float, r['roi'])) for r in rois]
-        self.roi_colors = colors if colors else []
-        self.roi_names  = names  if names  else []
+        self.roi_indices = [int(r.get('_roi_index', i)) for i, r in enumerate(rois)]
+        self.roi_colors = list(colors) if colors is not None else []
+        self.roi_names  = list(names)  if names  is not None else []
         self.selected_roi_index = -1
         self.hovered_roi_index  = -1
         self._drag_start_image_pos = None
@@ -524,6 +526,11 @@ class CanvasContainer(QWidget):
         self.pan_offset.setX(vx - (ox2 + img_x) * self.zoom_level)
         self.pan_offset.setY(vy - (oy2 + img_y) * self.zoom_level)
         self.update()
+
+    def _logical_roi_index(self, local_index):
+        if 0 <= local_index < len(self.roi_indices):
+            return self.roi_indices[local_index]
+        return local_index
         self._emit_sync()
 
     # ------------------------------------------------------------------
@@ -580,7 +587,9 @@ class CanvasContainer(QWidget):
         if event.button() == Qt.RightButton:
             for i, r in enumerate(self.rois):
                 if QRectF(*r).contains(img_x, img_y):
-                    self.roi_right_clicked.emit(i, event.globalPos())
+                    self.roi_right_clicked.emit(
+                        self._logical_roi_index(i), event.globalPos()
+                    )
                     return
 
         if self.interaction_tool == "selection" and event.button() == Qt.LeftButton:
@@ -590,7 +599,7 @@ class CanvasContainer(QWidget):
                 self.interaction_mode   = mode
                 self._drag_start_image_pos = (img_x, img_y)
                 self._drag_start_rect      = tuple(self.rois[idx])
-                self.roi_selected.emit(idx)
+                self.roi_selected.emit(self._logical_roi_index(idx))
                 self.update()
                 return
             if self.selected_roi_index != -1:
@@ -785,7 +794,11 @@ class CanvasContainer(QWidget):
                 snapped = snap_rect(*self.rois[self.selected_roi_index],
                                     bounds=(self.canvas.width(), self.canvas.height()))
                 self.rois[self.selected_roi_index] = snapped
-                self.roi_changed.emit(self.selected_roi_index, snapped)
+                if (self._drag_start_rect is None
+                        or tuple(snapped) != tuple(self._drag_start_rect)):
+                    self.roi_changed.emit(
+                        self._logical_roi_index(self.selected_roi_index), snapped
+                    )
                 self.update()
             self.interaction_mode = self.MODE_NONE
             self._drag_start_image_pos = None
@@ -810,7 +823,9 @@ class CanvasContainer(QWidget):
                 self.setCursor(Qt.OpenHandCursor)
         elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             if self.selected_roi_index != -1 and self.interaction_tool == "selection":
-                self.roi_deleted.emit(self.selected_roi_index)
+                self.roi_deleted.emit(
+                    self._logical_roi_index(self.selected_roi_index)
+                )
                 self.selected_roi_index = -1
                 self.update()
 
@@ -899,11 +914,11 @@ class DualCanvasContainer(QWidget):
     pixel_hovered = pyqtSignal(int, int)
     roi_changed   = pyqtSignal(int, tuple, str)
     roi_selected  = pyqtSignal(int)
-    roi_deleted   = pyqtSignal(int)
+    roi_deleted   = pyqtSignal(int, str)
     roi_created   = pyqtSignal(tuple, str)
     roi_too_small = pyqtSignal()
     tool_shortcut = pyqtSignal(str)
-    roi_right_clicked = pyqtSignal(int, QPoint)
+    roi_right_clicked = pyqtSignal(int, QPoint, str)
     crop_changed  = pyqtSignal(tuple)
 
     def __init__(self):
@@ -942,7 +957,11 @@ class DualCanvasContainer(QWidget):
         canvas.scene_dropped.connect(self.scene_dropped.emit)
         canvas.pixel_hovered.connect(self.pixel_hovered.emit)
         canvas.roi_selected.connect(self.roi_selected.emit)
-        canvas.roi_deleted.connect(self.roi_deleted.emit)
+        canvas.roi_deleted.connect(
+            lambda idx, c=canvas: self.roi_deleted.emit(
+                idx, self._camera_label(c)
+            )
+        )
         canvas.roi_changed.connect(
             lambda idx, rect, c=canvas: self._on_canvas_roi_changed(c, idx, rect))
         canvas.roi_created.connect(
@@ -951,7 +970,11 @@ class DualCanvasContainer(QWidget):
             lambda zoom, cx, cy, c=canvas: self._on_sync_changed(c, zoom, cx, cy))
         canvas.roi_too_small.connect(self.roi_too_small.emit)
         canvas.tool_shortcut.connect(self.tool_shortcut.emit)
-        canvas.roi_right_clicked.connect(self.roi_right_clicked.emit)
+        canvas.roi_right_clicked.connect(
+            lambda idx, pos, c=canvas: self.roi_right_clicked.emit(
+                idx, pos, self._camera_label(c)
+            )
+        )
         canvas.crop_changed.connect(self.crop_changed.emit)
 
     def _camera_label(self, canvas):
@@ -1043,18 +1066,27 @@ class DualCanvasContainer(QWidget):
 
     def set_rois(self, rois, colors=None, names=None):
         if not self.is_split_mode:
-            self.canvas_single.set_rois(rois, colors, names)
+            single_rois, single_colors, single_names = self._rois_for_canvas(
+                rois, 'roi', colors, names
+            )
+            self.canvas_single.set_rois(single_rois, single_colors, single_names)
             return
 
         # right canvas always draws right_rect, left canvas always left_rect -
         # roi_data['roi'] tracks the single-screen camera and can't be used here
-        right_rois = [{'roi': r.get('right_rect', r['roi'])} for r in rois]
-        self.canvas_right.set_rois(right_rois, colors, names)
+        right_rois, right_colors, right_names = self._rois_for_canvas(
+            rois, 'right_rect', colors, names
+        )
+        self.canvas_right.set_rois(right_rois, right_colors, right_names)
 
         left_rois = []
-        for roi_data in rois:
+        left_colors = []
+        left_names = []
+        for index, roi_data in enumerate(rois):
+            if 'left_rect' in roi_data and roi_data['left_rect'] is None:
+                continue
             if 'left_rect' in roi_data:
-                left_rois.append({'roi': roi_data['left_rect']})
+                rect = roi_data['left_rect']
             elif self.inverse_homography_matrix is not None:
                 x, y, w, h = map(float, roi_data['right_rect'] if 'right_rect' in roi_data else roi_data['roi'])
                 corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]],
@@ -1063,12 +1095,41 @@ class DualCanvasContainer(QWidget):
                     corners, self.inverse_homography_matrix
                 ).reshape(-1, 2)
                 xl, yl = tc[:, 0].min(), tc[:, 1].min()
-                left_rois.append({'roi': (xl, yl,
-                                        tc[:, 0].max() - xl,
-                                        tc[:, 1].max() - yl)})
+                rect = (xl, yl,
+                        tc[:, 0].max() - xl,
+                        tc[:, 1].max() - yl)
             else:
-                left_rois.append({'roi': roi_data['right_rect'] if 'right_rect' in roi_data else roi_data['roi']})
-        self.canvas_left.set_rois(left_rois, colors, names)
+                rect = roi_data['right_rect'] if 'right_rect' in roi_data else roi_data['roi']
+            if rect is None:
+                continue
+            left_rois.append({'roi': rect, '_roi_index': index})
+            if colors is not None and index < len(colors):
+                left_colors.append(colors[index])
+            if names is not None and index < len(names):
+                left_names.append(names[index])
+        self.canvas_left.set_rois(left_rois, left_colors, left_names)
+
+    @staticmethod
+    def _rois_for_canvas(rois, rect_key, colors, names):
+        """Filter absent-eye ROIs while retaining their logical list indices."""
+        canvas_rois = []
+        canvas_colors = []
+        canvas_names = []
+        for index, roi_data in enumerate(rois):
+            if rect_key in roi_data:
+                rect = roi_data[rect_key]
+            elif rect_key == 'right_rect':
+                rect = roi_data.get('roi')
+            else:
+                rect = None
+            if rect is None:
+                continue
+            canvas_rois.append({'roi': rect, '_roi_index': index})
+            if colors is not None and index < len(colors):
+                canvas_colors.append(colors[index])
+            if names is not None and index < len(names):
+                canvas_names.append(names[index])
+        return canvas_rois, canvas_colors, canvas_names
 
     def set_tool_cursor(self, cursor):
         for c in self._active_canvases():

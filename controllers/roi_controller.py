@@ -30,36 +30,82 @@ def _derive_right(left_rect, homography, bounds):
     return snap_rect(*_left_rect_to_right(left_rect, homography), bounds=bounds)
 
 
+def canvas_rect(roi_data, instrument):
+    """Rectangle shown in single-screen mode for the instrument's primary eye."""
+    key = 'left_rect' if str(instrument).strip().upper() == 'PCAM' else 'right_rect'
+    return roi_data.get(key)
+
+
+def spectrum_data(left_rect, right_rect, load_result, instrument_config,
+                  sparc_controller, has_dual_cubes):
+    if has_dual_cubes:
+        return sparc_controller.update_roi_spectrum_dual(
+            load_result, left_rect, right_rect, instrument_config
+        )
+
+    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+    rect = left_rect if instrument == 'PCAM' else right_rect
+    if rect is None:
+        # A one-cube scene cannot provide a spectrum for its missing primary eye.
+        return {
+            'spectrum': [], 'std': [], 'wavelengths': [],
+            'bayer_spectrum': [], 'bayer_std': [], 'bayer_wavelengths': [],
+            'left_spectrum': [], 'left_std': [], 'left_wavelengths': [],
+            'right_spectrum': [], 'right_std': [], 'right_wavelengths': [],
+        }
+    data = dict(sparc_controller.update_selection_spectrum(
+        load_result['cube'], rect, instrument_config
+    ))
+    # Geometry belongs to the ROI model; the single-cube helper returns legacy
+    # geometry keys that must not recreate an absent eye.
+    for key in ('roi', 'left_rect', 'right_rect'):
+        data.pop(key, None)
+    return data
+
+
 def on_roi_created(rect, camera, load_result, instrument_config, sparc_controller, has_dual_cubes):
     """Build a new ROI data dictionary from a freshly drawn rectangle."""
-    instrument = load_result.get('instrument', 'ZCAM')
+    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+    paired_draw = camera == 'single'
 
     # single screen draws in the displayed camera - left for PCAM, right for ZCAM
-    if camera == 'single':
+    if paired_draw:
         camera = 'left' if instrument == 'PCAM' else 'right'
 
     if has_dual_cubes:
         homography = load_result.get('homography_matrix')
         bounds     = _image_bounds(load_result)
-        if camera == 'left':
+        if paired_draw and camera == 'left':
             left_rect  = tuple(rect)
             right_rect = _derive_right(left_rect, homography, bounds)
-        else:
+        elif paired_draw:
             right_rect = tuple(rect)
             left_rect  = _derive_left(right_rect, homography, bounds)
-        spec_data = sparc_controller.update_roi_spectrum_dual(
-            load_result, left_rect, right_rect, instrument_config
+        elif camera == 'left':
+            left_rect, right_rect = tuple(rect), None
+        else:
+            left_rect, right_rect = None, tuple(rect)
+        spec_data = spectrum_data(
+            left_rect, right_rect, load_result, instrument_config,
+            sparc_controller, has_dual_cubes,
         )
     else:
-        right_rect = left_rect = tuple(rect)
-        spec_data  = sparc_controller.update_roi_spectrum(
-            load_result['cube'], rect, instrument_config
+        if paired_draw:
+            right_rect = left_rect = tuple(rect)
+        elif camera == 'left':
+            left_rect, right_rect = tuple(rect), None
+        else:
+            left_rect, right_rect = None, tuple(rect)
+        spec_data = spectrum_data(
+            left_rect, right_rect, load_result, instrument_config,
+            sparc_controller, has_dual_cubes,
         )
 
-    canvas_rect = left_rect if instrument == 'PCAM' else right_rect
+    roi_geometry = {'left_rect': left_rect, 'right_rect': right_rect}
+    displayed_rect = canvas_rect(roi_geometry, instrument)
 
     return {
-        'roi':        canvas_rect,
+        'roi':        displayed_rect,
         'right_rect': right_rect,
         'left_rect':  left_rect,
         'mineral':    'Manual ROI',
@@ -71,7 +117,7 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
                    load_result, instrument_config, sparc_controller, has_dual_cubes):
     """Recompute spectra after a rectangle has been moved or resized."""
     roi_data   = existing_roi_data[roi_index]
-    instrument = load_result.get('instrument', 'ZCAM')
+    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
     homography = load_result.get('homography_matrix') if has_dual_cubes else None
     bounds     = _image_bounds(load_result)
 
@@ -80,50 +126,37 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     if camera == 'single':
         if instrument == 'PCAM':
             left_rect  = tuple(new_rect)
-            right_rect = (_derive_right(left_rect, homography, bounds)
-                          if homography is not None else roi_data['right_rect'])
+            right_rect = roi_data.get('right_rect')
+            if right_rect is not None and homography is not None:
+                right_rect = _derive_right(left_rect, homography, bounds)
         else:
             right_rect = tuple(new_rect)
-            left_rect  = (_derive_left(right_rect, homography, bounds)
-                          if homography is not None else roi_data.get('left_rect', right_rect))
+            left_rect  = roi_data.get('left_rect')
+            if left_rect is not None and homography is not None:
+                left_rect = _derive_left(right_rect, homography, bounds)
     # split screen edits one camera directly - the other side keeps its stored rect.
     elif camera == 'left':
         left_rect  = tuple(new_rect)
-        right_rect = roi_data['right_rect']
+        right_rect = roi_data.get('right_rect')
     else:
         right_rect = tuple(new_rect)
-        left_rect  = roi_data.get('left_rect', roi_data['roi'])
+        left_rect  = roi_data.get('left_rect')
 
-    if has_dual_cubes:
-        spec_data = sparc_controller.update_roi_spectrum_dual(
-            load_result, left_rect, right_rect, instrument_config
-        )
-    else:
-        spec_data = sparc_controller.update_roi_spectrum(
-            load_result['cube'], new_rect, instrument_config
-        )
+    spec_data = spectrum_data(
+        left_rect, right_rect, load_result, instrument_config,
+        sparc_controller, has_dual_cubes,
+    )
 
-    canvas_rect = left_rect if instrument == 'PCAM' else right_rect
+    roi_geometry = {'left_rect': left_rect, 'right_rect': right_rect}
+    displayed_rect = canvas_rect(roi_geometry, instrument)
 
     return {
         **roi_data,
-        'roi':        canvas_rect,
+        'roi':        displayed_rect,
         'right_rect': right_rect,
         'left_rect':  left_rect,
-        'left_locked': False,   # user edited it - stored geometry is no longer authoritative
         **spec_data,
     }
-
-
-def sync_left_rois(rois_data, homography, bounds=None):
-    """Recompute unlocked left rectangles from their right-camera counterparts.
-
-    'left_locked' rectangles retain coordinates loaded from external files.
-    """
-    for roi in rois_data:
-        if roi.get('left_locked'):
-            continue
-        roi['left_rect'] = _derive_left(roi['right_rect'], homography, bounds)
 
 
 def _left_rect_to_right(left_rect, homography_matrix):

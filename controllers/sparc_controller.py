@@ -35,26 +35,48 @@ class SparcController(QObject):
 
     @staticmethod
     def _slice_cube(cube, rect):
-        """Mean spectrum and std over a (x, y, w, h) rect."""
-        x, y, w, h = (max(0, int(v)) for v in rect)
+        """Mean spectrum and std over the union of one or more rectangles."""
         h_c, w_c   = cube.shape[1], cube.shape[2]
-        x = min(x, w_c - 1); w = max(1, min(w, w_c - x))
-        y = min(y, h_c - 1); h = max(1, min(h, h_c - y))
-        crop = cube[:, y:y+h, x:x+w]
-        if np.ma.is_masked(crop):
-            flat = crop.reshape(crop.shape[0], -1)
-            return np.ma.mean(flat, axis=1).filled(np.nan), np.ma.std(flat, axis=1).filled(np.nan)
-        return np.nanmean(crop, axis=(1, 2)), np.nanstd(crop, axis=(1, 2))
+        rects = np.asarray(rect, dtype=float)
+        if rects.shape == (4,):
+            rects = rects.reshape(1, 4)
+        if rects.ndim != 2 or rects.shape[1] != 4 or len(rects) == 0:
+            raise ValueError("ROI geometry must contain one or more rectangles.")
+
+        mask = np.zeros((h_c, w_c), dtype=bool)
+        for values in rects:
+            x, y, w, h = (max(0, int(v)) for v in values)
+            x = min(x, w_c - 1); w = max(1, min(w, w_c - x))
+            y = min(y, h_c - 1); h = max(1, min(h, h_c - y))
+            mask[y:y+h, x:x+w] = True
+
+        flat = cube[:, mask]
+        if np.ma.is_masked(flat):
+            return (np.ma.mean(flat, axis=1).filled(np.nan),
+                    np.ma.std(flat, axis=1).filled(np.nan))
+        return np.nanmean(flat, axis=1), np.nanstd(flat, axis=1)
 
     def compute_dual_spectrum(self, load_result, left_rect, right_rect):
-        """Return merged, left-camera, and right-camera spectra for paired rectangles."""
+        """Return merged and per-camera spectra for one- or two-eye ROIs.
+
+        A stereo recipe band uses whichever eye is present, averaging only when
+        both are available.  Bands exclusive to a missing eye remain NaN so the
+        merged wavelength layout stays identical for every ROI.
+        """
         recipe     = load_result['merged_band_recipe']
         left_keys  = load_result['left_band_keys']
         right_keys = load_result['right_band_keys']
         wl_lookup  = load_result['bandset'].metadata.set_index('BAND')['WAVELENGTH'].to_dict()
 
-        left_spec,  left_std  = self._slice_cube(load_result['left_cube'],  left_rect)
-        right_spec, right_std = self._slice_cube(load_result['right_cube'], right_rect)
+        left_spec = left_std = None
+        right_spec = right_std = None
+        if left_rect is not None:
+            left_spec, left_std = self._slice_cube(load_result['left_cube'], left_rect)
+        if right_rect is not None:
+            right_spec, right_std = self._slice_cube(load_result['right_cube'], right_rect)
+
+        if left_spec is None and right_spec is None:
+            raise ValueError("An ROI must exist in at least one eye.")
 
         left_idx  = {name: i for i, name in enumerate(left_keys)}
         right_idx = {name: i for i, name in enumerate(right_keys)}
@@ -66,24 +88,43 @@ class SparcController(QObject):
 
         for i, (source, _name, l_key, r_key) in enumerate(recipe):
             if source == 'stereo':
-                ls, lstd = left_spec[left_idx[l_key]],   left_std[left_idx[l_key]]
-                rs, rstd = right_spec[right_idx[r_key]], right_std[right_idx[r_key]]
-                merged_spec[i] = (ls + rs) / 2
-                merged_std[i]  = np.sqrt((lstd**2 + rstd**2) / 2)
-                left_bands.append( (wl_lookup[l_key], ls, lstd))
-                right_bands.append((wl_lookup[r_key], rs, rstd))
+                left_value = right_value = None
+                if left_spec is not None:
+                    left_value = (left_spec[left_idx[l_key]], left_std[left_idx[l_key]])
+                    left_bands.append((wl_lookup[l_key], *left_value))
+                if right_spec is not None:
+                    right_value = (right_spec[right_idx[r_key]], right_std[right_idx[r_key]])
+                    right_bands.append((wl_lookup[r_key], *right_value))
+
+                if left_value is not None and right_value is not None:
+                    ls, lstd = left_value
+                    rs, rstd = right_value
+                    merged_spec[i] = (ls + rs) / 2
+                    merged_std[i]  = np.sqrt((lstd**2 + rstd**2) / 2)
+                elif left_value is not None:
+                    merged_spec[i], merged_std[i] = left_value
+                elif right_value is not None:
+                    merged_spec[i], merged_std[i] = right_value
+                else:
+                    merged_spec[i] = merged_std[i] = np.nan
             elif source == 'left_only':
-                merged_spec[i] = left_spec[left_idx[l_key]]
-                merged_std[i]  = left_std[left_idx[l_key]]
-                left_bands.append((wl_lookup[l_key],
-                                   left_spec[left_idx[l_key]],
-                                   left_std[left_idx[l_key]]))
+                if left_spec is None:
+                    merged_spec[i] = merged_std[i] = np.nan
+                else:
+                    merged_spec[i] = left_spec[left_idx[l_key]]
+                    merged_std[i]  = left_std[left_idx[l_key]]
+                    left_bands.append((wl_lookup[l_key],
+                                       left_spec[left_idx[l_key]],
+                                       left_std[left_idx[l_key]]))
             else:
-                merged_spec[i] = right_spec[right_idx[r_key]]
-                merged_std[i]  = right_std[right_idx[r_key]]
-                right_bands.append((wl_lookup[r_key],
-                                    right_spec[right_idx[r_key]],
-                                    right_std[right_idx[r_key]]))
+                if right_spec is None:
+                    merged_spec[i] = merged_std[i] = np.nan
+                else:
+                    merged_spec[i] = right_spec[right_idx[r_key]]
+                    merged_std[i]  = right_std[right_idx[r_key]]
+                    right_bands.append((wl_lookup[r_key],
+                                        right_spec[right_idx[r_key]],
+                                        right_std[right_idx[r_key]]))
 
         def _sorted_camera_bands(bands):
             if not bands:
@@ -156,14 +197,21 @@ class SparcController(QObject):
 
     def update_roi_spectrum(self, cube, rect, instrument_config):
         """Single-cube fallback for manual ROI creation."""
-        spectrum, std = self._slice_cube(cube, rect)
+        data = self.update_selection_spectrum(cube, rect, instrument_config)
         x, y, w, h    = (max(0, int(v)) for v in rect)
+        return {
+            'roi':        (x, y, w, h),
+            'right_rect': (x, y, w, h),
+            **data,
+        }
+
+    def update_selection_spectrum(self, cube, rects, instrument_config):
+        """Compute display data over a same-color selection region union."""
+        spectrum, std = self._slice_cube(cube, rects)
         nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
             spectrum, std, instrument_config
         )
         return {
-            'roi':               (x, y, w, h),
-            'right_rect':        (x, y, w, h),
             'spectrum':          nb_spec,
             'std':               nb_std,
             'wavelengths':       nb_wls,

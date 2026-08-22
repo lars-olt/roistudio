@@ -72,10 +72,11 @@ class ImageEditingPanel(QWidget):
     tool_changed_signal  = pyqtSignal(str)
     rgb_bands_changed    = pyqtSignal(str, str, str, bool, str)
     roi_changed          = pyqtSignal(int, tuple, str)
-    roi_deleted          = pyqtSignal(int)
+    roi_deleted          = pyqtSignal(int, str)
     roi_created          = pyqtSignal(tuple, str)
     roi_too_small        = pyqtSignal()
-    roi_right_clicked    = pyqtSignal(int, QPoint)  # roi_index, global pos
+    roi_right_clicked    = pyqtSignal(int, QPoint, str)  # roi_index, global pos, camera
+    active_color_palette_requested = pyqtSignal()
     split_screen_toggled        = pyqtSignal(bool)
     split_screen_exit_requested = pyqtSignal()
     split_screen_unavailable    = pyqtSignal()
@@ -367,7 +368,7 @@ class ImageEditingPanel(QWidget):
         self._apply_split_screen(True)
 
     def confirm_split_screen_exit(self):
-        """Called by the controller after the user confirms they want to leave split screen."""
+        """Complete the controller-mediated return to single-screen mode."""
         self._apply_split_screen(False)
 
     def _apply_split_screen(self, is_split: bool):
@@ -411,6 +412,7 @@ class ImageEditingPanel(QWidget):
         self._color_swatch.set_color(color)
 
     def _on_active_color_clicked(self):
+        self.active_color_palette_requested.emit()
         self._swatch_grid.set_spectrum_action(False)
         self._swatch_grid.show_at(
             self._color_swatch.mapToGlobal(

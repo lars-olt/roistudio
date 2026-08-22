@@ -192,18 +192,20 @@ class _NoWheelComboBox(QComboBox):
 
 
 class _MetadataCard(QFrame):
-    """One ROI's metadata editor - colored left strip, accent border when active."""
+    """One selection class's metadata editor."""
 
     activated = pyqtSignal(int)
     changed   = pyqtSignal(int, dict)
 
-    def __init__(self, index, color, name, metadata, schema, parent=None):
+    def __init__(self, index, color, name, metadata, schema,
+                 eye_coverage='both', parent=None):
         super().__init__(parent)
         self.index     = index
         self._color    = color
         self._name     = name
         self._metadata = dict(metadata)
         self._schema   = schema
+        self._eye_coverage = eye_coverage
         self._active   = False
         self._editors  = {}   # field key -> editor widget
         self._rows     = {}   # field key -> row container widget
@@ -227,7 +229,11 @@ class _MetadataCard(QFrame):
         self._fields.setLayout(self._fields_layout)
         layout.addWidget(self._fields, stretch=1)
 
-        self._title = QLabel(self._name)
+        suffix = {'left': '  ·  Left eye only',
+                  'right': '  ·  Right eye only'}.get(self._eye_coverage, '')
+        self._title = QLabel(f"{self._name}{suffix}")
+        if suffix:
+            self._title.setToolTip("This ROI exists in only one camera eye")
         self._fields_layout.addWidget(self._title)
 
         for field in self._schema:
@@ -393,10 +399,10 @@ class _MetadataCard(QFrame):
 
 
 class ROIMetadataPanel(QWidget):
-    """Scrollable list of metadata cards, one per ROI, keyed by ROI color."""
+    """Scrollable list with one metadata card per color selection class."""
 
-    metadata_changed = pyqtSignal(int, dict)   # roi index, full metadata dict
-    roi_activated    = pyqtSignal(int)         # index of the ROI being described
+    metadata_changed = pyqtSignal(int, dict)   # class index, full metadata dict
+    roi_activated    = pyqtSignal(int)         # active selection-class index
 
     def __init__(self):
         super().__init__()
@@ -446,7 +452,13 @@ class ROIMetadataPanel(QWidget):
 
         self._cards = []
         for i, (roi, color, name) in enumerate(zip(rois_data, colors, names)):
-            card = _MetadataCard(i, color, name, roi.get('metadata', {}), schema)
+            has_left  = roi.get('left_rect') is not None
+            has_right = roi.get('right_rect') is not None
+            scope = ('both' if has_left and has_right else
+                     'left' if has_left else 'right')
+            card = _MetadataCard(
+                i, color, name, roi.get('metadata', {}), schema, scope
+            )
             card.activated.connect(self._on_card_activated)
             card.changed.connect(self.metadata_changed.emit)
             self._cards.append(card)

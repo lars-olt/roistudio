@@ -200,21 +200,23 @@ After running SPARC on a scene, you should see ROIs drawn on the canvas, and cor
 
 ### Drawing ROIs
 
-Select the rectangle tool (`R`) and drag on the canvas to draw a new ROI. If the rectangle is too small it will not be created and a message will appear in the status log.
+Select the rectangle tool (`R`) and drag on the canvas to draw a new ROI. If the rectangle is too small it will not be created and a message will appear in the status log. In single-screen mode, the new region is paired into the other eye. In split-screen mode, it is created only in the eye where you draw it.
 
 ### Selecting and Editing ROIs
 
-With the selection tool (`V`), click an ROI to select it. Selected ROIs show corner and side handles. Drag a handle to resize, or drag the interior of the ROI to move. Press `Delete` or `Backspace` to remove the selected ROI.
+With the selection tool (`V`), click an ROI to select it. Selected ROIs show corner and side handles. Drag a handle to resize, or drag the interior of the ROI to move. In split-screen mode, edits affect only the selected eye, and `Delete` or `Backspace` removes only that eye's rectangle. In single-screen mode, editing a paired region keeps its existing pairing and deletion removes that region record.
 
 <img width="212" height="173" alt="Screenshot of a selected ROI" src="https://github.com/user-attachments/assets/6e3f50cd-3c8e-4d17-b318-595ae63fe032" />
 
 ### ROI Colors
 
-The active color swatch in the toolbar shows the color that will be assigned to the next drawn ROI. Click it to open the color palette and choose a different color.
+The active color swatch in the toolbar shows the color that will be assigned to the next drawn ROI. In single-screen mode, colors advance after each paired draw. In split-screen mode, the color remains active until you have drawn in both eyes, making complementary regions easy to create. Click the swatch to choose a different color—including a color already in use—or to finish an intentional single-eye selection and move on.
 
 <img width="136" height="111" alt="Screenshot of the color palette popup with swatches visible" src="https://github.com/user-attachments/assets/d1b0a3e7-bddb-4a86-b150-0b7d46cab748" />
 
-To change the color of an existing ROI, right-click it to open the palette.
+Color is also the selection-class identity. Multiple rectangles with the same color remain independently editable, but share one metadata record, one aggregate spectrum, and one union mask per eye when exported. This makes it easy to add another region to an existing selection: choose its used color and draw again.
+
+To change the selection class of an existing rectangle, right-click it and choose a color. The same popup also contains spectrum visibility controls.
 
 ### ROI Labels
 
@@ -224,7 +226,7 @@ Toggle **View > ROI Labels** to show or hide color name labels on each ROI.
 
 ## Spectral View
 
-The spectral panel plots reflectance (R* = IOF/cos θ) against wavelength for all active ROIs, each drawn in its assigned color. Hover the cursor over the canvas with the rectangle tool to preview the pixel spectrum as a faint white line.
+The spectral panel plots one aggregate reflectance spectrum (R* = IOF/cos θ) per active color selection class. Hover the cursor over the canvas with the rectangle tool to preview the pixel spectrum as a faint white line.
 
 ### View Settings
 
@@ -247,16 +249,15 @@ Click the split screen button at the bottom of the toolbar to view left and righ
 
 <img width="1602" height="923" alt="Screenshot of split screen mode with left and right images and ROIs on both sides" src="https://github.com/user-attachments/assets/66d00f65-8c3c-44cc-8047-dc8b98d9b8f5" />
 
-In split screen mode, ROIs are shown on both cameras simultaneously. Drawing or editing an ROI on one side updates both. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
+In split-screen mode, drawing, moving, resizing, and deleting are local to the eye under the cursor. This allows a selection to contain a left-only region, a right-only region, or regions in both eyes without an extra mode control. Single-eye selections are marked in the ROI Metadata panel. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
 
-> [!Caution]
-> When you return to single screen mode, ROIs that were moved or resized in split screen will prompt a confirmation before redrawing.
+Switching between single and split screen only changes the view; it never maps, resets, creates, or deletes stored rectangles. Draw in single screen when you want a paired region, and draw in split screen when the corresponding position does not exist in the other eye.
 
 ---
 
 ## Exporting and Loading SEL Files
 
-ROIStudio exports ROIs as `.sel` files compatible with MERSpect.
+ROIStudio exports ROIs as `.sel` files compatible with MERSpect. Left-only and right-only regions are stored independently, so a file may contain a selection in just one eye. Regions in the same color class share the same MERSpect label and form one union mask per eye.
 
 - **Export** - **File > Export sel** (or `Ctrl+S`) saves the current ROIs to a `.sel` file. ROI colors are encoded as MERSpect label indices so they round-trip correctly.
 - **Load** - **File > Load sel** imports ROIs from an existing `.sel` file into the current scene.
