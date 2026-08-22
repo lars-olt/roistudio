@@ -4,12 +4,16 @@ from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QPixmap
 
 from colors import Colors
 from utils.paths import _resource_path
-from utils.scale import Scale, physical, scaled, scaled_font
+from utils.scale import Scale, capped_scaled, scaled, scaled_font
 from ..canvas import DualCanvasContainer
-from ..widgets import ToolbarButton, LoadingIndicator, ColorSwatchGrid
+from ..widgets import (ToolbarButton, LoadingIndicator, ColorSwatchGrid,
+                       toolbar_button_size)
 from .stretch_bar import StretchBar
 
-_CURSOR_NATIVE_W = 32
+_CURSOR_NATIVE_W     = 24
+_CURSOR_MAX_W        = 28
+_TOOLBAR_PADDING_MAX = 10
+_TOOLBAR_GAP_MAX     = 5
 
 
 class _ActiveColorSwatch(QWidget):
@@ -28,7 +32,7 @@ class _ActiveColorSwatch(QWidget):
         Scale.changed.connect(self._apply_scale)
 
     def _apply_scale(self):
-        self.setFixedSize(physical(46), physical(38))
+        self.setFixedSize(*toolbar_button_size())
 
     def set_color(self, color):
         self._color = color
@@ -155,7 +159,7 @@ class ImageEditingPanel(QWidget):
         self.run_button.clicked.connect(self.run_algorithm_signal.emit)
         t_layout.addWidget(self.run_button)
 
-        t_layout.addSpacing(scaled(4))
+        t_layout.addSpacing(capped_scaled(3, _TOOLBAR_GAP_MAX))
         self.loading_indicator = LoadingIndicator()
         self.loading_indicator.setAccessibleName("Background activity in progress")
         t_layout.addWidget(self.loading_indicator, 0, Qt.AlignHCenter)
@@ -233,10 +237,12 @@ class ImageEditingPanel(QWidget):
         self._overlay_right.set_focused(self._is_split and self._focused_camera == 'right')
 
     def _apply_scale(self):
-        btn_w = physical(46)
-        self.toolbar.setFixedWidth(btn_w + scaled(8))
-        self.toolbar.layout().setContentsMargins(0, scaled(4), 0, scaled(4))
-        self.toolbar.layout().setSpacing(scaled(4))
+        btn_w, _ = toolbar_button_size()
+        padding = capped_scaled(6, _TOOLBAR_PADDING_MAX)
+        gap = capped_scaled(3, _TOOLBAR_GAP_MAX)
+        self.toolbar.setFixedWidth(btn_w + padding)
+        self.toolbar.layout().setContentsMargins(0, gap, 0, gap)
+        self.toolbar.layout().setSpacing(gap)
         self.toolbar.setStyleSheet(f"""
             QWidget {{
                 background-color: {Colors.PANEL_ACCENT};
@@ -315,7 +321,7 @@ class ImageEditingPanel(QWidget):
     def update_cursor(self):
         if self.current_tool == "selection":
             from PyQt5.QtSvg import QSvgRenderer
-            size   = physical(_CURSOR_NATIVE_W)
+            size   = capped_scaled(_CURSOR_NATIVE_W, _CURSOR_MAX_W)
             pixmap = QPixmap(size, size)
             pixmap.fill(Qt.transparent)
             painter = QPainter(pixmap)

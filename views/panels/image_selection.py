@@ -4,11 +4,12 @@ from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
 from PyQt5.QtGui import QPainter, QPen, QColor
 
 from colors import Colors
-from utils.scale import Scale, physical, scaled, scaled_font
+from utils.scale import Scale, capped_scaled, scaled, scaled_font
 from ..widgets import ClickableLabel
 
 
-_THUMB_BASE          = 250  # reference thumbnail size in logical pixels
+_THUMB_BASE          = 220  # reference thumbnail size in logical pixels
+_THUMB_MAX           = 200  # keep thumbnails compact at large UI scales
 _SPACING             = 10   # gap between thumbnails in reference pixels
 _DOT_RADIUS_DIVISOR  = 45   # dot radius = widget width / this
 _DOT_MARGIN_DIVISOR  = 22   # dot margin = widget width / this
@@ -114,7 +115,7 @@ class ImageSelectionPanel(QFrame):
 
     def _layout_params(self):
         """Return (cols, thumb_px, spacing_px), or None if viewport isn't ready."""
-        thumb     = physical(_THUMB_BASE)
+        thumb     = capped_scaled(_THUMB_BASE, _THUMB_MAX)
         spacing   = scaled(_SPACING)
         sb_w      = self.scroll_area.verticalScrollBar().sizeHint().width()
         available = self.scroll_area.viewport().width() - sb_w

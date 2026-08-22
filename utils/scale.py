@@ -92,6 +92,11 @@ def scaled(value: float) -> int:
     return max(1, round(value * Scale.factor))
 
 
+def capped_scaled(value: float, maximum: float) -> int:
+    """Logical layout value that stops growing at ``maximum`` pixels."""
+    return min(scaled(value), max(1, round(maximum)))
+
+
 def scaled_font(pt: float) -> int:
     """Font size in pt, layout-factor-scaled."""
     return max(1, round(pt * Scale.factor))

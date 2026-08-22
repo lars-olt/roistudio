@@ -7,7 +7,23 @@ from PyQt5.QtGui import (QIcon, QMovie, QPainter, QPainterPath, QPen,
 
 from colors import Colors
 from utils.paths import _resource_path
-from utils.scale import Scale, physical, scaled, scaled_font
+from utils.scale import Scale, capped_scaled, scaled, scaled_font
+
+
+_TOOLBAR_BUTTON_MAX_W = 56
+_TOOLBAR_BUTTON_MAX_H = 46
+_TOOLBAR_ACTIVITY_MAX = 32
+_TOOLBAR_BUTTON_W     = 34
+_TOOLBAR_BUTTON_H     = 28
+_TOOLBAR_ACTIVITY_W   = 20
+
+
+def toolbar_button_size():
+    """Toolbar button size, responsive at small scales and capped at large ones."""
+    return (
+        capped_scaled(_TOOLBAR_BUTTON_W, _TOOLBAR_BUTTON_MAX_W),
+        capped_scaled(_TOOLBAR_BUTTON_H, _TOOLBAR_BUTTON_MAX_H),
+    )
 
 
 class LoadingIndicator(QLabel):
@@ -27,7 +43,7 @@ class LoadingIndicator(QLabel):
         Scale.changed.connect(self._apply_scale)
 
     def _apply_scale(self):
-        sz = physical(26)
+        sz = capped_scaled(_TOOLBAR_ACTIVITY_W, _TOOLBAR_ACTIVITY_MAX)
         self.setFixedSize(sz, sz)
         self.movie.setScaledSize(QSize(sz, sz))
         self.setStyleSheet(
@@ -95,7 +111,7 @@ class ToolbarButton(QPushButton):
         return icon
 
     def _apply_scale(self):
-        w, h = physical(46), physical(38)
+        w, h = toolbar_button_size()
         self.setFixedSize(w, h)
         self.setIconSize(QSize(w, h))
         self.normal_icon         = self._scaled_icon(self._path_normal,   w, h)
