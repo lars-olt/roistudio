@@ -24,7 +24,7 @@ def _resource_path(relative_path: str) -> str:
     return os.path.join(base, relative_path)
 
 
-def _get_config_path() -> str:
+def _get_config_path(application_name="ROIStudio") -> str:
     """
     Resolve the writable config.yml path.
 
@@ -43,7 +43,7 @@ def _get_config_path() -> str:
     else:
         app_data = os.path.expanduser("~/Library/Application Support")
 
-    config_dir = os.path.join(app_data, "ROIStudio")
+    config_dir = os.path.join(app_data, application_name)
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.yml")
 

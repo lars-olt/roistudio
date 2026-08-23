@@ -87,8 +87,9 @@ class ImageEditingPanel(QWidget):
     canvas_focus_changed        = pyqtSignal(str)   # 'single' | 'left' | 'right'
     crop_changed                = pyqtSignal(tuple)  # (x, y, w, h)
 
-    def __init__(self):
+    def __init__(self, algorithm_enabled=True):
         super().__init__()
+        self.algorithm_enabled = algorithm_enabled
         self.current_tool    = 'selection'
         self._is_split       = False
         self._focused_camera = 'single'
@@ -151,13 +152,15 @@ class ImageEditingPanel(QWidget):
         self._color_swatch.clicked.connect(self._on_active_color_clicked)
         t_layout.addWidget(self._color_swatch)
 
-        self.run_button = ToolbarButton(
-            _resource_path("graphics/toolbar_run.png"),
-            hover_icon_path=_resource_path("graphics/toolbar_run_hover.png"),
-        )
-        self.run_button.setToolTip("Run SPARC")
-        self.run_button.clicked.connect(self.run_algorithm_signal.emit)
-        t_layout.addWidget(self.run_button)
+        self.run_button = None
+        if self.algorithm_enabled:
+            self.run_button = ToolbarButton(
+                _resource_path("graphics/toolbar_run.png"),
+                hover_icon_path=_resource_path("graphics/toolbar_run_hover.png"),
+            )
+            self.run_button.setToolTip("Run SPARC")
+            self.run_button.clicked.connect(self.run_algorithm_signal.emit)
+            t_layout.addWidget(self.run_button)
 
         t_layout.addSpacing(capped_scaled(3, _TOOLBAR_GAP_MAX))
         self.loading_indicator = LoadingIndicator()

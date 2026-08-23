@@ -6,15 +6,6 @@ import numpy as np
 from sparc.core.constants import get_instrument_config
 
 
-def get_instrument_config_for_scene(load_result):
-    """Build an instrument config, patching in the actual scene wavelengths."""
-    instrument = load_result.get('instrument', 'ZCAM') if load_result else 'ZCAM'
-    cfg = get_instrument_config(instrument)
-    if load_result and hasattr(load_result.get('bandset'), '_sparc_wavelengths'):
-        cfg['wavelengths'] = load_result['bandset']._sparc_wavelengths
-    return cfg
-
-
 def run_algorithm(model, view, scene_controller, sparc_controller, current_scene_id, sam_path, params, crop_rect=None):
     if model.sparc_load_result is None:
         view.show_status_message("No scene loaded. Please load a scene first.")
@@ -111,7 +102,8 @@ def _apply_crop(load_result: dict, crop_rect: tuple) -> dict:
     return result
 
 
-def on_sparc_complete(result, model, view, sparc_controller, color_manager):
+def on_sparc_complete(result, model, view, algorithm_controller,
+                      spectrum_controller, color_manager):
     """Unpack a SparcResult and push ROIs and spectra to the view."""
     if result.final_rois is None or len(result.final_rois) == 0:
         view.show_status_message("SPARC found no ROIs")
@@ -121,7 +113,7 @@ def on_sparc_complete(result, model, view, sparc_controller, color_manager):
     instrument_config = get_instrument_config(result.instrument)
     instrument_config['wavelengths'] = result.wavelengths
 
-    rois_data   = sparc_controller.extract_roi_data(result, instrument_config)
+    rois_data   = algorithm_controller.extract_roi_data(result, instrument_config)
     load_result = model.sparc_load_result
 
     # shift ROI coords from cropped space back to full-frame canvas coords
@@ -136,7 +128,7 @@ def on_sparc_complete(result, model, view, sparc_controller, color_manager):
 
     if _has_dual_cubes(load_result):
         for i, roi in enumerate(rois_data):
-            spec_data = sparc_controller.update_roi_spectrum_dual(
+            spec_data = spectrum_controller.update_roi_spectrum_dual(
                 load_result, roi['left_rect'], roi['right_rect'], instrument_config
             )
             rois_data[i] = {**roi, **spec_data}

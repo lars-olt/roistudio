@@ -25,8 +25,9 @@ class SettingsPanel(QFrame):
     line_width_changed    = pyqtSignal(float)
     exposure_changed      = pyqtSignal(float)
 
-    def __init__(self):
+    def __init__(self, algorithm_enabled=True):
         super().__init__()
+        self.algorithm_enabled = algorithm_enabled
         self._wheel_filter = _WheelFilter(self)
         self._sections = {}
         self._build_ui()
@@ -83,6 +84,13 @@ class SettingsPanel(QFrame):
              "Brighten or darken the RGB stretch image."),
         ]))
 
+        if self.algorithm_enabled:
+            self._build_algorithm_settings()
+
+        self.content_layout.addStretch()
+        self._apply_scale()
+
+    def _build_algorithm_settings(self):
         # Segmentation
         self.chk_use_dcs     = self._chk(False)
         self.chk_preserve_bg = self._chk(True)
@@ -131,15 +139,11 @@ class SettingsPanel(QFrame):
         ]))
 
         # Spectral Analysis
-        self.spin_max_clusters  = self._int(1,   50,  9)
-
+        self.spin_max_clusters = self._int(1, 50, 9)
         self._add_section("spectral_analysis", "Spectral Analysis", self._form([
-            ("Max Clusters",  self.spin_max_clusters,
+            ("Max Clusters", self.spin_max_clusters,
              "Maximum number of spectral clusters the GMM may find."),
         ]))
-
-        self.content_layout.addStretch()
-        self._apply_scale()
 
     # ------------------------------------------------------------------
     # Scale
@@ -175,11 +179,15 @@ class SettingsPanel(QFrame):
             }}
             QAbstractSpinBox:hover {{ border: 1px solid {Colors.ACCENT}; }}
         """
-        for spin in (self.spin_y_min, self.spin_y_max, self.spin_points, self.spin_iou,
-                     self.spin_edge, self.spin_variance, self.spin_area_thresh,
-                     self.spin_albedo, self.spin_min_cluster, self.spin_min_clean,
-                     self.spin_morph, self.spin_subclusters,
-                     self.spin_max_clusters):
+        spins = [self.spin_y_min, self.spin_y_max]
+        if self.algorithm_enabled:
+            spins += [
+                self.spin_points, self.spin_iou, self.spin_edge,
+                self.spin_variance, self.spin_area_thresh, self.spin_albedo,
+                self.spin_min_cluster, self.spin_min_clean, self.spin_morph,
+                self.spin_subclusters, self.spin_max_clusters,
+            ]
+        for spin in spins:
             spin.setStyleSheet(spin_style)
 
         slider_style = f"""
@@ -214,7 +222,10 @@ class SettingsPanel(QFrame):
                 background: {Colors.ACCENT}; border: 1px solid {Colors.ACCENT};
             }}
         """
-        for chk in (self.chk_use_dcs, self.chk_preserve_bg, self.chk_merge_spectra):
+        checks = [self.chk_merge_spectra]
+        if self.algorithm_enabled:
+            checks += [self.chk_use_dcs, self.chk_preserve_bg]
+        for chk in checks:
             chk.setStyleSheet(chk_style)
 
         self.setStyleSheet(f"""
@@ -315,13 +326,16 @@ class SettingsPanel(QFrame):
                 section.set_expanded(bool(expanded))
 
     def set_use_dcs(self, enabled: bool):
-        self.chk_use_dcs.setChecked(enabled)
+        if self.algorithm_enabled:
+            self.chk_use_dcs.setChecked(enabled)
 
     def reset_exposure(self):
         """Return exposure to neutral - called when a new scene loads."""
         self.slider_exposure.setValue(0)
 
     def get_parameters(self):
+        if not self.algorithm_enabled:
+            return {}
         return {
             'segment': {
                 'use_dcs':             self.chk_use_dcs.isChecked(),

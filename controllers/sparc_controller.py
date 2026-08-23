@@ -1,33 +1,16 @@
 import numpy as np
-from PyQt5.QtCore import QObject, pyqtSignal
-
-from workers.sparc_runner import SparcRunThread
+from PyQt5.QtCore import QObject
 
 
 class SparcController(QObject):
-    """Handles SPARC pipeline execution and spectrum computation."""
+    """Compute spectra for manual and automatic ROIs in both editions.
 
-    started       = pyqtSignal()
-    stopped       = pyqtSignal()
-    status_update = pyqtSignal(str)
-    complete      = pyqtSignal(object)
-    error         = pyqtSignal(str)
+    The historical name is retained to avoid churn in ROI editing code. SPARC
+    execution itself lives in the full-only ``AlgorithmController``.
+    """
 
     def __init__(self):
         super().__init__()
-        self._sparc_thread = None
-
-    def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument,
-                    params=None, load_result=None, presegmented=None):
-        self._sparc_thread = SparcRunThread(
-            sam_path, folder_path, seq_id, obs_ix, instrument,
-            params, load_result, presegmented,
-        )
-        self._sparc_thread.status_update.connect(self.status_update.emit)
-        self._sparc_thread.sparc_complete.connect(self.complete.emit)
-        self._sparc_thread.sparc_error.connect(self.error.emit)
-        self._sparc_thread.start()
-        self.started.emit()
 
     # ------------------------------------------------------------------
     # Spectrum helpers
@@ -204,7 +187,6 @@ class SparcController(QObject):
             'right_rect': (x, y, w, h),
             **data,
         }
-
     def update_selection_spectrum(self, cube, rects, instrument_config):
         """Compute display data over a same-color selection region union."""
         spectrum, std = self._slice_cube(cube, rects)
@@ -225,38 +207,3 @@ class SparcController(QObject):
             'right_std':         [],
             'right_wavelengths': [],
         }
-
-    def extract_roi_data(self, result, instrument_config):
-        """Build the ROI data list from a SparcResult."""
-        rois = []
-        for i, (right_rect, left_rect, spectrum, std) in enumerate(
-            zip(result.final_rois, result.final_left_rois,
-                result.final_spectra, result.final_stds)
-        ):
-            x, y, w, h = right_rect
-            mask = np.zeros(result.segments.shape, dtype=bool)
-            mask[y:y+h, x:x+w] = True
-            nb_wls, nb_spec, nb_std, bwls, bspec, bstd = self._split_spectrum(
-                spectrum, std, instrument_config
-            )
-            rois.append({
-                'roi':               tuple(right_rect),
-                'right_rect':        tuple(right_rect),
-                'left_rect':         tuple(left_rect),
-                'mask':              mask,
-                'spectrum':          nb_spec,
-                'std':               nb_std,
-                'wavelengths':       nb_wls,
-                'bayer_spectrum':    bspec,
-                'bayer_std':         bstd,
-                'bayer_wavelengths': bwls,
-                # per-camera fields populated after recompute in on_sparc_complete
-                'left_spectrum':     [],
-                'left_std':          [],
-                'left_wavelengths':  [],
-                'right_spectrum':    [],
-                'right_std':         [],
-                'right_wavelengths': [],
-                'mineral':           f'ROI_{i+1}',
-            })
-        return rois

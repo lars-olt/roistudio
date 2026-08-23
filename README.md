@@ -1,6 +1,6 @@
 # ROIStudio
 
-ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm that automatically selects spectrally distinct regions of interest (ROIs) in multispectral images from Mars rovers. It supports data from the Mastcam-Z (ZCAM) instrument on the Perseverance rover and the Pancam (PCAM) instrument on the Spirit and Opportunity rovers.
+ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm that automatically selects spectrally distinct regions of interest (ROIs) in multispectral images from Mars rovers. It supports data from the Mastcam-Z (ZCAM) instrument on the Perseverance rover and the Pancam (PCAM) instrument on the Spirit and Opportunity rovers. ROIStudio Lite provides the same scene, manual ROI, spectra, and file I/O workflow without the automatic SPARC algorithm or its machine-learning dependencies.
 
 ---
 
@@ -89,6 +89,11 @@ ROIStudio can be installed either via the packaged executable or manually from s
 ### Executable
 
 Download the latest release for your platform from the [releases page](https://github.com/lars-olt/roistudio/releases). No Python installation required - just download, unzip, and run.
+
+Each release contains two editions built from the same source:
+
+- **ROIStudio** includes automatic SPARC ROI generation and requires a SAM checkpoint.
+- **ROIStudio Lite** supports scene loading, manual ROI editing, spectra, and SEL/FITS import and export without Torch, Segment Anything, or SPARC's clustering dependencies.
 
 ### Manual Install
 

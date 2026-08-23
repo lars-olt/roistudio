@@ -1,5 +1,16 @@
 """Scene scan and load callback handlers."""
 
+from sparc.core.constants import get_instrument_config
+
+
+def get_instrument_config_for_scene(load_result):
+    instrument = (load_result or {}).get('instrument', 'ZCAM')
+    config = get_instrument_config(instrument)
+    bandset = (load_result or {}).get('bandset')
+    if bandset is not None and hasattr(bandset, '_sparc_wavelengths'):
+        config['wavelengths'] = bandset._sparc_wavelengths
+    return config
+
 
 def on_scene_found(scene_id, pixmap, filename, view, complete, sort_key):
     view.add_scene_thumbnail(scene_id, pixmap, filename, complete, sort_key)

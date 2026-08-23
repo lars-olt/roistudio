@@ -1,5 +1,7 @@
 """Main application controller - wires signals and delegates to focused handlers."""
 
+import importlib
+
 import numpy as np
 from PyQt5.QtCore import QObject
 import yaml
@@ -7,7 +9,7 @@ import yaml
 from .scene_controller import SceneController
 from .sparc_controller import SparcController
 from .color_manager import ColorManager
-from . import scene_callbacks, sparc_callbacks, roi_controller, sel_controller
+from . import scene_callbacks, roi_controller, sel_controller
 from utils.rendering import render_images
 from utils.paths import _get_config_path
 from roi_groups import group_roi_regions, class_index_for_region
@@ -38,13 +40,31 @@ class Controller(QObject):
         self._view_mode               = 'scene_loading'
         self._metadata_active_index   = None  # ROI highlighted by the metadata panel
         self._exposure                = 1.0   # RGB stretch exposure factor, neutral per scene
+        self._algorithm_enabled       = bool(getattr(
+            getattr(view, 'edition', None), 'algorithm_enabled', True
+        ))
+        self.algorithm_controller     = None
+        self._sparc_callbacks         = None
 
-        self.config_path = _get_config_path()
-        self.load_config()
+        self.config_path = None
+        self.config = {}
+        if self._algorithm_enabled:
+            self.config_path = _get_config_path()
+            self.load_config()
 
         self.color_manager     = ColorManager(self._model.instrument)
         self.scene_controller  = SceneController()
         self.sparc_controller  = SparcController()
+        if self._algorithm_enabled:
+            # String-based imports keep the algorithm graph out of PyInstaller's
+            # Lite analysis. The full spec explicitly includes these modules.
+            algorithm_module = importlib.import_module(
+                'controllers.algorithm_controller'
+            )
+            self.algorithm_controller = algorithm_module.AlgorithmController()
+            self._sparc_callbacks = importlib.import_module(
+                'controllers.sparc_callbacks'
+            )
 
         self._connect_view_signals()
         self._connect_controller_signals()
@@ -62,6 +82,8 @@ class Controller(QObject):
             self.save_config()
 
     def save_config(self):
+        if self.config_path is None:
+            return
         with open(self.config_path, 'w') as f:
             yaml.dump(self.config, f)
 
@@ -80,7 +102,8 @@ class Controller(QObject):
     # ------------------------------------------------------------------
 
     def _connect_view_signals(self):
-        self._view.set_sam_path_signal.connect(self.set_sam_path)
+        if self._algorithm_enabled:
+            self._view.set_sam_path_signal.connect(self.set_sam_path)
         self._view.open_folder_signal.connect(self._open_iof_folder)
         self._view.export_sel_signal.connect(self._export_sel)
         self._view.load_sel_signal.connect(self._load_sel)
@@ -88,7 +111,8 @@ class Controller(QObject):
         self._view.export_context_signal.connect(self._export_context)
         self._view.export_fits_signal.connect(self._export_fits)
         self._view.scene_dropped_signal.connect(self._load_scene_by_id)
-        self._view.run_algorithm_signal.connect(self._run_algorithm)
+        if self._algorithm_enabled:
+            self._view.run_algorithm_signal.connect(self._run_algorithm)
         self._view.scene_double_clicked_signal.connect(self._load_scene_by_id)
         self._view.pixel_hover_callback = self._on_pixel_hover
         self._view.apply_stretch_mode_signal.connect(self._apply_stretch_mode)
@@ -133,12 +157,13 @@ class Controller(QObject):
         sc.load_complete.connect(self._on_scene_load_complete)
         sc.load_error.connect(self._on_scene_load_error)
 
-        sp = self.sparc_controller
-        sp.started.connect(self._view.start_loading)
-        sp.stopped.connect(self._view.stop_loading)
-        sp.status_update.connect(self._view.show_status_message)
-        sp.complete.connect(self._on_sparc_complete)
-        sp.error.connect(self._on_sparc_error)
+        if self.algorithm_controller is not None:
+            algorithm = self.algorithm_controller
+            algorithm.started.connect(self._view.start_loading)
+            algorithm.stopped.connect(self._view.stop_loading)
+            algorithm.status_update.connect(self._view.show_status_message)
+            algorithm.complete.connect(self._on_sparc_complete)
+            algorithm.error.connect(self._on_sparc_error)
 
     # ------------------------------------------------------------------
     # Scene scanning / loading
@@ -207,9 +232,11 @@ class Controller(QObject):
     # ------------------------------------------------------------------
 
     def _run_algorithm(self):
-        sparc_callbacks.run_algorithm(
+        if self.algorithm_controller is None or self._sparc_callbacks is None:
+            return
+        self._sparc_callbacks.run_algorithm(
             self._model, self._view,
-            self.scene_controller, self.sparc_controller,
+            self.scene_controller, self.algorithm_controller,
             self._current_scene_id,
             self.config.get('sam_model_path', ''),
             self._view.panel_settings.get_parameters(),
@@ -222,9 +249,10 @@ class Controller(QObject):
             self._split_pair_eyes = set()
             # reserve colors already in use so new ROIs get distinct colors
             self.color_manager.reserve(self._current_color_names)
-            outcome = sparc_callbacks.on_sparc_complete(
+            outcome = self._sparc_callbacks.on_sparc_complete(
                 result, self._model, self._view,
-                self.sparc_controller, self.color_manager,
+                self.algorithm_controller, self.sparc_controller,
+                self.color_manager,
             )
             if outcome is not None:
                 new_rois, new_colors, new_names = outcome
@@ -240,7 +268,8 @@ class Controller(QObject):
             import traceback; traceback.print_exc()
 
     def _on_sparc_error(self, error_msg):
-        sparc_callbacks.on_sparc_error(error_msg, self._view)
+        if self._sparc_callbacks is not None:
+            self._sparc_callbacks.on_sparc_error(error_msg, self._view)
 
     # ------------------------------------------------------------------
     # ROI editing
@@ -737,4 +766,4 @@ class Controller(QObject):
 
     def _get_instrument_config(self):
         load_result = self._model.sparc_load_result
-        return sparc_callbacks.get_instrument_config_for_scene(load_result)
+        return scene_callbacks.get_instrument_config_for_scene(load_result)

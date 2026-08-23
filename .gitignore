@@ -20,5 +20,6 @@ roistudio_tree.txt
 convert_roi_fits.py
 config.yml
 
-tests
+tests/*
+!tests/test_lite_edition.py
 notes.txt

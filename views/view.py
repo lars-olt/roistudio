@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QMenuBar, QMenu
 from .panels import (SpectralViewPanel, ImageSelectionPanel, ImageEditingPanel,
                      StatusPanel, SettingsPanel, ROIMetadataPanel)
 from colors import Colors
+from editions import FULL
 from presets import INSTRUMENT_PRESETS
 from utils.scale import Scale, scaled, scaled_font
 
@@ -33,8 +34,9 @@ class View(QWidget):
     delete_all_rois_signal      = pyqtSignal()
     mode_changed                = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, edition=FULL):
         super().__init__()
+        self.edition              = edition
         self.selected_scene_id    = None
         self.scene_thumbnails     = {}
         self.pixel_hover_callback = None
@@ -44,7 +46,7 @@ class View(QWidget):
         Scale.changed.connect(self._apply_scale)
 
     def init_ui(self):
-        self.setWindowTitle('ROIStudio')
+        self.setWindowTitle(self.edition.product_name)
         self.resize(_DEFAULT_WINDOW_WIDTH, _DEFAULT_WINDOW_HEIGHT)
 
         self.layout = QVBoxLayout()
@@ -116,9 +118,13 @@ class View(QWidget):
         self.menu_file = QMenu("File", self.menubar)
         self.menubar.addMenu(self.menu_file)
 
-        self.action_set_sam_path = QAction("Set SAM Path", self)
-        self.action_set_sam_path.triggered.connect(self.set_sam_path_signal.emit)
-        self.menu_file.addAction(self.action_set_sam_path)
+        self.action_set_sam_path = None
+        if self.edition.algorithm_enabled:
+            self.action_set_sam_path = QAction("Set SAM Path", self)
+            self.action_set_sam_path.triggered.connect(
+                self.set_sam_path_signal.emit
+            )
+            self.menu_file.addAction(self.action_set_sam_path)
 
         self.action_open_folder = QAction("Open Folder", self)
         self.action_open_folder.triggered.connect(self.open_folder_signal.emit)
@@ -229,10 +235,14 @@ class View(QWidget):
 
     def _create_panels(self):
         self.panel_image_selection     = ImageSelectionPanel()
-        self.panel_image_editing       = ImageEditingPanel()
+        self.panel_image_editing       = ImageEditingPanel(
+            algorithm_enabled=self.edition.algorithm_enabled
+        )
         self.panel_spectral_view       = SpectralViewPanel()
         self.panel_status              = StatusPanel()
-        self.panel_settings            = SettingsPanel()
+        self.panel_settings            = SettingsPanel(
+            algorithm_enabled=self.edition.algorithm_enabled
+        )
         self.panel_roi_metadata        = ROIMetadataPanel()
 
         self.panel_image_editing.run_algorithm_signal.connect(self.run_algorithm_signal.emit)

@@ -11,7 +11,7 @@ _SETTINGS_VERSION = 1
 class UISettings:
     """Save and restore display preferences without mixing them with scene state."""
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, application_name='ROIStudio'):
         self._settings = (
             settings
             if settings is not None
@@ -19,7 +19,7 @@ class UISettings:
                 QSettings.IniFormat,
                 QSettings.UserScope,
                 'ROIStudio',
-                'ROIStudio',
+                application_name,
             )
         )
 

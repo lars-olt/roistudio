@@ -13,7 +13,7 @@ dependencies = [
     # Installed as an editable local package during development.
     # Pinned to a specific commit for reproducible builds.
     # See [tool.uv.sources] below for local dev override.
-    "sparc @ git+ssh://git@github.com/lars-olt/sparc.git",
+    "sparc[algorithm] @ git+ssh://git@github.com/lars-olt/sparc.git",
 
     # --- GUI ---
     "PyQt5==5.15.11",

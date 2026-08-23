@@ -1,7 +1,9 @@
 def _bootstrap_torch():
     """Import torch early to avoid DLL conflicts on Windows."""
     try:
-        import torch
+        # Keep this import invisible to Lite's static dependency graph.
+        import importlib
+        importlib.import_module('torch')
     except Exception as e:
         print(f"Warning: torch import failed: {e!r}")
 
@@ -18,7 +20,8 @@ def _bootstrap_pipeline():
         print(f"Warning: pipeline pre-import failed: {e!r}")
 
 
-_bootstrap_torch()
+# The shared loader stack relies on ASDF being initialized before
+# asdf_settings imports. This is common to both Full and Lite editions.
 _bootstrap_pipeline()
 
 import argparse
@@ -32,6 +35,7 @@ from models import Model
 from views import View
 from controllers import Controller
 from colors import Colors
+from editions import FULL
 from utils.paths import _resource_path
 from utils.scale import Scale, scaled_font
 from utils.ui_settings import UISettings
@@ -57,6 +61,7 @@ def _parse_args():
     parser.add_argument('roi_file',     nargs='?', help='Optional .sel or .fits ROI file to load after the scene')
     parser.add_argument('--notes',      default=None,
                         help='Observation-level science notes shown in the status panel')
+    parser.add_argument('--smoke-test', action='store_true', help=argparse.SUPPRESS)
     add_ui_arguments(parser)
     # strip Qt's own args before parsing so --style etc. don't confuse argparse
     args, _ = parser.parse_known_args()
@@ -75,17 +80,24 @@ def _set_app_font(_factor=None):
     QApplication.instance().setFont(QFont("Segoe UI", scaled_font(9)))
 
 
-if __name__ == '__main__':
+def run(edition=FULL):
+    """Start the shared application using the requested product edition."""
+    if edition.algorithm_enabled:
+        _bootstrap_torch()
+
     args = _parse_args()
 
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
     app = QApplication(sys.argv)
+    app.setApplicationName(edition.product_name)
+    app.setApplicationDisplayName(edition.product_name)
+    app.setOrganizationName("ROIStudio")
     app.setStyle("Fusion")
     app.setWindowIcon(_make_app_icon())
 
-    ui_settings = UISettings()
+    ui_settings = UISettings(application_name=edition.settings_name)
     ui_settings.restore_scale()
     apply_scale_override(args)
     Scale.init()
@@ -112,7 +124,7 @@ if __name__ == '__main__':
     app.setPalette(palette)
 
     model      = Model()
-    view       = View()
+    view       = View(edition=edition)
     controller = Controller(model, view)
     ui_settings.restore_view(view)
     apply_view_overrides(args, view)
@@ -145,6 +157,8 @@ if __name__ == '__main__':
     shortcut_m.activated.connect(view.panel_settings.chk_merge_spectra.toggle)
 
     view.show()
+    if args.smoke_test:
+        QTimer.singleShot(0, app.quit)
     QTimer.singleShot(0, view.ensure_visible_on_screen)
     Scale.set_window(view.windowHandle())
 
@@ -177,3 +191,7 @@ if __name__ == '__main__':
         QTimer.singleShot(0, _auto_load)
 
     sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    run(FULL)

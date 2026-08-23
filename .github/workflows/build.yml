@@ -19,11 +19,28 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            edition: full
+            product_name: ROIStudio
             artifact_name: ROIStudio-windows-x64
             pyqt5_install: uv pip install "PyQt5==5.15.11" "pyqt5-qt5==5.15.2" "pyqt5-sip>=12.11"
 
+          - os: windows-latest
+            edition: lite
+            product_name: ROIStudio Lite
+            artifact_name: ROIStudio-Lite-windows-x64
+            pyqt5_install: uv pip install "PyQt5==5.15.11" "pyqt5-qt5==5.15.2" "pyqt5-sip>=12.11"
+
           - os: macos-14
+            edition: full
+            product_name: ROIStudio
             artifact_name: ROIStudio-macos-silicon
+            pyqt5_install: uv pip install "PyQt5==5.15.11" "pyqt5-sip>=12.11"
+            macos_target: "14.0"
+
+          - os: macos-14
+            edition: lite
+            product_name: ROIStudio Lite
+            artifact_name: ROIStudio-Lite-macos-silicon
             pyqt5_install: uv pip install "PyQt5==5.15.11" "pyqt5-sip>=12.11"
             macos_target: "14.0"
 
@@ -61,9 +78,15 @@ jobs:
         run: uv venv --python 3.11
 
       - name: Install torch (CPU, all platforms)
+        if: matrix.edition == 'full'
         run: uv pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Install sparc from GitHub
+      - name: Install SPARC with algorithm dependencies
+        if: matrix.edition == 'full'
+        run: uv pip install "sparc[algorithm] @ git+ssh://git@github.com/lars-olt/sparc.git"
+
+      - name: Install SPARC without algorithm dependencies
+        if: matrix.edition == 'lite'
         run: uv pip install "sparc @ git+ssh://git@github.com/lars-olt/sparc.git"
 
       - name: Install PyQt5 (platform-specific)
@@ -72,6 +95,15 @@ jobs:
       - name: Install remaining roistudio dependencies
         run: uv pip install "matplotlib>=3.3.0" "PyYAML>=6.0" "setuptools<81"
 
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
+        run: .venv/bin/python -m unittest discover -s tests -p "test_*.py"
+
       - name: Install PyInstaller
         run: uv pip install pyinstaller
 
@@ -79,6 +111,8 @@ jobs:
       - name: Build executable (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          ROISTUDIO_EDITION: ${{ matrix.edition }}
         run: .venv\Scripts\pyinstaller.exe roistudio.spec --clean
 
       - name: Set macOS deployment target
@@ -87,29 +121,48 @@ jobs:
 
       - name: Build executable (macOS)
         if: runner.os == 'macOS'
+        env:
+          ROISTUDIO_EDITION: ${{ matrix.edition }}
         run: .venv/bin/pyinstaller roistudio.spec --clean
+
+      - name: Verify Lite excludes algorithm dependencies
+        if: matrix.edition == 'lite'
+        run: python packaging/audit_lite_build.py --dist "dist/${{ matrix.product_name }}" --module-toc build/roistudio/PYZ-00.toc
+
+      - name: Smoke-test executable (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          & "dist\${{ matrix.product_name }}\${{ matrix.product_name }}.exe" --smoke-test
+
+      - name: Smoke-test application (macOS)
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: '"dist/${{ matrix.product_name }}.app/Contents/MacOS/${{ matrix.product_name }}" --smoke-test'
 
       - name: Copy LICENSE (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item LICENSE dist\ROIStudio\LICENSE
+        run: Copy-Item LICENSE "dist\${{ matrix.product_name }}\LICENSE"
 
       - name: Copy LICENSE (macOS)
         if: runner.os == 'macOS'
-        run: cp LICENSE dist/ROIStudio.app/Contents/MacOS/LICENSE
+        run: cp LICENSE "dist/${{ matrix.product_name }}.app/Contents/MacOS/LICENSE"
 
       - name: Zip build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cd dist
-          Compress-Archive -Path ROIStudio -DestinationPath ../${{ matrix.artifact_name }}.zip
+          Compress-Archive -LiteralPath "${{ matrix.product_name }}" -DestinationPath "../${{ matrix.artifact_name }}.zip"
 
       - name: Zip build (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.artifact_name }}.zip ROIStudio.app
+          zip -r "../${{ matrix.artifact_name }}.zip" "${{ matrix.product_name }}.app"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -142,21 +195,27 @@ jobs:
           files: |
             artifacts/ROIStudio-windows-x64/ROIStudio-windows-x64.zip
             artifacts/ROIStudio-macos-silicon/ROIStudio-macos-silicon.zip
+            artifacts/ROIStudio-Lite-windows-x64/ROIStudio-Lite-windows-x64.zip
+            artifacts/ROIStudio-Lite-macos-silicon/ROIStudio-Lite-macos-silicon.zip
           body: |
             ## Installation
 
-            Download the zip for your platform, unzip it, and run `ROIStudio` inside.
+            Download the zip for your platform, unzip it, and run `ROIStudio` or `ROIStudio Lite` inside.
 
-            **Before running a scene:** In the GUI, go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
+            The standard ROIStudio builds include the SPARC algorithm. Before running SPARC, go to File -> Set SAM Path and point it to your SAM model weights (`sam_vit_h_4b8939.pth`).
             Download SAM weights: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
             (You will only need to do this once, as long as the location of the model weights doesn't change.)
+
+            ROIStudio Lite supports scene loading, manual ROI editing, spectra, and ROI import/export without SPARC, SAM, or their machine-learning dependencies.
 
             | Platform | Download |
             |----------|----------|
             | Windows (x64)* | ROIStudio-windows-x64.zip |
             | macOS Apple Silicon** | ROIStudio-macos-silicon.zip |
+            | Windows Lite (x64)* | ROIStudio-Lite-windows-x64.zip |
+            | macOS Lite Apple Silicon** | ROIStudio-Lite-macos-silicon.zip |
 
-            \*Make sure to extract the ROIStudio folder from the zip file you download **before** trying to run the executable.
+            \*Make sure to extract the application folder from the zip file you download **before** trying to run the executable.
 
             \*\*macOS quarantines the program for security. After downloading on macOS, check quarantine status by running this in your terminal:
             `xattr -l /path/to/ROIStudio.app`
