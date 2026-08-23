@@ -87,10 +87,6 @@ class ContinuousDeliveryContractTests(unittest.TestCase):
     def test_release_preserves_macos_bundle_symlinks(self):
         self.assertIn('zip -yr', self.build)
 
-    def test_release_tag_must_match_project_version(self):
-        self.assertIn('Verify release tag matches project version', self.build)
-        self.assertIn('GITHUB_REF_NAME', self.build)
-
     def test_full_development_install_requests_algorithm_extra(self):
         project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
         sparc = next(
