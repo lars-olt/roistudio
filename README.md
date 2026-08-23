@@ -1,5 +1,7 @@
 # ROIStudio
 
+[![CI](https://github.com/lars-olt/roistudio/actions/workflows/ci.yml/badge.svg)](https://github.com/lars-olt/roistudio/actions/workflows/ci.yml)
+
 ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm that automatically selects spectrally distinct regions of interest (ROIs) in multispectral images from Mars rovers. It supports data from the Mastcam-Z (ZCAM) instrument on the Perseverance rover and the Pancam (PCAM) instrument on the Spirit and Opportunity rovers. ROIStudio Lite provides the same scene, manual ROI, spectra, and file I/O workflow without the automatic SPARC algorithm or its machine-learning dependencies.
 
 ---
@@ -116,6 +118,18 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu
 ```
 
 Without this step ROIStudio will run in CPU mode, which is slower for segmentation but otherwise fully functional.
+
+### Running tests
+
+Tests run headlessly and do not require a SAM checkpoint or real rover data:
+
+```bash
+uv run --no-sync python -m unittest discover -s tests -p "test_*.py"
+```
+
+Pull requests and pushes to `main` run the suite on Windows and Apple Silicon.
+Version tags trigger the packaged Full and Lite builds, executable smoke tests,
+Lite dependency audit, and GitHub release.
 
 ### Setting the SAM Model Path
 

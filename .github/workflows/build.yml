@@ -9,10 +9,41 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Verify release tag matches project version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: >-
+          python -c "import os, tomllib;
+          version=tomllib.load(open('pyproject.toml','rb'))['project']['version'];
+          assert os.environ['GITHUB_REF_NAME'] == f'v{version}',
+          f'tag must be v{version}'"
+
   build:
     name: Build (${{ matrix.artifact_name }})
+    needs: validate
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     strategy:
       fail-fast: false
@@ -46,7 +77,9 @@ jobs:
 
     steps:
       - name: Checkout roistudio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -67,12 +100,14 @@ jobs:
           Add-Content -Path "$env:USERPROFILE\.ssh\known_hosts" -Value $key
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
 
       - name: Create venv
         run: uv venv --python 3.11
@@ -165,10 +200,11 @@ jobs:
           zip -yr "../${{ matrix.artifact_name }}.zip" "${{ matrix.product_name }}.app"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}.zip
+          if-no-files-found: error
           retention-days: 7
 
   release:
@@ -177,11 +213,12 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts
 

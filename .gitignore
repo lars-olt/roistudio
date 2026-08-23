@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[oc]
+.pytest_cache/
 
 # Virtual environment
 .venv/
@@ -20,6 +21,4 @@ roistudio_tree.txt
 convert_roi_fits.py
 config.yml
 
-tests/*
-!tests/test_lite_edition.py
 notes.txt
