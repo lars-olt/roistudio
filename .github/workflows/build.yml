@@ -107,15 +107,6 @@ jobs:
       - name: Install remaining roistudio dependencies
         run: uv pip install "matplotlib>=3.3.0" "PyYAML>=6.0" "setuptools<81"
 
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: .venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
-
-      - name: Run tests (macOS)
-        if: runner.os == 'macOS'
-        run: .venv/bin/python -m unittest discover -s tests -p "test_*.py"
-
       - name: Install PyInstaller
         run: uv pip install pyinstaller
 
@@ -184,9 +175,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  test:
+    name: Test release candidate
+    needs: build
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [build, test]
     permissions:
       contents: write
     runs-on: ubuntu-latest

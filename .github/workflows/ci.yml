@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]
@@ -10,7 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Keep reusable release tests separate from the parent build workflow.
+  group: roistudio-ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:

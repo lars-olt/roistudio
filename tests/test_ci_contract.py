@@ -78,11 +78,19 @@ class ContinuousDeliveryContractTests(unittest.TestCase):
             self.build,
         )
 
-    def test_test_suite_runs_before_packaging(self):
-        first_build_step = self.build.index('- name: Build executable')
-        for platform in ('Windows', 'macOS'):
-            test_step = self.build.index(f'- name: Run tests ({platform})')
-            self.assertLess(test_step, first_build_step)
+    def test_release_candidate_is_tested_after_building_before_release(self):
+        # Build first, run the regular CI suite, and only then publish a release.
+        build_job = self.build.index('\n  build:')
+        test_job = self.build.index('\n  test:')
+        release_job = self.build.index('\n  release:')
+
+        self.assertIn('workflow_call:', self.ci)
+        self.assertIn('name: Test release candidate', self.build)
+        self.assertIn('needs: build', self.build)
+        self.assertIn('uses: ./.github/workflows/ci.yml', self.build)
+        self.assertIn('needs: [build, test]', self.build)
+        self.assertLess(build_job, test_job)
+        self.assertLess(test_job, release_job)
 
     def test_release_preserves_macos_bundle_symlinks(self):
         self.assertIn('zip -yr', self.build)
