@@ -22,6 +22,7 @@ def _imported_modules(path):
     return modules
 
 
+# Lite should share the application while keeping every algorithm boundary shut.
 class LiteEditionTests(unittest.TestCase):
     def test_product_identity_and_capability_are_distinct(self):
         self.assertEqual(FULL.product_name, 'ROIStudio')
@@ -59,6 +60,7 @@ class LiteEditionTests(unittest.TestCase):
         'ROIStudio runtime tests require Python 3.11',
     )
     def test_lite_import_succeeds_with_algorithm_dependencies_blocked(self):
+        # This starts the real Lite UI while making algorithm imports impossible.
         script = r'''
 import importlib.abc
 import sys

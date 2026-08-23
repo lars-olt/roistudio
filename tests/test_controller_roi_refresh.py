@@ -65,6 +65,7 @@ def _load_controller():
 controller_module, roi_controller = _load_controller()
 
 
+# Editing an ROI should update only what changed and keep color cycles intact.
 class RoiRefreshTests(unittest.TestCase):
     def test_geometry_change_does_not_rebuild_canvas_or_metadata(self):
         controller = controller_module.Controller.__new__(

@@ -1,7 +1,5 @@
 """SPARC pipeline trigger and result handling."""
 
-import traceback
-
 import numpy as np
 from sparc.core.constants import get_instrument_config
 
@@ -152,7 +150,6 @@ def on_sparc_complete(result, model, view, algorithm_controller,
 def on_sparc_error(error_msg, view):
     view.stop_loading()
     view.show_status_message(f"Error running SPARC: {error_msg}")
-    traceback.print_exc()
 
 
 def _has_dual_cubes(load_result):

@@ -88,6 +88,7 @@ def _load_sel_controller():
 sel_controller = _load_sel_controller()
 
 
+# Both RGB images should be exported with names that identify the scene and eye.
 class ExportContextTests(unittest.TestCase):
     @patch.object(sel_controller, "export_fits")
     @patch.object(sel_controller, "export_sel")
@@ -155,6 +156,7 @@ class ExportContextTests(unittest.TestCase):
             )
 
 
+# SEL files should keep left and right regions aligned when one eye is missing.
 class SingleEyeSelTests(unittest.TestCase):
     @patch.object(sel_controller, "filenames_from_load_result", return_value=([], []))
     @patch.object(sel_controller, "_write_sel")
@@ -280,6 +282,7 @@ class SingleEyeSelTests(unittest.TestCase):
         )
 
 
+# FITS export should preserve the eyes, masks, and metadata that actually exist.
 class SingleEyeFitsTests(unittest.TestCase):
     def test_export_writes_only_present_eye_hdus(self):
         written = {}
@@ -466,6 +469,7 @@ class SingleEyeFitsTests(unittest.TestCase):
         self.assertIsNone(roi["roi"])
 
 
+# Saved previews should label each ROI in the same place and style as the UI.
 class SaveAnnotatedTests(unittest.TestCase):
     @patch.object(sel_controller.plt, "close")
     @patch.object(sel_controller.plt, "subplots")

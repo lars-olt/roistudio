@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy  # Load the real shared dependency before patching UI modules.
+
 
 def _module(name, **attributes):
     module = types.ModuleType(name)
@@ -98,7 +100,6 @@ def _load_canvas_module():
 
     stand_ins = {
         "cv2": _module("cv2"),
-        "numpy": _module("numpy"),
         "PyQt5": pyqt,
         "PyQt5.QtCore": qt_core,
         "PyQt5.QtWidgets": qt_widgets,
@@ -120,6 +121,7 @@ CanvasContainer = canvas_module.CanvasContainer
 DualCanvasContainer = canvas_module.DualCanvasContainer
 
 
+# Make sure a missing eye does not shift the ROI indexes that reach the canvas.
 class SingleEyeCanvasMappingTests(unittest.TestCase):
     def test_absent_eye_is_filtered_without_losing_logical_index(self):
         rois = [
@@ -151,6 +153,7 @@ class SingleEyeCanvasMappingTests(unittest.TestCase):
         self.assertEqual(CanvasContainer._logical_roi_index(context, 1), 2)
 
 
+# The navigator should only appear when there is actually something to navigate.
 class NavigatorGeometryTests(unittest.TestCase):
     def _canvas(self, zoom):
         return SimpleNamespace(
@@ -171,6 +174,7 @@ class NavigatorGeometryTests(unittest.TestCase):
         self.assertIsNotNone(CanvasContainer._navigator_geometry(self._canvas(2.1)))
 
 
+# Hiding the navigator should not hide or move the regular zoom indicator.
 class ZoomContextVisibilityTests(unittest.TestCase):
     def test_navigator_is_not_drawn_when_zoom_context_is_disabled(self):
         context = SimpleNamespace(

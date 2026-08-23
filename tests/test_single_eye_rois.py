@@ -78,6 +78,7 @@ roi_controller = _load_roi_controller()
 sparc_controller_module = _load_sparc_controller()
 
 
+# Drawing or editing one eye should never invent a rectangle in the other eye.
 class EyeLocalEditingTests(unittest.TestCase):
     def setUp(self):
         self.load_result = {
@@ -143,6 +144,7 @@ class _Metadata:
         return self._wavelengths
 
 
+# Spectra should use the available eye and leave the missing bands clearly empty.
 class SingleEyeSpectrumTests(unittest.TestCase):
     def setUp(self):
         self.controller = sparc_controller_module.SparcController()

@@ -3,28 +3,48 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from unittest.mock import patch
+
+import numpy  # Keep the shared dependency outside the temporary Qt stand-ins.
 
 
-try:
-    from PyQt5.QtGui import QImage, QPixmap  # noqa: F401
-except ImportError:
-    qt_gui = types.ModuleType("PyQt5.QtGui")
-    qt_gui.QImage = type("QImage", (), {})
-    qt_gui.QPixmap = type("QPixmap", (), {})
-    pyqt = types.ModuleType("PyQt5")
-    pyqt.QtGui = qt_gui
-    sys.modules["PyQt5"] = pyqt
-    sys.modules["PyQt5.QtGui"] = qt_gui
+def _load_converters():
+    try:
+        from PyQt5.QtGui import QImage, QPixmap  # noqa: F401
+        stand_ins = {}
+    except ImportError:
+        qt_gui = types.ModuleType("PyQt5.QtGui")
+        qt_gui.QImage = type("QImage", (), {})
+        qt_gui.QPixmap = type("QPixmap", (), {})
+        pyqt = types.ModuleType("PyQt5")
+        pyqt.__path__ = []
+        pyqt.QtGui = qt_gui
+        stand_ins = {
+            "PyQt5": pyqt,
+            "PyQt5.QtGui": qt_gui,
+        }
 
-module_path = Path(__file__).parents[1] / "utils" / "converters.py"
-spec = importlib.util.spec_from_file_location("converters_under_test", module_path)
-converters = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(converters)
+    module_path = Path(__file__).parents[1] / "utils" / "converters.py"
+    spec = importlib.util.spec_from_file_location(
+        "converters_under_test",
+        module_path,
+    )
+    module = importlib.util.module_from_spec(spec)
+    if not stand_ins:
+        spec.loader.exec_module(module)
+    else:
+        with patch.dict(sys.modules, stand_ins):
+            spec.loader.exec_module(module)
+    return module
+
+
+converters = _load_converters()
 
 move_rect_on_pixel_grid = converters.move_rect_on_pixel_grid
 snap_rect = converters.snap_rect
 
 
+# ROI movement should stay on source pixels without changing the ROI's size.
 class MoveRectOnPixelGridTests(unittest.TestCase):
     def test_move_changes_by_one_source_pixel_at_rounding_boundary(self):
         rect = (10.0, 20.0, 8.0, 6.0)

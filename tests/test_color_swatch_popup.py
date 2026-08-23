@@ -82,6 +82,7 @@ def _load_widgets():
 widgets_module, Timer = _load_widgets()
 
 
+# Keep the color picker small and make sure one click produces one clean choice.
 class SwatchPopupClickTests(unittest.TestCase):
     def setUp(self):
         Timer.callbacks.clear()

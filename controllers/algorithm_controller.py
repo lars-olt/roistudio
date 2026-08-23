@@ -3,8 +3,6 @@
 import numpy as np
 from PyQt5.QtCore import QObject, pyqtSignal
 
-from workers.sparc_runner import SparcRunThread
-
 
 class AlgorithmController(QObject):
     """Own the optional SPARC worker; absent from ROIStudio Lite."""
@@ -21,15 +19,37 @@ class AlgorithmController(QObject):
 
     def start_sparc(self, sam_path, folder_path, seq_id, obs_ix, instrument,
                     params=None, load_result=None, presegmented=None):
-        self._sparc_thread = SparcRunThread(
+        if self._sparc_thread is not None and self._sparc_thread.isRunning():
+            self.status_update.emit("SPARC is already running.")
+            return False
+
+        thread = self._new_thread(
             sam_path, folder_path, seq_id, obs_ix, instrument,
             params, load_result, presegmented,
         )
-        self._sparc_thread.status_update.connect(self.status_update.emit)
-        self._sparc_thread.sparc_complete.connect(self.complete.emit)
-        self._sparc_thread.sparc_error.connect(self.error.emit)
-        self._sparc_thread.start()
+        self._sparc_thread = thread
+        thread.status_update.connect(self.status_update.emit)
+        thread.sparc_complete.connect(self.complete.emit)
+        thread.sparc_error.connect(self.error.emit)
+        thread.finished.connect(
+            lambda current_thread=thread: self._thread_finished(current_thread)
+        )
+        thread.start()
         self.started.emit()
+        return True
+
+    @staticmethod
+    def _new_thread(*args):
+        # Delay the algorithm import so this controller remains safe to inspect
+        # and test in ROIStudio Lite's lightweight environment.
+        from workers.sparc_runner import SparcRunThread
+        return SparcRunThread(*args)
+
+    def _thread_finished(self, thread):
+        if self._sparc_thread is thread:
+            self._sparc_thread = None
+        thread.deleteLater()
+        self.stopped.emit()
 
     @staticmethod
     def extract_roi_data(result, instrument_config):
@@ -68,4 +88,3 @@ class AlgorithmController(QObject):
                 'mineral':           f'ROI_{i+1}',
             })
         return rois
-

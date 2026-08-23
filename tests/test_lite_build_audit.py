@@ -14,6 +14,7 @@ SPEC.loader.exec_module(AUDIT_MODULE)
 audit = AUDIT_MODULE.audit
 
 
+# The audit should pass a clean Lite build and clearly reject algorithm weight.
 class LiteBuildAuditTests(unittest.TestCase):
     def setUp(self):
         self._temporary_directory = tempfile.TemporaryDirectory()

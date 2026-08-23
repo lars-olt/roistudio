@@ -1,10 +1,14 @@
+import traceback
+
 from PyQt5.QtCore import QThread, pyqtSignal
+
 from sparc.core.functional import run_sparc, run_sparc_from_load_result
 from sparc.core.config import (
     SparcConfig, LoadConfig, SegmentConfig,
     ROIConfig, SpectralConfig,
     SegmentationBackend, ROIBackend,
 )
+from sparc.utils.memory import release_cuda_memory
 
 
 class SparcRunThread(QThread):
@@ -27,6 +31,8 @@ class SparcRunThread(QThread):
         self.presegmented  = presegmented
 
     def run(self):
+        result = None
+        error_message = None
         try:
             seg  = self.params.get('segment', {})
             roi  = self.params.get('roi', {})
@@ -79,7 +85,18 @@ class SparcRunThread(QThread):
                     config         = config,
                 )
 
-            self.sparc_complete.emit(result)
-
         except Exception as e:
-            self.sparc_error.emit(str(e))
+            error_message = f"{e}\n\n{traceback.format_exc()}"
+        finally:
+            # A finished worker must not keep a previous scene alive.
+            self.load_result = None
+            self.presegmented = None
+
+        # Run after the except block so traceback frames no longer retain SAM
+        # tensors. This also releases PyTorch's unused caching-allocator blocks.
+        release_cuda_memory()
+
+        if error_message is not None:
+            self.sparc_error.emit(error_message)
+        else:
+            self.sparc_complete.emit(result)

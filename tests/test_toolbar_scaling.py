@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 
+# Keep toolbar controls readable without letting Retina scaling make them huge.
 class ToolbarScalingTests(unittest.TestCase):
     @staticmethod
     def _numeric_constants(path):
@@ -39,6 +40,7 @@ class ToolbarScalingTests(unittest.TestCase):
             )
 
     def test_scene_thumbnails_use_capped_logical_application_scaling(self):
+        # Thumbnails need one explicit logical size and one explicit upper limit.
         path = (Path(__file__).parents[1] / 'views' / 'panels' /
                 'image_selection.py')
         tree = ast.parse(path.read_text(encoding='utf-8'))
@@ -51,15 +53,33 @@ class ToolbarScalingTests(unittest.TestCase):
         ]
         self.assertEqual(physical_calls, [])
 
-        capped_calls = [
-            node for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == 'capped_scaled'
-        ]
-        self.assertTrue(
-            capped_calls,
-            'Scene thumbnails must have a maximum size at large UI scales',
+        panel = next(
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == 'ImageSelectionPanel'
+        )
+        layout = next(
+            node for node in panel.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == '_layout_params'
+        )
+        thumbnail_assignment = next(
+            node for node in layout.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == 'thumb'
+                for target in node.targets
+            )
+        )
+
+        call = thumbnail_assignment.value
+        self.assertIsInstance(call, ast.Call)
+        self.assertIsInstance(call.func, ast.Name)
+        self.assertEqual(call.func.id, 'capped_scaled')
+        self.assertEqual(
+            [argument.id for argument in call.args],
+            ['_THUMB_BASE', '_THUMB_MAX'],
+            'The scene thumbnail dimension must use its explicit maximum',
         )
 
     def test_selection_cursor_starts_compact_and_has_a_small_cap(self):

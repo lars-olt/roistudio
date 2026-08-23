@@ -54,6 +54,7 @@ def _load_color_manager():
 color_manager_module = _load_color_manager()
 
 
+# A manually reused color should only interrupt the normal color order once.
 class OneShotColorSelectionTests(unittest.TestCase):
     def test_reusing_a_color_once_then_resumes_automatic_rotation(self):
         manager = color_manager_module.ColorManager('ZCAM')

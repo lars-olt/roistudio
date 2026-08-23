@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 
 
+# These are the release rules I do not want the workflow to silently lose.
 class ContinuousDeliveryContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -31,6 +32,48 @@ class ContinuousDeliveryContractTests(unittest.TestCase):
         }
         for artifact in expected_artifacts:
             self.assertIn(f'artifact_name: {artifact}', self.build)
+            self.assertIn(
+                f'artifacts/{artifact}/{artifact}.zip',
+                self.build,
+                f'{artifact} must be attached to the GitHub release',
+            )
+
+    def test_packaged_applications_are_smoke_tested_before_upload(self):
+        # Every uploaded app should have proved that it can at least start.
+        smoke_commands = (
+            '& "dist\\${{ matrix.product_name }}\\'
+            '${{ matrix.product_name }}.exe" --smoke-test',
+            '"dist/${{ matrix.product_name }}.app/Contents/MacOS/'
+            '${{ matrix.product_name }}" --smoke-test',
+        )
+        upload_step = self.build.index('- name: Upload artifact')
+
+        for command in smoke_commands:
+            self.assertIn(command, self.build)
+            self.assertLess(
+                self.build.index(command),
+                upload_step,
+                'Only a packaged application that starts successfully may be uploaded',
+            )
+
+    def test_lite_bundle_is_audited_for_algorithm_dependencies(self):
+        # Lite is only Lite if the heavy algorithm packages stay out of it.
+        self.assertIn(
+            '- name: Verify Lite excludes algorithm dependencies',
+            self.build,
+        )
+        self.assertIn(
+            'python packaging/audit_lite_build.py '
+            '--dist "dist/${{ matrix.product_name }}" '
+            '--module-toc build/roistudio/PYZ-00.toc',
+            self.build,
+        )
+
+    def test_test_suite_runs_before_packaging(self):
+        first_build_step = self.build.index('- name: Build executable')
+        for platform in ('Windows', 'macOS'):
+            test_step = self.build.index(f'- name: Run tests ({platform})')
+            self.assertLess(test_step, first_build_step)
 
     def test_release_preserves_macos_bundle_symlinks(self):
         self.assertIn('zip -yr', self.build)

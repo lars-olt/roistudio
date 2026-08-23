@@ -16,6 +16,7 @@ def _scanner_pancam_pattern():
     raise AssertionError('Scene scanner Pancam filename pattern was not found')
 
 
+# Real archive filenames can use placeholders where site and position would be.
 class PancamFilenameTests(unittest.TestCase):
     def test_scanner_accepts_archive_site_position_placeholders(self):
         pattern = re.compile(_scanner_pancam_pattern(), re.IGNORECASE | re.VERBOSE)

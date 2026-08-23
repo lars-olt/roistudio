@@ -3,6 +3,7 @@ import unittest
 from roi_groups import class_index_for_region, group_roi_regions
 
 
+# Reusing a color means one selection class, even when its regions are separate.
 class SelectionClassGroupingTests(unittest.TestCase):
     def test_repeated_color_is_one_class_with_independent_eye_regions(self):
         regions = [

@@ -463,10 +463,14 @@ class ImageEditingPanel(QWidget):
         self.canvas_container.set_rois(rois, colors, names)
 
     def start_loading(self):
+        if self.run_button is not None:
+            self.run_button.setEnabled(False)
         self.loading_indicator.start_loading()
 
     def stop_loading(self):
         self.loading_indicator.stop_loading()
+        if self.run_button is not None:
+            self.run_button.setEnabled(True)
 
     def eventFilter(self, obj, event):
         return super().eventFilter(obj, event)
