@@ -4,6 +4,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
+SETUP_UV_ACTION = (
+    'astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9'
+)
 
 
 # These are the release rules I do not want the workflow to silently lose.
@@ -22,6 +25,12 @@ class ContinuousDeliveryContractTests(unittest.TestCase):
         self.assertIn('branches: [main]', self.ci)
         self.assertIn('windows-latest', self.ci)
         self.assertIn('macos-14', self.ci)
+
+    def test_uv_action_uses_an_immutable_release(self):
+        # setup-uv does not publish moving tags like v9, so this must stay exact.
+        for workflow in (self.ci, self.build):
+            self.assertIn(f'uses: {SETUP_UV_ACTION}', workflow)
+            self.assertNotIn('astral-sh/setup-uv@v', workflow)
 
     def test_release_builds_both_editions_on_both_platforms(self):
         expected_artifacts = {
