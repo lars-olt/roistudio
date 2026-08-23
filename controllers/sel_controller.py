@@ -592,10 +592,12 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
     try:
         from astropy.io import fits as astropy_fits
 
+        instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+        is_zcam = instrument == 'ZCAM'
         H, W  = load_result['rgb_img'].shape[:2]
         hdus  = []
         first = True
-        scene_metadata = observation_metadata(load_result)
+        scene_metadata = {} if is_zcam else observation_metadata(load_result)
 
         groups = group_roi_regions(
             rois_data, [(255, 255, 255)] * len(rois_data), color_names
@@ -624,10 +626,14 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
                 hdr['SOURCEFN'] = 'ROIStudio'
                 hdr['EXTNAME']  = f"{group['name'].upper()} {eye.upper()}"
                 hdr['IMAGEREF'] = scene_id
-                hdr['ROIINDEX'] = class_index
 
-                for key, value in group['metadata'].items():
-                    hdr[key] = value
+                # Mastcam-Z follows the compact legacy MERSpect/ASDF mask
+                # header. Preserve ROIStudio's existing richer metadata for
+                # other instruments, including Pancam.
+                if not is_zcam:
+                    hdr['ROIINDEX'] = class_index
+                    for key, value in group['metadata'].items():
+                        hdr[key] = value
 
                 if first:
                     for key, value in scene_metadata.items():

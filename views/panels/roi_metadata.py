@@ -73,8 +73,7 @@ _DISTANCE = MetadataField('DISTANCE', 'Distance', ('nearfield', 'midfield', 'far
 _DESCRIPTION = MetadataField('DESCRIPTION', 'Description')
 
 
-# Field keys, values, and gating mirror the marslab metadata settings - values
-# are written to FITS headers verbatim.
+# Field keys, values, and gating mirror the marslab metadata settings.
 MCZ_METADATA_FIELDS = (
     MetadataField('FEATURE', 'Feature', ('rock', 'soil', 'pebble', 'hardware', 'landscape')),
     MetadataField('FEATURE_SUBTYPE', 'Feature subtype',
