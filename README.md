@@ -219,7 +219,7 @@ After running SPARC on a scene, you should see ROIs drawn on the canvas, and cor
 
 ### Drawing ROIs
 
-Select the rectangle tool (`R`) and drag on the canvas to draw a new ROI. If the rectangle is too small it will not be created and a message will appear in the status log. In single-screen mode, the new region is paired into the other eye. In split-screen mode, it is created only in the eye where you draw it.
+Select the rectangle tool (`R`) and drag on the canvas to draw a new ROI. If the rectangle is too small it will not be created and a message will appear in the status log. New regions are paired into the other eye by default in both single- and split-screen mode. Turn off **Draw both eyes** under **Settings > ROI Editing** to create a split-screen ROI only in the eye where you draw it.
 
 ### Selecting and Editing ROIs
 
@@ -229,7 +229,7 @@ With the selection tool (`V`), click an ROI to select it. Selected ROIs show cor
 
 ### ROI Colors
 
-The active color swatch in the toolbar shows the color that will be assigned to the next drawn ROI. In single-screen mode, colors advance after each paired draw. In split-screen mode, the color remains active until you have drawn in both eyes, making complementary regions easy to create. Click the swatch to choose a different color—including a color already in use—or to finish an intentional single-eye selection and move on.
+The active color swatch in the toolbar shows the color that will be assigned to the next drawn ROI. Colors advance after each paired draw. With **Draw both eyes** disabled, the color remains active until you have drawn in both eyes, making complementary single-eye regions easy to create. Click the swatch to choose a different color—including a color already in use—or to finish an intentional single-eye selection and move on.
 
 <img width="136" height="111" alt="Screenshot of the color palette popup with swatches visible" src="https://github.com/user-attachments/assets/d1b0a3e7-bddb-4a86-b150-0b7d46cab748" />
 
@@ -255,6 +255,12 @@ In the application **Settings** panel, the **View Settings** section controls:
 - **Merge camera spectra** - average stereo bands into one spectrum, or plot left and right cameras separately.
 - **Line Width** - thickness of spectrum lines.
 
+The **ROI Editing** section controls:
+
+- **Draw both eyes** - when enabled (the default), drawing in either split-screen
+  canvas also creates the homography-mapped rectangle in the other eye. Disable
+  it to create a left-only or right-only ROI.
+
 ---
 
 ## Split Screen Mode
@@ -268,9 +274,9 @@ Click the split screen button at the bottom of the toolbar to view left and righ
 
 <img width="1602" height="923" alt="Screenshot of split screen mode with left and right images and ROIs on both sides" src="https://github.com/user-attachments/assets/66d00f65-8c3c-44cc-8047-dc8b98d9b8f5" />
 
-In split-screen mode, drawing, moving, resizing, and deleting are local to the eye under the cursor. This allows a selection to contain a left-only region, a right-only region, or regions in both eyes without an extra mode control. Single-eye selections are marked in the ROI Metadata panel. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
+In split-screen mode, drawing creates a paired region in both eyes by default. Disable **Settings > ROI Editing > Draw both eyes** to draw only in the eye under the cursor. Moving, resizing, and deleting remain local to the active eye, and single-eye selections are marked in the ROI Metadata panel. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
 
-Switching between single and split screen only changes the view; it never maps, resets, creates, or deletes stored rectangles. Draw in single screen when you want a paired region, and draw in split screen when the corresponding position does not exist in the other eye.
+Switching between single and split screen only changes the view; it never maps, resets, creates, or deletes stored rectangles. Turn off **Draw both eyes** when the corresponding position does not exist in the other eye.
 
 ---
 

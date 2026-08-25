@@ -88,6 +88,13 @@ class UISettings:
                 float,
             ),
         )
+        panel.set_paired_roi_drawing_enabled(
+            self._value(
+                'editing/paired_roi_drawing',
+                panel.paired_roi_drawing_enabled(),
+                bool,
+            )
+        )
 
     def save(self, view):
         panel = view.panel_settings
@@ -109,5 +116,9 @@ class UISettings:
 
         for key, value in display.items():
             self._settings.setValue(f'spectral/{key}', value)
+        self._settings.setValue(
+            'editing/paired_roi_drawing',
+            panel.paired_roi_drawing_enabled(),
+        )
 
         self._settings.sync()

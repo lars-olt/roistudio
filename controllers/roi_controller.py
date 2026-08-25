@@ -63,13 +63,18 @@ def spectrum_data(left_rect, right_rect, load_result, instrument_config,
     return data
 
 
-def on_roi_created(rect, camera, load_result, instrument_config, sparc_controller, has_dual_cubes):
+def on_roi_created(rect, camera, load_result, instrument_config,
+                   sparc_controller, has_dual_cubes, paired_draw=None):
     """Build a new ROI data dictionary from a freshly drawn rectangle."""
     instrument = load_result.get('instrument', 'ZCAM').strip().upper()
-    paired_draw = camera == 'single'
+    if paired_draw is None:
+        paired_draw = camera == 'single'
+    else:
+        paired_draw = bool(paired_draw)
 
     # single screen draws in the displayed camera - left for PCAM, right for ZCAM
-    if paired_draw:
+    if camera == 'single':
+        paired_draw = True
         camera = 'left' if instrument == 'PCAM' else 'right'
 
     if has_dual_cubes:

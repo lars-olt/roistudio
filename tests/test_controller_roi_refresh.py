@@ -107,6 +107,7 @@ class RoiRefreshTests(unittest.TestCase):
         controller._current_color_names = []
         controller._split_pair_color_name = None
         controller._split_pair_eyes = set()
+        controller._paired_roi_drawing = False
         controller._get_instrument_config = MagicMock(return_value={})
         controller._has_dual_cubes = MagicMock(return_value=True)
         controller.sparc_controller = MagicMock()
@@ -133,6 +134,44 @@ class RoiRefreshTests(unittest.TestCase):
         self.assertEqual(controller._split_pair_eyes, set())
         # Completion consumes the second red draw without putting red back.
         controller.color_manager.set_next.assert_called_once_with('red')
+
+    def test_paired_split_draw_creates_both_eyes_and_advances_color(self):
+        controller = controller_module.Controller.__new__(
+            controller_module.Controller
+        )
+        controller._model = SimpleNamespace(
+            sparc_load_result={'instrument': 'ZCAM'}
+        )
+        controller._view = SimpleNamespace(
+            set_export_enabled=MagicMock(),
+            show_status_message=MagicMock(),
+        )
+        controller._current_rois_data = []
+        controller._current_colors = []
+        controller._current_color_names = []
+        controller._split_pair_color_name = None
+        controller._split_pair_eyes = set()
+        controller._paired_roi_drawing = True
+        controller._get_instrument_config = MagicMock(return_value={})
+        controller._has_dual_cubes = MagicMock(return_value=True)
+        controller.sparc_controller = MagicMock()
+        controller._update_roi_view = MagicMock()
+        controller.color_manager = MagicMock()
+        controller.color_manager.next.return_value = ((255, 0, 0), 'red')
+        roi_controller.on_roi_created.side_effect = None
+        roi_controller.on_roi_created.return_value = {
+            'left_rect': (1, 2, 3, 4),
+            'right_rect': (5, 6, 3, 4),
+        }
+
+        controller._on_roi_created((5, 6, 3, 4), 'right')
+
+        self.assertTrue(
+            roi_controller.on_roi_created.call_args.kwargs['paired_draw']
+        )
+        self.assertIsNone(controller._split_pair_color_name)
+        self.assertEqual(controller._split_pair_eyes, set())
+        controller.color_manager.set_next.assert_not_called()
 
     def test_choosing_another_color_finishes_a_single_eye_cycle(self):
         controller = controller_module.Controller.__new__(

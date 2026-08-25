@@ -34,6 +34,7 @@ class Controller(QObject):
         self._selection_colors        = []
         self._selection_names         = []
         self._is_split_screen         = False
+        self._paired_roi_drawing      = True
         self._split_pair_color_name   = None
         self._split_pair_eyes         = set()
         self._pending_recolor_index   = None  # ROI index being recolored, or None for the next color
@@ -144,6 +145,9 @@ class Controller(QObject):
         self._view.panel_roi_metadata.roi_activated.connect(self._on_roi_metadata_activated)
         self._view.mode_changed.connect(self._on_view_mode_changed)
         self._view.panel_settings.exposure_changed.connect(self._on_exposure_changed)
+        self._view.panel_settings.paired_roi_drawing_changed.connect(
+            self._on_paired_roi_drawing_changed
+        )
 
     def _connect_controller_signals(self):
         sc = self.scene_controller
@@ -286,18 +290,24 @@ class Controller(QObject):
         if self._model.sparc_load_result is None:
             return
         try:
+            paired_draw = (camera == 'single'
+                           or (camera in {'left', 'right'}
+                               and getattr(self, '_paired_roi_drawing', True)))
             roi_data    = roi_controller.on_roi_created(
                 rect, camera,
                 self._model.sparc_load_result,
                 self._get_instrument_config(),
                 self.sparc_controller,
                 self._has_dual_cubes(),
+                paired_draw=paired_draw,
             )
             color, name = self.color_manager.next()
             self._current_rois_data.append(roi_data)
             self._current_colors.append(color)
             self._current_color_names.append(name)
-            self._update_split_color_cycle(name, camera)
+            self._update_split_color_cycle(
+                name, 'single' if paired_draw else camera
+            )
             self._update_roi_view()
             self._view.set_export_enabled(True)
             self._view.show_status_message("ROI created")
@@ -692,6 +702,20 @@ class Controller(QObject):
         self._exposure = factor
         self._render_current_images()
 
+    def _on_paired_roi_drawing_changed(self, enabled):
+        self._paired_roi_drawing = bool(enabled)
+        if enabled and self._split_pair_color_name is not None:
+            # Enabling paired draws completes any unfinished one-eye color cycle.
+            self.color_manager.consume(self._split_pair_color_name)
+            self._split_pair_color_name = None
+            self._split_pair_eyes = set()
+            self._refresh_swatch()
+        if self._is_split_screen:
+            mode = "both eyes" if enabled else "the active eye only"
+            self._view.show_status_message(
+                f"Split-screen rectangle drawing targets {mode}"
+            )
+
     def _on_rgb_bands_changed(self, r, g, b, use_dcs, camera):
         self._render_current_images()
 
@@ -742,7 +766,9 @@ class Controller(QObject):
             if not is_split:
                 self._view.panel_image_editing.set_crop_enabled(True)
         self._view.show_status_message(
-            ("Split screen: edits affect one eye only"
+            (("Split screen: rectangle drawing targets both eyes"
+              if self._paired_roi_drawing
+              else "Split screen: rectangle drawing targets the active eye only")
              if is_split else "Single screen: drawing creates paired regions")
         )
 

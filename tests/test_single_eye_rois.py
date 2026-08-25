@@ -78,7 +78,7 @@ roi_controller = _load_roi_controller()
 sparc_controller_module = _load_sparc_controller()
 
 
-# Drawing or editing one eye should never invent a rectangle in the other eye.
+# Single-eye drawing and editing should not invent a rectangle in the other eye.
 class EyeLocalEditingTests(unittest.TestCase):
     def setUp(self):
         self.load_result = {
@@ -116,6 +116,21 @@ class EyeLocalEditingTests(unittest.TestCase):
         self.assertIsNone(right["left_rect"])
         self.assertEqual(right["right_rect"], (10, 11, 4, 5))
         self.assertEqual(right["roi"], (10, 11, 4, 5))
+
+    def test_split_screen_paired_creation_builds_both_eyes(self):
+        left = roi_controller.on_roi_created(
+            (1, 2, 4, 5), "left", self.load_result, {}, self.spectra, True,
+            paired_draw=True,
+        )
+        right = roi_controller.on_roi_created(
+            (10, 11, 4, 5), "right", self.load_result, {}, self.spectra, True,
+            paired_draw=True,
+        )
+
+        self.assertEqual(left["left_rect"], (1, 2, 4, 5))
+        self.assertEqual(left["right_rect"], (1, 2, 4, 5))
+        self.assertEqual(right["left_rect"], (10, 11, 4, 5))
+        self.assertEqual(right["right_rect"], (10, 11, 4, 5))
 
     def test_editing_single_eye_does_not_recreate_missing_eye(self):
         right_only = {**self.roi, "left_rect": None}

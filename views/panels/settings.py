@@ -24,6 +24,7 @@ class SettingsPanel(QFrame):
     merge_spectra_changed = pyqtSignal(bool)
     line_width_changed    = pyqtSignal(float)
     exposure_changed      = pyqtSignal(float)
+    paired_roi_drawing_changed = pyqtSignal(bool)
 
     def __init__(self, algorithm_enabled=True):
         super().__init__()
@@ -82,6 +83,17 @@ class SettingsPanel(QFrame):
              "Thickness of spectrum lines in the spectral plot."),
             ("Exposure",             self.slider_exposure,
              "Brighten or darken the RGB stretch image."),
+        ]))
+
+        # ROI Editing
+        self.chk_paired_roi_drawing = self._chk(True)
+        self.chk_paired_roi_drawing.toggled.connect(
+            self.paired_roi_drawing_changed.emit
+        )
+        self._add_section("roi_editing", "ROI Editing", self._form([
+            ("Draw both eyes", self.chk_paired_roi_drawing,
+             "In split screen, create a homography-mapped ROI in the other "
+             "eye too. Disable this to draw only in the active eye."),
         ]))
 
         if self.algorithm_enabled:
@@ -222,7 +234,7 @@ class SettingsPanel(QFrame):
                 background: {Colors.ACCENT}; border: 1px solid {Colors.ACCENT};
             }}
         """
-        checks = [self.chk_merge_spectra]
+        checks = [self.chk_merge_spectra, self.chk_paired_roi_drawing]
         if self.algorithm_enabled:
             checks += [self.chk_use_dcs, self.chk_preserve_bg]
         for chk in checks:
@@ -314,6 +326,12 @@ class SettingsPanel(QFrame):
             self.chk_merge_spectra.setChecked(bool(merge_spectra))
         if line_width is not None:
             self.slider_line_width.setValue(round(float(line_width) * 100))
+
+    def paired_roi_drawing_enabled(self):
+        return self.chk_paired_roi_drawing.isChecked()
+
+    def set_paired_roi_drawing_enabled(self, enabled):
+        self.chk_paired_roi_drawing.setChecked(bool(enabled))
 
     def section_states(self):
         return {key: section.is_expanded()
