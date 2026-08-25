@@ -526,12 +526,12 @@ class CanvasContainer(QWidget):
         self.pan_offset.setX(vx - (ox2 + img_x) * self.zoom_level)
         self.pan_offset.setY(vy - (oy2 + img_y) * self.zoom_level)
         self.update()
+        self._emit_sync()
 
     def _logical_roi_index(self, local_index):
         if 0 <= local_index < len(self.roi_indices):
             return self.roi_indices[local_index]
         return local_index
-        self._emit_sync()
 
     # ------------------------------------------------------------------
     # Events

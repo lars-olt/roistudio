@@ -174,6 +174,25 @@ class NavigatorGeometryTests(unittest.TestCase):
         self.assertIsNotNone(CanvasContainer._navigator_geometry(self._canvas(2.1)))
 
 
+# A zoom changes both scale and pan offset, so synced canvases must be notified
+# after the complete view transform has been applied.
+class CanvasSyncTests(unittest.TestCase):
+    def test_zoom_emits_sync_after_updating_the_view(self):
+        context = SimpleNamespace(
+            zoom_level=1.0,
+            pan_offset=_PointF(0, 0),
+            _canvas_origin=MagicMock(return_value=(0.0, 0.0)),
+            update=MagicMock(),
+            _emit_sync=MagicMock(),
+        )
+
+        CanvasContainer._apply_zoom(context, 2.0, 25.0, 30.0)
+
+        self.assertEqual(context.zoom_level, 2.0)
+        context.update.assert_called_once_with()
+        context._emit_sync.assert_called_once_with()
+
+
 # Hiding the navigator should not hide or move the regular zoom indicator.
 class ZoomContextVisibilityTests(unittest.TestCase):
     def test_navigator_is_not_drawn_when_zoom_context_is_disabled(self):
