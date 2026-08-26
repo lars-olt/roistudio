@@ -329,8 +329,11 @@ class Controller(QObject):
                 roi_index,
             )
 
-            removed_region = camera == 'single'
-            if camera in {'left', 'right'}:
+            paired_delete = (camera == 'single'
+                             or (camera in {'left', 'right'}
+                                 and getattr(self, '_paired_roi_drawing', True)))
+            removed_region = paired_delete
+            if camera in {'left', 'right'} and not paired_delete:
                 roi = dict(self._current_rois_data[roi_index])
                 roi[f'{camera}_rect'] = None
                 if roi.get('left_rect') is None and roi.get('right_rect') is None:
@@ -358,12 +361,12 @@ class Controller(QObject):
 
             self._update_roi_view()
             self._view.set_export_enabled(bool(self._current_rois_data))
-            if camera in {'left', 'right'}:
+            if removed_region:
+                self._view.show_status_message(f"{name} region deleted")
+            elif camera in {'left', 'right'}:
                 self._view.show_status_message(
                     f"{name} region removed from {camera} eye"
                 )
-            else:
-                self._view.show_status_message(f"{name} region deleted")
         except Exception as e:
             self._view.show_status_message(f"Error deleting ROI: {e}")
 
@@ -713,7 +716,7 @@ class Controller(QObject):
         if self._is_split_screen:
             mode = "both eyes" if enabled else "the active eye only"
             self._view.show_status_message(
-                f"Split-screen rectangle drawing targets {mode}"
+                f"Split-screen draw/delete targets {mode}"
             )
 
     def _on_rgb_bands_changed(self, r, g, b, use_dcs, camera):
@@ -766,9 +769,9 @@ class Controller(QObject):
             if not is_split:
                 self._view.panel_image_editing.set_crop_enabled(True)
         self._view.show_status_message(
-            (("Split screen: rectangle drawing targets both eyes"
+            (("Split screen: draw/delete targets both eyes"
               if self._paired_roi_drawing
-              else "Split screen: rectangle drawing targets the active eye only")
+              else "Split screen: draw/delete targets the active eye only")
              if is_split else "Single screen: drawing creates paired regions")
         )
 

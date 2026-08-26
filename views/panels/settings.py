@@ -91,9 +91,10 @@ class SettingsPanel(QFrame):
             self.paired_roi_drawing_changed.emit
         )
         self._add_section("roi_editing", "ROI Editing", self._form([
-            ("Draw both eyes", self.chk_paired_roi_drawing,
+            ("Draw/delete both eyes", self.chk_paired_roi_drawing,
              "In split screen, create a homography-mapped ROI in the other "
-             "eye too. Disable this to draw only in the active eye."),
+             "eye and delete paired ROIs from both eyes. Disable this to draw "
+             "or delete only in the active eye."),
         ]))
 
         if self.algorithm_enabled:

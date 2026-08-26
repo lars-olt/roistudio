@@ -26,6 +26,8 @@ def _load_controller():
         'controllers.roi_controller',
         on_roi_created=MagicMock(),
         on_roi_changed=MagicMock(return_value={'right_rect': (1, 2, 3, 4)}),
+        spectrum_data=MagicMock(return_value={'spectrum': [1.0]}),
+        canvas_rect=MagicMock(return_value=(5, 6, 3, 4)),
     )
     stand_ins = {
         'PyQt5': _module('PyQt5'),
@@ -116,10 +118,12 @@ class RoiRefreshTests(unittest.TestCase):
         controller.color_manager.next.side_effect = [
             ((255, 0, 0), 'red'),
             ((255, 0, 0), 'red'),
+            ((0, 0, 255), 'blue'),
         ]
         roi_controller.on_roi_created.side_effect = [
             {'left_rect': (1, 2, 3, 4), 'right_rect': None},
             {'left_rect': None, 'right_rect': (5, 6, 3, 4)},
+            {'left_rect': (7, 8, 3, 4), 'right_rect': None},
         ]
 
         controller._on_roi_created((1, 2, 3, 4), 'left')
@@ -134,6 +138,16 @@ class RoiRefreshTests(unittest.TestCase):
         self.assertEqual(controller._split_pair_eyes, set())
         # Completion consumes the second red draw without putting red back.
         controller.color_manager.set_next.assert_called_once_with('red')
+
+        controller._on_roi_created((7, 8, 3, 4), 'left')
+
+        self.assertEqual(
+            controller._current_color_names, ['red', 'red', 'blue']
+        )
+        self.assertEqual(
+            [item.args[0] for item in controller.color_manager.set_next.call_args_list],
+            ['red', 'blue'],
+        )
 
     def test_paired_split_draw_creates_both_eyes_and_advances_color(self):
         controller = controller_module.Controller.__new__(
@@ -157,21 +171,80 @@ class RoiRefreshTests(unittest.TestCase):
         controller.sparc_controller = MagicMock()
         controller._update_roi_view = MagicMock()
         controller.color_manager = MagicMock()
-        controller.color_manager.next.return_value = ((255, 0, 0), 'red')
+        controller.color_manager.next.side_effect = [
+            ((255, 0, 0), 'red'),
+            ((0, 0, 255), 'blue'),
+        ]
         roi_controller.on_roi_created.side_effect = None
-        roi_controller.on_roi_created.return_value = {
-            'left_rect': (1, 2, 3, 4),
-            'right_rect': (5, 6, 3, 4),
-        }
+        roi_controller.on_roi_created.side_effect = [
+            {'left_rect': (1, 2, 3, 4), 'right_rect': (5, 6, 3, 4)},
+            {'left_rect': (7, 8, 3, 4), 'right_rect': (11, 12, 3, 4)},
+        ]
 
         controller._on_roi_created((5, 6, 3, 4), 'right')
+        controller._on_roi_created((7, 8, 3, 4), 'left')
 
         self.assertTrue(
             roi_controller.on_roi_created.call_args.kwargs['paired_draw']
         )
+        self.assertEqual(controller._current_color_names, ['red', 'blue'])
         self.assertIsNone(controller._split_pair_color_name)
         self.assertEqual(controller._split_pair_eyes, set())
         controller.color_manager.set_next.assert_not_called()
+
+    def test_paired_mode_deletes_the_roi_from_both_eyes(self):
+        controller = self._deletion_controller(paired=True)
+
+        controller._on_roi_deleted(0, 'left')
+
+        self.assertEqual(controller._current_rois_data, [])
+        self.assertEqual(controller._current_colors, [])
+        self.assertEqual(controller._current_color_names, [])
+        controller._view.panel_spectral_view.roi_removed.assert_called_once_with(0)
+        controller._view.show_status_message.assert_called_with(
+            'red region deleted'
+        )
+
+    def test_single_eye_mode_deletes_only_the_active_eye(self):
+        controller = self._deletion_controller(paired=False)
+
+        controller._on_roi_deleted(0, 'left')
+
+        self.assertEqual(len(controller._current_rois_data), 1)
+        self.assertIsNone(controller._current_rois_data[0]['left_rect'])
+        self.assertEqual(
+            controller._current_rois_data[0]['right_rect'], (5, 6, 3, 4)
+        )
+        controller._view.panel_spectral_view.roi_removed.assert_not_called()
+        controller._view.show_status_message.assert_called_with(
+            'red region removed from left eye'
+        )
+
+    def _deletion_controller(self, paired):
+        controller = controller_module.Controller.__new__(
+            controller_module.Controller
+        )
+        controller._model = SimpleNamespace(
+            sparc_load_result={'instrument': 'ZCAM'}
+        )
+        controller._view = SimpleNamespace(
+            panel_spectral_view=SimpleNamespace(roi_removed=MagicMock()),
+            set_export_enabled=MagicMock(),
+            show_status_message=MagicMock(),
+        )
+        controller._current_rois_data = [{
+            'left_rect': (1, 2, 3, 4),
+            'right_rect': (5, 6, 3, 4),
+        }]
+        controller._current_colors = [(255, 0, 0)]
+        controller._current_color_names = ['red']
+        controller._paired_roi_drawing = paired
+        controller._get_instrument_config = MagicMock(return_value={})
+        controller._has_dual_cubes = MagicMock(return_value=True)
+        controller.sparc_controller = MagicMock()
+        controller.color_manager = MagicMock()
+        controller._update_roi_view = MagicMock()
+        return controller
 
     def test_choosing_another_color_finishes_a_single_eye_cycle(self):
         controller = controller_module.Controller.__new__(

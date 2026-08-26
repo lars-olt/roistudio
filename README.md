@@ -219,17 +219,17 @@ After running SPARC on a scene, you should see ROIs drawn on the canvas, and cor
 
 ### Drawing ROIs
 
-Select the rectangle tool (`R`) and drag on the canvas to draw a new ROI. If the rectangle is too small it will not be created and a message will appear in the status log. New regions are paired into the other eye by default in both single- and split-screen mode. Turn off **Draw both eyes** under **Settings > ROI Editing** to create a split-screen ROI only in the eye where you draw it.
+Select the rectangle tool (`R`) and drag on the canvas to draw a new ROI. If the rectangle is too small it will not be created and a message will appear in the status log. New regions are paired into the other eye by default in both single- and split-screen mode. Turn off **Draw/delete both eyes** under **Settings > ROI Editing** to create a split-screen ROI only in the eye where you draw it.
 
 ### Selecting and Editing ROIs
 
-With the selection tool (`V`), click an ROI to select it. Selected ROIs show corner and side handles. Drag a handle to resize, or drag the interior of the ROI to move. In split-screen mode, edits affect only the selected eye, and `Delete` or `Backspace` removes only that eye's rectangle. In single-screen mode, editing a paired region keeps its existing pairing and deletion removes that region record.
+With the selection tool (`V`), click an ROI to select it. Selected ROIs show corner and side handles. Drag a handle to resize, or drag the interior of the ROI to move. In split-screen mode, moving and resizing affect only the selected eye. `Delete` or `Backspace` removes the full paired region by default; turn off **Draw/delete both eyes** to remove only the active eye's rectangle. In single-screen mode, editing a paired region keeps its existing pairing and deletion removes that region record.
 
 <img width="212" height="173" alt="Screenshot of a selected ROI" src="https://github.com/user-attachments/assets/6e3f50cd-3c8e-4d17-b318-595ae63fe032" />
 
 ### ROI Colors
 
-The active color swatch in the toolbar shows the color that will be assigned to the next drawn ROI. Colors advance after each paired draw. With **Draw both eyes** disabled, the color remains active until you have drawn in both eyes, making complementary single-eye regions easy to create. Click the swatch to choose a different color—including a color already in use—or to finish an intentional single-eye selection and move on.
+The active color swatch in the toolbar shows the color that will be assigned to the next drawn ROI. Colors advance after every draw in both-eyes mode. With **Draw/delete both eyes** disabled, the color remains active until you have drawn its complementary ROI in the other eye. Click the swatch to choose a different color—including a color already in use—or to finish an intentional single-eye selection and move on.
 
 <img width="136" height="111" alt="Screenshot of the color palette popup with swatches visible" src="https://github.com/user-attachments/assets/d1b0a3e7-bddb-4a86-b150-0b7d46cab748" />
 
@@ -257,9 +257,10 @@ In the application **Settings** panel, the **View Settings** section controls:
 
 The **ROI Editing** section controls:
 
-- **Draw both eyes** - when enabled (the default), drawing in either split-screen
-  canvas also creates the homography-mapped rectangle in the other eye. Disable
-  it to create a left-only or right-only ROI.
+- **Draw/delete both eyes** - when enabled (the default), drawing in either
+  split-screen canvas also creates the homography-mapped rectangle in the other
+  eye, and deleting removes the paired region from both eyes. Disable it to draw
+  or delete only in the active eye.
 
 ---
 
@@ -274,9 +275,9 @@ Click the split screen button at the bottom of the toolbar to view left and righ
 
 <img width="1602" height="923" alt="Screenshot of split screen mode with left and right images and ROIs on both sides" src="https://github.com/user-attachments/assets/66d00f65-8c3c-44cc-8047-dc8b98d9b8f5" />
 
-In split-screen mode, drawing creates a paired region in both eyes by default. Disable **Settings > ROI Editing > Draw both eyes** to draw only in the eye under the cursor. Moving, resizing, and deleting remain local to the active eye, and single-eye selections are marked in the ROI Metadata panel. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
+In split-screen mode, drawing creates a paired region in both eyes by default, and deleting either rectangle removes that paired region from both eyes. Disable **Settings > ROI Editing > Draw/delete both eyes** to draw or delete only in the eye under the cursor. Moving and resizing remain local to the active eye, and single-eye selections are marked in the ROI Metadata panel. Use **View > Sync Views** to lock location, pan, and zoom between the two canvases.
 
-Switching between single and split screen only changes the view; it never maps, resets, creates, or deletes stored rectangles. Turn off **Draw both eyes** when the corresponding position does not exist in the other eye.
+Switching between single and split screen only changes the view; it never maps, resets, creates, or deletes stored rectangles. Turn off **Draw/delete both eyes** when the corresponding position does not exist in the other eye.
 
 ---
 
