@@ -758,6 +758,9 @@ class Controller(QObject):
             self._refresh_swatch()
 
         if self._model.sparc_load_result is not None:
+            # Switching presentation modes must not synchronize ROI geometry.
+            # Split-screen edits are authoritative and exports consume the
+            # stored left/right rectangles exactly as they stand.
             self._render_current_images()
             self._view.panel_image_editing.set_rois(
                 self._current_rois_data, self._canvas_colors(), self._current_color_names

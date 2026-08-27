@@ -163,6 +163,7 @@ def _spectrum_for_eyes(sparc_controller, load_result, left_rect, right_rect,
 
 
 def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
+    """Serialize stored per-eye rectangles without applying stereo mapping."""
     if not rois_data:
         view.show_status_message("No ROIs to export.")
         return
@@ -322,9 +323,15 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
                     order = int(hdr.get('ROIINDEX', len(mask_order)))
                 except (TypeError, ValueError):
                     order = len(mask_order)
-                mask_order.setdefault(name, order)
-                eye_masks = masks.setdefault(name, {})
                 incoming_mask = np.asarray(hdu.data) != 0
+                mask_order.setdefault(name, order)
+                # An empty eye HDU means that this selection is not visible in
+                # that camera.  Do not let it participate in eye pairing: old
+                # exports can contain these after a homography projects a ROI
+                # completely outside the opposite frame.
+                if not incoming_mask.any():
+                    continue
+                eye_masks = masks.setdefault(name, {})
                 incoming_metadata = {
                     f.key: str(hdr[f.key]) for f in fields if f.key in hdr
                 }
@@ -571,7 +578,12 @@ def export_context(view, model, rois_data, colors, color_names, color_manager,
 
 
 def export_fits(view, model, rois_data, color_names, output_path=None):
-    """Export one union-mask FITS HDU per selection class and present eye."""
+    """Export stored geometry as one mask per class/present eye.
+
+    Homography is deliberately absent here.  The saved rectangles are the
+    user's final per-eye geometry, including manual split-screen adjustments
+    and intentional single-eye regions.
+    """
     if not rois_data:
         view.show_status_message("No ROIs to export.")
         return
@@ -615,10 +627,13 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
                 mask = np.zeros((H, W), dtype=np.uint8)
                 for rect in rects:
                     x, y, w, h = (int(v) for v in rect)
-                    x0, x1 = max(0, x), min(W, x + w)
-                    y0, y1 = max(0, y), min(H, y + h)
-                    if x1 > x0 and y1 > y0:
-                        mask[y0:y1, x0:x1] = 1
+                    if (w <= 0 or h <= 0 or x < 0 or y < 0
+                            or x + w > W or y + h > H):
+                        raise ValueError(
+                            f"{group['name']} {eye}-eye ROI {rect} falls outside "
+                            f"the {W}x{H} scene; export cancelled"
+                        )
+                    mask[y:y+h, x:x+w] = 1
 
                 hdr             = astropy_fits.Header()
                 hdr['NAME']     = group['name'].lower()

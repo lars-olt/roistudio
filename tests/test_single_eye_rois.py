@@ -144,6 +144,21 @@ class EyeLocalEditingTests(unittest.TestCase):
         self.assertIsNone(changed["left_rect"])
         self.assertEqual(changed["right_rect"], (12, 13, 6, 7))
 
+    def test_split_screen_fine_tuning_never_remaps_the_other_eye(self):
+        self.load_result["homography_matrix"] = object()
+
+        left_tuned = roi_controller.on_roi_changed(
+            0, (3, 4, 6, 7), "left", [self.roi],
+            self.load_result, {}, self.spectra, True,
+        )
+        fully_tuned = roi_controller.on_roi_changed(
+            0, (12, 13, 8, 9), "right", [left_tuned],
+            self.load_result, {}, self.spectra, True,
+        )
+
+        self.assertEqual(fully_tuned["left_rect"], (3, 4, 6, 7))
+        self.assertEqual(fully_tuned["right_rect"], (12, 13, 8, 9))
+
 
 class _Metadata:
     def __init__(self, wavelengths):

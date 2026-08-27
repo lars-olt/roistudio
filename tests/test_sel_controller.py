@@ -315,12 +315,16 @@ class SingleEyeFitsTests(unittest.TestCase):
         model = SimpleNamespace(sparc_load_result={
             "id": "scene",
             "rgb_img": np.zeros((20, 30, 3), dtype=np.uint8),
+            # Export must never inspect or apply this matrix.
+            "homography_matrix": object(),
         })
         rois = [
             {"left_rect": (1, 2, 3, 4), "right_rect": None,
              "metadata": {"FEATURE": "rock", "MEMBER": "obsolete"}},
             {"left_rect": None, "right_rect": (5, 6, 7, 8)},
             {"left_rect": (10, 10, 2, 2), "right_rect": None},
+            # Deliberately different, manually fine-tuned eye coordinates.
+            {"left_rect": (20, 1, 4, 5), "right_rect": (2, 10, 6, 3)},
         ]
 
         with patch.dict(sys.modules, {
@@ -329,14 +333,14 @@ class SingleEyeFitsTests(unittest.TestCase):
             "astropy.io.fits": fits_module,
         }):
             sel_controller.export_fits(
-                MagicMock(), model, rois, ["red", "green", "red"],
+                MagicMock(), model, rois, ["red", "green", "red", "blue"],
                 output_path="single-eye.fits",
             )
 
         self.assertEqual([h.header["EYE"] for h in written["hdus"]],
-                         ["left", "right"])
+                         ["left", "left", "right", "right"])
         self.assertEqual([h.header["NAME"] for h in written["hdus"]],
-                         ["red", "green"])
+                         ["red", "blue", "green", "blue"])
         for hdu in written["hdus"]:
             self.assertEqual(set(hdu.header), {
                 "NAME", "EYE", "SOURCEFN", "EXTNAME", "IMAGEREF",
@@ -345,7 +349,70 @@ class SingleEyeFitsTests(unittest.TestCase):
             self.assertEqual(hdu.header["IMAGEREF"], "scene")
         # Both red rectangles are one selection class and share one union mask.
         self.assertEqual(int(written["hdus"][0].data.sum()), 16)
-        self.assertEqual(int(written["hdus"][1].data.sum()), 56)
+        self.assertEqual(int(written["hdus"][1].data.sum()), 20)
+        self.assertEqual(int(written["hdus"][2].data.sum()), 56)
+        self.assertEqual(int(written["hdus"][3].data.sum()), 18)
+
+        by_eye = {
+            (hdu.header["NAME"], hdu.header["EYE"]): hdu.data
+            for hdu in written["hdus"]
+        }
+        self.assertTrue(by_eye[("blue", "left")][1:6, 20:24].all())
+        self.assertFalse(by_eye[("blue", "left")][:, :20].any())
+        self.assertTrue(by_eye[("blue", "right")][10:13, 2:8].all())
+        self.assertFalse(by_eye[("blue", "right")][:10].any())
+
+    def test_export_rejects_present_eye_rectangle_outside_frame(self):
+        written = {}
+
+        class Header(dict):
+            pass
+
+        class Hdu:
+            def __init__(self, data=None, header=None):
+                self.data = data
+                self.header = header
+
+        class HduList(list):
+            def writeto(self, path, overwrite=False):
+                written["path"] = path
+
+        fits_module = _module(
+            "astropy.io.fits",
+            Header=Header,
+            PrimaryHDU=Hdu,
+            ImageHDU=Hdu,
+            HDUList=HduList,
+        )
+        astropy = _module("astropy")
+        astropy.__path__ = []
+        astropy_io = _module("astropy.io", fits=fits_module)
+        astropy_io.__path__ = []
+        model = SimpleNamespace(sparc_load_result={
+            "id": "scene",
+            "rgb_img": np.zeros((20, 30, 3), dtype=np.uint8),
+        })
+        view = MagicMock()
+        rois = [{
+            "left_rect": (40, 2, 3, 4),
+            "right_rect": (20, 2, 3, 4),
+        }]
+
+        with patch.dict(sys.modules, {
+            "astropy": astropy,
+            "astropy.io": astropy_io,
+            "astropy.io.fits": fits_module,
+        }), patch.object(sel_controller.traceback, "print_exc"):
+            sel_controller.export_fits(
+                view, model, rois, ["blue"],
+                output_path="invalid-pair.fits",
+            )
+
+        self.assertNotIn("path", written)
+        view.show_status_message.assert_called_once_with(
+            "FITS export failed: blue left-eye ROI (40, 2, 3, 4) falls "
+            "outside the 30x20 scene; export cancelled"
+        )
 
     def test_component_rects_keep_disconnected_class_regions_editable(self):
         mask = np.zeros((8, 10), dtype=np.uint8)
@@ -414,12 +481,16 @@ class SingleEyeFitsTests(unittest.TestCase):
         self.assertEqual(header["INSTRUMENT"], "PCAM")
         self.assertEqual(header["SOL"], 1156)
 
-    def test_import_preserves_absent_eye(self):
+    def test_import_treats_empty_eye_hdu_as_absent(self):
         mask = np.zeros((20, 30), dtype=np.uint8)
         mask[2:6, 3:8] = 1
-        hdu = SimpleNamespace(
-            data=mask,
+        empty_left_hdu = SimpleNamespace(
+            data=np.zeros_like(mask),
             header={"NAME": "red", "EYE": "left"},
+        )
+        right_hdu = SimpleNamespace(
+            data=mask,
+            header={"NAME": "red", "EYE": "right"},
         )
 
         class Opened(list):
@@ -431,7 +502,7 @@ class SingleEyeFitsTests(unittest.TestCase):
 
         fits_module = _module(
             "astropy.io.fits",
-            open=lambda _path: Opened([hdu]),
+            open=lambda _path: Opened([empty_left_hdu, right_hdu]),
         )
         astropy = _module("astropy")
         astropy.__path__ = []
@@ -464,9 +535,9 @@ class SingleEyeFitsTests(unittest.TestCase):
             )
 
         roi = outcome[0][0]
-        self.assertEqual(roi["left_rect"], (3, 2, 5, 4))
-        self.assertIsNone(roi["right_rect"])
-        self.assertIsNone(roi["roi"])
+        self.assertIsNone(roi["left_rect"])
+        self.assertEqual(roi["right_rect"], (3, 2, 5, 4))
+        self.assertEqual(roi["roi"], (3, 2, 5, 4))
 
 
 # Saved previews should label each ROI in the same place and style as the UI.
