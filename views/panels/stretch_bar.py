@@ -11,6 +11,7 @@ from ..canvas import CanvasContainer
 from ..widgets import BandComboBox
 
 _OVERLAY_BG = QColor(40, 40, 40, 180)
+_MONO_PRESET = "Mono"
 
 
 def _row_h() -> int:
@@ -116,8 +117,9 @@ class StretchBar(QWidget):
     Floating R/G/B + DCS band selector parented to a CanvasContainer.
     Positioned at the bottom center of the canvas.
 
-    When a preset other than None is active, the band combos and DCS checkbox
-    are disabled - the preset owns those values. Selecting None returns control.
+    Named presets own and disable the R/G/B selections.  Mono is a special
+    manual mode: it shows one filter selector and uses that band for all three
+    rendered channels.
     """
 
     changed = pyqtSignal()
@@ -128,6 +130,7 @@ class StretchBar(QWidget):
         self._focused          = False
         self._loaded           = False
         self._bands_available  = True   # whether the manual band combos are usable
+        self._mono_mode        = False
         self._default_r = None
         self._default_g = None
         self._default_b = None
@@ -141,8 +144,10 @@ class StretchBar(QWidget):
 
         self.combo_preset = QComboBox()
         self.combo_preset.setFocusPolicy(Qt.NoFocus)
-        self.combo_preset.addItem("None")
-        self.combo_preset.setToolTip("Apply a named color stretch preset.")
+        self.combo_preset.addItems(("None", _MONO_PRESET))
+        self.combo_preset.setToolTip(
+            "Apply a named color stretch preset, or use one filter in Mono mode."
+        )
         self.combo_preset.activated.connect(self._on_preset_selected)
         self.combo_preset.showPopup = self._show_preset_popup
         self._row.addWidget(self.combo_preset, 0, Qt.AlignVCenter)
@@ -184,11 +189,14 @@ class StretchBar(QWidget):
         self.combo_preset.blockSignals(True)
         self.combo_preset.clear()
         self.combo_preset.addItem("None")
+        self.combo_preset.addItem(_MONO_PRESET)
         for label in self._named_presets:
-            self.combo_preset.addItem(label)
+            if label != _MONO_PRESET:
+                self.combo_preset.addItem(label)
         self.combo_preset.setCurrentIndex(0)
         self.combo_preset.blockSignals(False)
-        self._style_band_controls(enabled=self._bands_available)
+        self._set_mono_mode(False)
+        self._style_band_controls(enabled=self._loaded and self._bands_available)
 
     def set_focused(self, focused: bool):
         if focused != self._focused:
@@ -213,6 +221,7 @@ class StretchBar(QWidget):
         if self.combo_preset.count():
             self.combo_preset.setCurrentIndex(0)
         self.combo_preset.blockSignals(False)
+        self._set_mono_mode(False)
 
         self.chk_dcs.blockSignals(True)
         self.chk_dcs.setChecked(False)
@@ -243,6 +252,14 @@ class StretchBar(QWidget):
         self.set_loaded(True)
 
     def apply_preset(self, r: str, g: str, b: str, dcs: bool):
+        # View-menu RGB/DCS actions can call this while Mono is active.  Those
+        # actions explicitly replace Mono, so restore the regular controls.
+        if self._mono_mode and self.combo_preset.currentText() == _MONO_PRESET:
+            self.combo_preset.blockSignals(True)
+            self.combo_preset.setCurrentIndex(0)
+            self.combo_preset.blockSignals(False)
+            self._set_mono_mode(False)
+
         selections = ((self.combo_r, r), (self.combo_g, g), (self.combo_b, b))
         if any(combo.findText(value) < 0 for combo, value in selections):
             return False
@@ -258,6 +275,9 @@ class StretchBar(QWidget):
         return True
 
     def get_selection(self):
+        if self._mono_mode:
+            band = self.combo_r.currentText()
+            return band, band, band, False
         return (self.combo_r.currentText(), self.combo_g.currentText(),
                 self.combo_b.currentText(), self.chk_dcs.isChecked())
 
@@ -297,7 +317,7 @@ class StretchBar(QWidget):
         self._style_preset_combo(fs, row_h)
         self._style_band_controls(
             enabled=self._loaded and self._bands_available
-                    and self.combo_preset.currentText() == "None"
+                    and self.combo_preset.currentText() in ("None", _MONO_PRESET)
         )
 
         self.setFixedHeight(bar_height())
@@ -306,10 +326,35 @@ class StretchBar(QWidget):
         QTimer.singleShot(0, self._reposition)
 
     def _style_band_controls(self, enabled: bool):
-        for combo in (self.combo_r, self.combo_g, self.combo_b):
-            combo.set_active(enabled)
-        self.chk_dcs.setEnabled(enabled)
+        self.combo_r.set_active(enabled)
+        self.combo_g.set_active(enabled and not self._mono_mode)
+        self.combo_b.set_active(enabled and not self._mono_mode)
+        self.chk_dcs.setEnabled(enabled and not self._mono_mode)
         self.chk_dcs.update()
+
+    def _set_mono_mode(self, enabled: bool):
+        """Collapse or restore the per-channel controls for Mono rendering."""
+        self._mono_mode = enabled
+        self._band_labels[0].setText("Filter:" if enabled else "R:")
+        self._band_labels[0].setVisible(True)
+        self.combo_r.setVisible(True)
+
+        for label, combo in zip(self._band_labels[1:],
+                                (self.combo_g, self.combo_b)):
+            label.setVisible(not enabled)
+            combo.setVisible(not enabled)
+
+        self._sep_dcs.setVisible(not enabled)
+        self.chk_dcs.setVisible(not enabled)
+        if enabled:
+            self.chk_dcs.setChecked(False)
+
+        manual = self.combo_preset.currentText() in ("None", _MONO_PRESET)
+        self._style_band_controls(
+            enabled=self._loaded and self._bands_available and manual
+        )
+        self.adjustSize()
+        QTimer.singleShot(0, self._reposition)
 
     def _style_preset_combo(self, fs: int, row_h: int):
         loaded = self._loaded
@@ -365,8 +410,19 @@ class StretchBar(QWidget):
 
     def _on_preset_selected(self, index):
         label = self.combo_preset.itemText(index)
+        was_mono = self._mono_mode
+        if label == _MONO_PRESET:
+            self._set_mono_mode(True)
+            self.changed.emit()
+            return
+
+        self._set_mono_mode(False)
         if label == "None":
-            self._style_band_controls(enabled=self._bands_available)
+            self._style_band_controls(
+                enabled=self._loaded and self._bands_available
+            )
+            if was_mono:
+                self.changed.emit()
             return
         bands = self._named_presets.get(label)
         if bands is None:
@@ -378,7 +434,9 @@ class StretchBar(QWidget):
         self.combo_preset.blockSignals(True)
         self.combo_preset.setCurrentIndex(0)
         self.combo_preset.blockSignals(False)
-        self._style_band_controls(enabled=self._bands_available)
+        self._style_band_controls(enabled=self._loaded and self._bands_available)
+        if was_mono:
+            self.changed.emit()
 
     def _show_preset_popup(self):
         QComboBox.showPopup(self.combo_preset)
