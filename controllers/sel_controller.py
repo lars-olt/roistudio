@@ -1,5 +1,6 @@
 """SEL and FITS file export and import."""
 
+import re
 import traceback
 import importlib
 from pathlib import Path
@@ -26,6 +27,12 @@ _ROI_LABEL_FONT_SIZE = 8
 _ROI_LABEL_PADDING = 0.2
 _sel_writer_module = importlib.import_module('sparc.utils.sel_writer')
 _EMPTY_RECT = (0, 0, 0, 0)
+
+# PDF Summary slide generated with context images.
+_SLIDE_SUFFIX    = '_summary.pdf'
+_SLIDE_COLUMNS   = ('FEATURE', 'FEATURE_SUBTYPE', 'DISTANCE')
+_SUBTITLE_JOINER = "   |   "
+_ZCAM_STEM = re.compile(r'^[^_]+_(\d+)_.*?(ZCAM\d+)')
 
 
 def _rect_or_empty(roi_data, key):
@@ -466,7 +473,7 @@ def _component_rects(mask):
             current.append((x0, x1, index))
 
             while (previous_start < len(previous)
-                   and previous[previous_start][1] < x0):
+                    and previous[previous_start][1] < x0):
                 previous_start += 1
             cursor = previous_start
             while cursor < len(previous) and previous[cursor][0] <= x1:
@@ -488,8 +495,87 @@ def _component_rects(mask):
 
     return sorted(
         ((x0, y0, x1 - x0 + 1, y1 - y0 + 1)
-         for x0, y0, x1, y1 in merged.values()),
+        for x0, y0, x1, y1 in merged.values()),
         key=lambda rect: (rect[1], rect[0]),
+    )
+
+
+def _slide_fields(instrument):
+    """The instrument's metadata schema split into table columns and the shared
+    sub-line under each row."""
+    from views.panels.roi_metadata import metadata_fields
+
+    fields  = metadata_fields(instrument)
+    labels  = {field.key: field.label for field in fields}
+    columns = [(key, labels[key]) for key in _SLIDE_COLUMNS if key in labels]
+    subs    = [(field.key, field.label) for field in fields
+                if field.key not in _SLIDE_COLUMNS]
+    return columns, subs
+
+
+def _slide_panels(output_path, scene_id, instrument):
+    """The slide's three image cells, in reading order.
+
+    Pancam shows the left eye in DCS and the right in RGB. Mastcam-Z shows right eye
+    DCS and left RGB. Only the RGB render has a labelled variant, so whichever
+    eye is RGB is the one carrying ROI names.
+    """
+    rgb_eye, dcs_eye = ('right', 'left') if instrument == 'PCAM' else ('left', 'right')
+    cells = {
+        rgb_eye: (f"{rgb_eye}_rgb_with_roi_names", f"{rgb_eye.capitalize()} eye RGB"),
+        dcs_eye: (f"{dcs_eye}_dcs",                f"{dcs_eye.capitalize()} eye DCS"),
+    }
+    return [(str(output_path / f"{scene_id}_{suffix}.png"), caption)
+            for suffix, caption in (cells['left'], cells['right'],
+                                    ('spectra', "Spectra"))]
+
+
+def _zcam_identifiers(load_result):
+    """Sol and sequence ID, read off one of the scene's product filenames."""
+    left, right = filenames_from_load_result(load_result, 1)
+    for stem in list(left) + list(right):
+        match = _ZCAM_STEM.match(str(stem))
+        if match:
+            return [f"sol {int(match.group(1)):04d}", match.group(2)]
+    return []
+
+
+def _slide_subtitle(load_result, instrument, roi_count):
+    """Scene identifiers and ROI count."""
+    if instrument == 'PCAM':
+        meta = observation_metadata(load_result)
+        sol  = meta.get('SOL')
+        pma  = meta.get('PMA')
+        bits = [meta.get('ROVER'),
+                f"sol {sol:04d}" if sol is not None else None,
+                meta.get('SEQ_ID'),
+                f"PMA {pma}" if pma is not None else None]
+    else:
+        bits = _zcam_identifiers(load_result)
+
+    bits = [str(bit) for bit in bits if bit]
+    bits.append(f"{roi_count} ROI" + ("" if roi_count == 1 else "s"))
+    return _SUBTITLE_JOINER.join(bits)
+
+
+def _export_slide(load_result, output_path, scene_id, rois_data, colors, color_names):
+    """Render the scene's summary slide into the context folder."""
+    from utils.slides import build_slide
+
+    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
+    rows = [
+        dict(group['metadata'],
+            name=group['name'],
+            color=tuple(c / 255.0 for c in group['color']))
+        for group in group_roi_regions(rois_data, colors, color_names)
+    ]
+    columns, sub_fields = _slide_fields(instrument)
+    return build_slide(
+        str(output_path / f"{scene_id}{_SLIDE_SUFFIX}"),
+        scene_id,
+        _slide_subtitle(load_result, instrument, len(rows)),
+        _slide_panels(output_path, scene_id, instrument),
+        rows, columns, sub_fields,
     )
 
 
@@ -585,6 +671,14 @@ def export_context(view, model, rois_data, colors, color_names, color_manager,
 
     except Exception as e:
         view.show_status_message(f"Context export failed: {e}")
+        traceback.print_exc()
+        return
+
+    try:
+        _export_slide(load_result, output_path, scene_id,
+                        rois_data, colors, color_names)
+    except Exception as e:
+        view.show_status_message(f"Context exported, but the summary slide failed: {e}")
         traceback.print_exc()
 
 
