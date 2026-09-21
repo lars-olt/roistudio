@@ -90,6 +90,8 @@ sel_controller = _load_sel_controller()
 
 # Both RGB images should be exported with names that identify the scene and eye.
 class ExportContextTests(unittest.TestCase):
+    # The slide has its own tests; here it would only add a render to every run.
+    @patch.object(sel_controller, "_export_slide")
     @patch.object(sel_controller, "export_fits")
     @patch.object(sel_controller, "export_sel")
     @patch.object(sel_controller, "plot_spectra_with_error")
@@ -104,6 +106,7 @@ class ExportContextTests(unittest.TestCase):
         plot_spectra,
         _export_sel,
         _export_fits,
+        _export_slide,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir) / "context"
