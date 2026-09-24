@@ -2,6 +2,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QThread, pyqtSignal
 from sparc.data.loading import load_cube
+from utils.scene_camera import display_camera
 
 
 class SceneLoadThread(QThread):
@@ -30,6 +31,9 @@ class SceneLoadThread(QThread):
             )
             # Keep the loaded scene's location, independent of later scans or saves.
             load_result['source_folder'] = self.folder_path
+            load_result['rgb_img'] = load_result.get(
+                f'{display_camera(load_result)}_rgb_img', load_result['rgb_img'],
+            )
             self.load_complete.emit(load_result)
         except Exception as e:
             import traceback

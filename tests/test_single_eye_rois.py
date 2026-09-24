@@ -102,6 +102,32 @@ class EyeLocalEditingTests(unittest.TestCase):
         self.assertEqual(created["right_rect"], (10, 11, 4, 5))
         self.assertEqual(created["roi"], (10, 11, 4, 5))
 
+    def test_left_only_zcam_single_view_creates_and_edits_only_left_roi(self):
+        self.load_result.update(left_band_keys=['L0B', 'L0G', 'L0R'], right_band_keys=[])
+        created = roi_controller.on_roi_created(
+            (10, 11, 4, 5), 'single', self.load_result, {}, self.spectra, True,
+        )
+        self.assertEqual(created['roi'], (10, 11, 4, 5))
+        self.assertEqual(created['left_rect'], created['roi'])
+        self.assertIsNone(created['right_rect'])
+        self.spectra.update_roi_spectrum_dual.assert_called_with(
+            self.load_result, (10, 11, 4, 5), None, {},
+        )
+        changed = roi_controller.on_roi_changed(
+            0, (12, 13, 6, 7), 'single', [created], self.load_result, {}, self.spectra, True,
+        )
+        self.assertEqual(changed['roi'], (12, 13, 6, 7))
+        self.assertEqual(changed['left_rect'], changed['roi'])
+        self.assertIsNone(changed['right_rect'])
+
+    def test_right_only_pcam_single_view_does_not_invent_left_roi(self):
+        self.load_result.update(instrument='PCAM', left_band_keys=[], right_band_keys=['R1'])
+        created = roi_controller.on_roi_created(
+            (10, 11, 4, 5), 'single', self.load_result, {}, self.spectra, True,
+        )
+        self.assertEqual(created['right_rect'], created['roi'])
+        self.assertIsNone(created['left_rect'])
+
     def test_split_screen_creation_stores_only_the_active_eye(self):
         left = roi_controller.on_roi_created(
             (1, 2, 4, 5), "left", self.load_result, {}, self.spectra, True

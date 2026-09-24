@@ -5,6 +5,7 @@ import numpy as np
 from sparc.utils.geometry import right_rect_to_left_inscribed
 
 from utils.converters import snap_rect
+from utils.scene_camera import available_cameras, display_camera
 
 
 def _image_bounds(load_result):
@@ -30,9 +31,10 @@ def _derive_right(left_rect, homography, bounds):
     return snap_rect(*_left_rect_to_right(left_rect, homography), bounds=bounds)
 
 
-def canvas_rect(roi_data, instrument):
-    """Rectangle shown in single-screen mode for the instrument's primary eye."""
-    key = 'left_rect' if str(instrument).strip().upper() == 'PCAM' else 'right_rect'
+def canvas_rect(roi_data, instrument, camera=None):
+    """Rectangle for the displayed eye, defaulting to the instrument's primary eye."""
+    camera = camera or ('left' if str(instrument).strip().upper() == 'PCAM' else 'right')
+    key = f'{camera}_rect'
     return roi_data.get(key)
 
 
@@ -43,8 +45,7 @@ def spectrum_data(left_rect, right_rect, load_result, instrument_config,
             load_result, left_rect, right_rect, instrument_config
         )
 
-    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
-    rect = left_rect if instrument == 'PCAM' else right_rect
+    rect = left_rect if display_camera(load_result) == 'left' else right_rect
     if rect is None:
         # A one-cube scene cannot provide a spectrum for its missing primary eye.
         return {
@@ -72,10 +73,11 @@ def on_roi_created(rect, camera, load_result, instrument_config,
     else:
         paired_draw = bool(paired_draw)
 
-    # single screen draws in the displayed camera - left for PCAM, right for ZCAM
+    # Single view draws in the displayed eye; pair only when both eyes exist.
     if camera == 'single':
         paired_draw = True
-        camera = 'left' if instrument == 'PCAM' else 'right'
+        camera = display_camera(load_result)
+    paired_draw = paired_draw and len(available_cameras(load_result)) == 2
 
     if has_dual_cubes:
         homography = load_result.get('homography_matrix')
@@ -107,7 +109,7 @@ def on_roi_created(rect, camera, load_result, instrument_config,
         )
 
     roi_geometry = {'left_rect': left_rect, 'right_rect': right_rect}
-    displayed_rect = canvas_rect(roi_geometry, instrument)
+    displayed_rect = canvas_rect(roi_geometry, instrument, display_camera(load_result))
 
     return {
         'roi':        displayed_rect,
@@ -126,10 +128,10 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     homography = load_result.get('homography_matrix') if has_dual_cubes else None
     bounds     = _image_bounds(load_result)
 
-    # single screen edits the displayed camera - left for PCAM, right for ZCAM.
+    # Single view edits the available camera selected for display.
     # The opposite camera's rect is derived from the edit via the homography.
     if camera == 'single':
-        if instrument == 'PCAM':
+        if display_camera(load_result) == 'left':
             left_rect  = tuple(new_rect)
             right_rect = roi_data.get('right_rect')
             if right_rect is not None and homography is not None:
@@ -153,7 +155,7 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     )
 
     roi_geometry = {'left_rect': left_rect, 'right_rect': right_rect}
-    displayed_rect = canvas_rect(roi_geometry, instrument)
+    displayed_rect = canvas_rect(roi_geometry, instrument, display_camera(load_result))
 
     return {
         **roi_data,

@@ -21,6 +21,7 @@ from sparc.utils.sel_writer import (
 )
 from presets import INSTRUMENT_PRESETS
 from roi_groups import group_roi_regions
+from utils.scene_camera import display_camera
 
 _EXPORT_DPI = 150
 _ROI_LABEL_FONT_SIZE = 8
@@ -157,8 +158,7 @@ def _spectrum_for_eyes(sparc_controller, load_result, left_rect, right_rect,
         return sparc_controller.update_roi_spectrum_dual(
             load_result, left_rect, right_rect, instrument_config
         )
-    instrument = load_result.get('instrument', 'ZCAM').strip().upper()
-    rect = left_rect if instrument == 'PCAM' else right_rect
+    rect = left_rect if display_camera(load_result) == 'left' else right_rect
     if rect is None:
         return _empty_spectrum_data()
     data = dict(sparc_controller.update_roi_spectrum(
@@ -277,7 +277,7 @@ def load_sel(view, model, instrument_config, sparc_controller, has_dual_cubes, c
                 color, name = color_manager.next()
                 label_colors[label] = (color, name)
 
-            canvas_rect = left_rect if instrument == 'PCAM' else right_rect
+            canvas_rect = left_rect if display_camera(load_result) == 'left' else right_rect
             rois_data.append({
                 'roi':         canvas_rect,
                 'right_rect':  right_rect,
@@ -394,7 +394,7 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
                     sparc_controller, load_result, left_rect, right_rect,
                     instrument_config, has_dual_cubes,
                 )
-                canvas_rect = left_rect if instrument == 'PCAM' else right_rect
+                canvas_rect = left_rect if display_camera(load_result) == 'left' else right_rect
                 roi = {
                     'roi':         canvas_rect,
                     'right_rect':  right_rect,

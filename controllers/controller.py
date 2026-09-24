@@ -14,6 +14,7 @@ from utils.rendering import render_images
 from utils.paths import _get_config_path
 from roi_groups import group_roi_regions, class_index_for_region
 from presets import INSTRUMENT_PRESETS
+from utils.scene_camera import display_camera
 
 # How much non-active ROI visuals dim while the metadata panel is open.
 _METADATA_DIM = 0.4
@@ -346,7 +347,7 @@ class Controller(QObject):
                         self.sparc_controller, self._has_dual_cubes(),
                     )
                     roi['roi'] = roi_controller.canvas_rect(
-                        roi, load_result.get('instrument', 'ZCAM')
+                        roi, load_result.get('instrument', 'ZCAM'), display_camera(load_result)
                     )
                     self._current_rois_data[roi_index] = {**roi, **spec_data}
 
@@ -430,7 +431,9 @@ class Controller(QObject):
                 'right_rect': group['right_rects'][0] if group['right_rects'] else None,
             }
             selection_data.append({
-                'roi': roi_controller.canvas_rect(geometry, instrument),
+                'roi': roi_controller.canvas_rect(
+                    geometry, instrument, display_camera(load_result or {}),
+                ),
                 **geometry,
                 'left_rects': group['left_rects'],
                 'right_rects': group['right_rects'],
@@ -736,7 +739,7 @@ class Controller(QObject):
                    else ['single'])
         for camera in cameras:
             if camera == 'single':
-                side = 'left' if instrument == 'PCAM' else 'right'
+                side = display_camera(self._model.sparc_load_result)
             else:
                 side = camera
             bands = presets[side][mode]

@@ -25,7 +25,12 @@ class SceneSourceFolderTests(unittest.TestCase):
 
         for folder in (Path("Mars data") / "scene A", Path.home() / "scene B"):
             with self.subTest(folder=folder):
-                result = {"id": "scene", "rgb_img": object()}
+                left_image = object()
+                result = {
+                    "id": "scene", "instrument": "ZCAM", "rgb_img": object(),
+                    "left_rgb_img": left_image, "right_rgb_img": object(),
+                    "left_band_keys": ['L0B', 'L0G', 'L0R'], "right_band_keys": [],
+                }
                 loading.load_cube.return_value = result
                 worker = module.SceneLoadThread(folder, "sequence", 0, "ZCAM")
                 worker.run()
@@ -34,6 +39,7 @@ class SceneSourceFolderTests(unittest.TestCase):
                 self.assertEqual(result["source_folder"], expected)
                 self.assertEqual(loading.load_cube.call_args.kwargs["iof_path"], expected)
                 self.assertIs(loading.load_cube.call_args.kwargs["crop_zcam"], False)
+                self.assertIs(result['rgb_img'], left_image)
                 worker.load_complete.emit.assert_called_with(result)
                 worker.load_error.emit.assert_not_called()
 

@@ -673,6 +673,16 @@ class SensorFrameFitsTests(unittest.TestCase):
         self.assertEqual([(roi['left_rect'], roi['right_rect']) for roi in rois],
                          [(None, (8, 6, 2, 2)), ((0, 0, 2, 3), None)])
 
+    def test_left_only_zcam_fits_import_displays_left_roi(self):
+        self.model.sparc_load_result.update(
+            sensor_crop=(0, 0, 0, 0), left_band_keys=['L0R'], right_band_keys=[],
+        )
+        self.export([{'left_rect': (1, 2, 3, 4), 'right_rect': None}], ['red'])
+        rois, _, _ = self.load()
+        self.assertEqual(rois[0]['roi'], (1, 2, 3, 4))
+        self.assertEqual(rois[0]['left_rect'], rois[0]['roi'])
+        self.assertIsNone(rois[0]['right_rect'])
+
     def test_legacy_cropped_fits_is_padded_into_full_frame(self):
         self.model.sparc_load_result.update(
             sensor_crop=(0, 0, 0, 0),

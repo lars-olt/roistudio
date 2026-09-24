@@ -1,6 +1,7 @@
 """Scene scan and load callback handlers."""
 
 from sparc.core.constants import get_instrument_config
+from utils.scene_camera import display_camera
 
 
 def get_instrument_config_for_scene(load_result):
@@ -52,7 +53,7 @@ def on_scene_load_complete(load_result, scene_id, model, view):
 
     instrument = load_result.get('instrument', 'ZCAM')
     _set_band_names(load_result, view, instrument)
-    view.set_instrument_presets(instrument)
+    view.set_instrument_presets(instrument, single_side=display_camera(load_result))
     view.panel_settings.set_use_dcs(instrument == 'PCAM')
     view.panel_image_editing.set_rois([], [], [])
     view.panel_spectral_view.clear_roi_spectra()
@@ -90,9 +91,9 @@ def _set_band_names(load_result, view, instrument):
     right   = presets['right']['RGB']
     left    = presets['left']['RGB']
 
-    # PCAM single screen shows the left camera; ZCAM shows the right.
-    single_bands   = left_bands  if instrument == 'PCAM' else right_bands
-    single_presets = left        if instrument == 'PCAM' else right
+    single_side = display_camera(load_result)
+    single_bands   = left_bands  if single_side == 'left' else right_bands
+    single_presets = left        if single_side == 'left' else right
 
     view.panel_image_editing.set_band_names(
         single_bands, right_bands, left_bands,
@@ -103,7 +104,7 @@ def _set_band_names(load_result, view, instrument):
 
     left_ok   = bool(left_bands)
     right_ok  = bool(right_bands)
-    single_ok = left_ok if instrument == 'PCAM' else right_ok
+    single_ok = left_ok if single_side == 'left' else right_ok
     view.panel_image_editing.set_stretch_enabled('single', single_ok)
     view.panel_image_editing.set_stretch_enabled('right', right_ok)
     view.panel_image_editing.set_stretch_enabled('left', left_ok)
