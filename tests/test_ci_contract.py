@@ -104,6 +104,24 @@ class ContinuousDeliveryContractTests(unittest.TestCase):
         )
         self.assertTrue(sparc.startswith('sparc[algorithm]'))
 
+    def test_qt_runtime_lock_has_wheels_for_all_supported_platforms(self):
+        lock = tomllib.loads((ROOT / 'uv.lock').read_text(encoding='utf-8'))
+        wheels = [
+            wheel['url'].rsplit('/', 1)[-1]
+            for package in lock['package'] if package['name'] == 'pyqt5-qt5'
+            for wheel in package.get('wheels', [])
+        ]
+        for platform, architectures in (
+            ('win', ('amd64',)),
+            ('macosx', ('arm64', 'universal2')),
+            ('macosx', ('x86_64', 'intel', 'universal2')),
+        ):
+            with self.subTest(platform=platform, architectures=architectures):
+                self.assertTrue(any(
+                    platform in wheel and any(arch in wheel for arch in architectures)
+                    for wheel in wheels
+                ), f'Locked Qt runtime has no wheel for {platform} {architectures}')
+
 
 if __name__ == '__main__':
     unittest.main()
