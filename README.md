@@ -200,6 +200,9 @@ Switch to the **Settings** panel via **Window > Settings** to access the algorit
 - **Max Clusters** - maximum number of spectral clusters the GMM may find.
 
 Press **Run** to start the SPARC pipeline. Progress is shown in the status bar at the bottom of the window.
+
+ZCAM scenes are displayed at full sensor size. SPARC trims the detector borders only for algorithm processing (25 pixels from each side and 11 from the top and bottom). A crop drawn in the canvas further restricts that processing area. Generated ROIs are moved back into full-image coordinates for viewing, editing, spectra, and export.
+
 > [!Tip]
 > When any intensive code is running, a spinning filter wheel will appear below the upper toolbar buttons.
 

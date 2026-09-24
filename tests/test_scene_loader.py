@@ -33,6 +33,7 @@ class SceneSourceFolderTests(unittest.TestCase):
                 expected = str(folder.absolute())
                 self.assertEqual(result["source_folder"], expected)
                 self.assertEqual(loading.load_cube.call_args.kwargs["iof_path"], expected)
+                self.assertIs(loading.load_cube.call_args.kwargs["crop_zcam"], False)
                 worker.load_complete.emit.assert_called_with(result)
                 worker.load_error.emit.assert_not_called()
 

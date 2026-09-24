@@ -26,6 +26,7 @@ class SceneLoadThread(QThread):
                 obs_ix           = self.obs_ix,
                 do_apply_pixmaps = True,
                 ignore_bayers    = False,
+                crop_zcam        = False,
             )
             # Keep the loaded scene's location, independent of later scans or saves.
             load_result['source_folder'] = self.folder_path

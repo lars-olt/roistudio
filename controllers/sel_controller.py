@@ -420,7 +420,7 @@ def load_fits(view, model, instrument_config, sparc_controller, has_dual_cubes, 
 
 
 def _fits_mask_in_scene(data, load_result, instrument):
-    """Trim sensor-sized masks; legacy masks already use scene coordinates."""
+    """Align sensor-sized and legacy edge-trimmed masks with the displayed scene."""
     mask = np.asarray(data) != 0
     height, width = load_result['rgb_img'].shape[:2]
     if mask.shape == (height, width):
@@ -429,6 +429,12 @@ def _fits_mask_in_scene(data, load_result, instrument):
     col_off, row_off, full_height, full_width = _sensor_offsets(load_result, instrument)
     if mask.shape == (full_height, full_width):
         return mask[row_off:row_off+height, col_off:col_off+width]
+    if instrument in {'ZCAM', 'MCZ'} and not (col_off or row_off):
+        left, right, top, bottom = map(int, rapidlooks.CROP_SETTINGS['crop'])
+        if mask.shape == (height - top - bottom, width - left - right):
+            full_mask = np.zeros((height, width), dtype=bool)
+            full_mask[top:height-bottom, left:width-right] = mask
+            return full_mask
     return mask
 
 
@@ -834,7 +840,7 @@ def _save_annotated(arr, rects, mpl_colors, filepath, roi_names=None):
 def _sensor_offsets(load_result, instrument):
     """Return (col_off, row_off, full_H, full_W) for converting between cropped and sensor coords."""
     if instrument in {'ZCAM', 'MCZ'}:
-        crop     = rapidlooks.CROP_SETTINGS["crop"]
+        crop     = load_result.get('sensor_crop', rapidlooks.CROP_SETTINGS["crop"])
         col_off  = int(crop[0])
         row_off  = int(crop[2])
         raw_band = next(iter(load_result["base_bands"].values()))

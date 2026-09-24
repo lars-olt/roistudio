@@ -661,6 +661,53 @@ class SensorFrameFitsTests(unittest.TestCase):
         np.testing.assert_array_equal(self.hdus[1].data, expected_right)
         self.assertEqual(rois[0]["left_rect"], (0, 0, 2, 3))
 
+    def test_full_frame_fits_round_trip_preserves_edge_rois_without_padding(self):
+        self.model.sparc_load_result['sensor_crop'] = (0, 0, 0, 0)
+        self.export([
+            {'left_rect': (0, 0, 2, 3), 'right_rect': (8, 6, 2, 2)},
+        ], ['red'])
+        self.assertEqual([hdu.data.shape for hdu in self.hdus], [(8, 10), (8, 10)])
+        np.testing.assert_array_equal(self.hdus[0].data[:3, :2], 1)
+        np.testing.assert_array_equal(self.hdus[1].data[6:8, 8:10], 1)
+        rois, _, _ = self.load()
+        self.assertEqual([(roi['left_rect'], roi['right_rect']) for roi in rois],
+                         [(None, (8, 6, 2, 2)), ((0, 0, 2, 3), None)])
+
+    def test_legacy_cropped_fits_is_padded_into_full_frame(self):
+        self.model.sparc_load_result.update(
+            sensor_crop=(0, 0, 0, 0),
+            rgb_img=np.zeros((17, 15, 3), dtype=np.uint8),
+            base_bands={'R0': np.zeros((17, 15))},
+        )
+        mask = np.zeros((8, 10), dtype=np.uint8)
+        mask[:3, :2] = 1
+        self.hdus = [SimpleNamespace(data=mask, header={'NAME': 'red', 'EYE': 'right'})]
+        rois, _, _ = self.load()
+        self.assertEqual(rois[0]['right_rect'], (2, 4, 2, 3))
+
+    def test_full_frame_sel_round_trip_does_not_apply_sensor_offsets(self):
+        self.model.sparc_load_result['sensor_crop'] = (0, 0, 0, 0)
+        self.colors.merspect_index.return_value = 4
+        self.colors.name_for_merspect_index.return_value = 'red'
+        with patch.object(sel_controller, '_write_sel') as write, patch.object(
+            sel_controller, 'filenames_from_load_result', return_value=([], []),
+        ):
+            sel_controller.export_sel(
+                self.view, self.model, [{'right_rect': (0, 0, 2, 3)}],
+                ['red'], self.colors, output_path='full.sel',
+            )
+        self.assertEqual(write.call_args.kwargs['image_shape'], (8, 10))
+        np.testing.assert_array_equal(write.call_args.kwargs['final_rois'], [(0, 0, 2, 3)])
+        with patch.object(sel_controller, '_read_sel_regions', return_value=(
+            np.array([(0, 0, 2, 3)]), np.array([(0, 0, 0, 0)]), [4],
+        )):
+            rois, _, _ = sel_controller.load_sel(
+                self.view, self.model, {}, self.spectra, True, self.colors,
+                sel_path='full.sel',
+            )
+        self.assertEqual(rois[0]['right_rect'], (0, 0, 2, 3))
+        self.assertIsNone(rois[0]['left_rect'])
+
     def test_export_still_rejects_rois_outside_displayed_scene(self):
         # This rectangle fits the sensor-sized mask but not the displayed image.
         with patch.object(sel_controller.traceback, "print_exc"):

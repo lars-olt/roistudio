@@ -9,8 +9,6 @@ from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 
-from marslab.imgops.imgutils import crop
-from asdf_settings import rapidlooks
 
 from sparc.core.constants import get_instrument_config
 from sparc.data.loading import (_scan_and_split, _bandset_from_group,
@@ -148,8 +146,7 @@ class SceneScanThread(QThread):
         if '0' in band:
             bs.bulk_debayer([band])
 
-        crop_settings = rapidlooks.CROP_SETTINGS["crop"]
-        gray = crop(bs.get_band(band), crop_settings).astype(np.float32)
+        gray = bs.get_band(band).astype(np.float32)
         return self._to_grayscale_pixmap(gray), metadata, complete
 
     def _zcam_metadata(self, bs, seq_id, path):
