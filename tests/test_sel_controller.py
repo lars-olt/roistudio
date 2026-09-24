@@ -3,7 +3,7 @@ import sys
 import tempfile
 import types
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -86,6 +86,39 @@ def _load_sel_controller():
 
 
 sel_controller = _load_sel_controller()
+
+
+class ExportDialogLocationTests(unittest.TestCase):
+    def test_all_exports_start_in_current_scene_folder_on_both_platforms(self):
+        view = MagicMock()
+        model = SimpleNamespace(iof_folder_path="unrelated scan folder")
+        exporters = (
+            (sel_controller.export_sel, (["red"], MagicMock()), ".sel"),
+            (sel_controller.export_fits, (["red"],), ".fits"),
+            (sel_controller.export_context,
+             ([(255, 0, 0)], ["red"], MagicMock()), ""),
+        )
+        for path_type, root in (
+            (PurePosixPath, "/Users/researcher/Mars data"),
+            (PureWindowsPath, r"C:\Users\researcher\Mars data"),
+            (PureWindowsPath, r"\\server\observations\Mars data"),
+        ):
+            # Repeated exports and scene switches must not reuse Qt's last folder.
+            for scene in ("scene A", "scene B", "scene A"):
+                folder = path_type(root) / scene
+                model.sparc_load_result = {"id": scene, "source_folder": str(folder)}
+                for export, args, suffix in exporters:
+                    with self.subTest(root=root, scene=scene, suffix=suffix), patch.object(
+                        sel_controller, "Path", path_type,
+                    ), patch.object(
+                        sel_controller.QFileDialog, "getSaveFileName",
+                        return_value=("", ""),
+                    ) as dialog:
+                        export(view, model, [{"right_rect": (1, 2, 3, 4)}], *args)
+                        self.assertEqual(dialog.call_args.args[2],
+                                         str(folder / (scene + suffix)))
+                self.assertEqual(model.sparc_load_result["source_folder"], str(folder))
+        view.show_status_message.assert_not_called()
 
 
 # Both RGB images should be exported with names that identify the scene and eye.

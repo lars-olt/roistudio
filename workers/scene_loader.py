@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PyQt5.QtCore import QThread, pyqtSignal
 from sparc.data.loading import load_cube
 
@@ -10,7 +12,7 @@ class SceneLoadThread(QThread):
 
     def __init__(self, folder_path, seq_id, obs_ix, instrument):
         super().__init__()
-        self.folder_path = folder_path
+        self.folder_path = str(Path(folder_path).expanduser().absolute())
         self.seq_id      = seq_id
         self.obs_ix      = obs_ix
         self.instrument  = instrument
@@ -25,6 +27,8 @@ class SceneLoadThread(QThread):
                 do_apply_pixmaps = True,
                 ignore_bayers    = False,
             )
+            # Keep the loaded scene's location, independent of later scans or saves.
+            load_result['source_folder'] = self.folder_path
             self.load_complete.emit(load_result)
         except Exception as e:
             import traceback

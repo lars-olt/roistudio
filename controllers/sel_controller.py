@@ -169,6 +169,11 @@ def _spectrum_for_eyes(sparc_controller, load_result, left_rect, right_rect,
     return data
 
 
+def _export_dialog_path(load_result, filename):
+    """Start every save dialog beside the loaded scene, retaining its filename."""
+    return str(Path(load_result.get('source_folder') or '.') / filename)
+
+
 def export_sel(view, model, rois_data, color_names, color_manager, output_path=None):
     """Serialize stored per-eye rectangles without applying stereo mapping."""
     if not rois_data:
@@ -183,7 +188,8 @@ def export_sel(view, model, rois_data, color_names, color_manager, output_path=N
     scene_id = load_result.get('id', 'scene')
     if output_path is None:
         output_path, _ = QFileDialog.getSaveFileName(
-            view, "Export SEL File", f"{scene_id}.sel", "SEL Files (*.sel);;All Files (*)"
+            view, "Export SEL File", _export_dialog_path(load_result, f"{scene_id}.sel"),
+            "SEL Files (*.sel);;All Files (*)"
         )
     if not output_path:
         return
@@ -593,7 +599,7 @@ def export_context(view, model, rois_data, colors, color_names, color_manager,
 
     scene_id   = load_result.get('id', 'scene')
     output_dir, _ = QFileDialog.getSaveFileName(
-        view, "Export Context Folder", scene_id, ""
+        view, "Export Context Folder", _export_dialog_path(load_result, scene_id), ""
     )
     if not output_dir:
         return
@@ -701,7 +707,8 @@ def export_fits(view, model, rois_data, color_names, output_path=None):
     scene_id = load_result.get('id', 'scene')
     if output_path is None:
         output_path, _ = QFileDialog.getSaveFileName(
-            view, "Export FITS File", f"{scene_id}.fits", "FITS Files (*.fits);;All Files (*)"
+            view, "Export FITS File", _export_dialog_path(load_result, f"{scene_id}.fits"),
+            "FITS Files (*.fits);;All Files (*)"
         )
     if not output_path:
         return
