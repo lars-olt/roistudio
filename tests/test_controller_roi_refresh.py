@@ -21,7 +21,8 @@ def _load_controller():
     controllers = _module('controllers')
     controllers.__path__ = []
     utils = _module('utils')
-    utils.__path__ = []
+    # Resolve pure helpers without running utils/__init__.py or importing Qt.
+    utils.__path__ = [str(Path(__file__).parents[1] / 'utils')]
     roi_controller = _module(
         'controllers.roi_controller',
         on_roi_created=MagicMock(),
