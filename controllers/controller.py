@@ -775,10 +775,8 @@ class Controller(QObject):
             if not is_split:
                 self._view.panel_image_editing.set_crop_enabled(True)
         self._view.show_status_message(
-            (("Split screen: draw/delete targets both eyes"
-              if self._paired_roi_drawing
-              else "Split screen: draw/delete targets the active eye only")
-             if is_split else "Single screen: drawing creates paired regions")
+            ("Switched to split-screen mode"
+             if is_split else "Switched to single-screen mode")
         )
 
     # ------------------------------------------------------------------
