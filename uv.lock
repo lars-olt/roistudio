@@ -86,7 +86,7 @@ wheels = [
 [[package]]
 name = "asdf"
 version = "1.3.0"
-source = { git = "ssh://git@github.com/MillionConcepts/asdf.git#077b699f432f869eb5019478ec468f0df9844112" }
+source = { git = "https://github.com/MillionConcepts/asdf.git#a41fdf69e1dad7b8ea1913efa7124d6bdc090335" }
 
 [[package]]
 name = "astropy"
@@ -1082,8 +1082,8 @@ wheels = [
 
 [[package]]
 name = "marslab"
-version = "0.9.25"
-source = { git = "ssh://git@github.com/MillionConcepts/marslab.git#ac956373914d28c23b9efec3cad40ca733d880e1" }
+version = "0.9.26"
+source = { git = "https://github.com/MillionConcepts/marslab.git#bd1b245765c19c32d5a544053a4953cc2758ce6e" }
 dependencies = [
     { name = "cytoolz", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "dustgoggles", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
@@ -1416,8 +1416,8 @@ wheels = [
 
 [[package]]
 name = "pdr"
-version = "1.4.3"
-source = { git = "ssh://git@github.com/MillionConcepts/pdr.git#d2cd8616fd5c2b588a07841894b5ef7166123496" }
+version = "1.4.4"
+source = { git = "https://github.com/MillionConcepts/pdr.git#a78ec92c16b68bdf3e6396cca8ed3f4e7892c35a" }
 dependencies = [
     { name = "dustgoggles", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "more-itertools", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
@@ -1492,7 +1492,7 @@ wheels = [
 [[package]]
 name = "pretty-plot"
 version = "0.2.0"
-source = { git = "ssh://git@github.com/MillionConcepts/pretty-plot.git#ae37d810d5ac912b8dea5d1d115019de29ef78b1" }
+source = { git = "https://github.com/MillionConcepts/pretty-plot.git#7fb6b71b1b2c2e3618b90fb5c85a5c55f3ca4fc4" }
 dependencies = [
     { name = "fire", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "jupyter", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
@@ -2014,7 +2014,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/be/a1/61fdc62f2a5e352aa
 [[package]]
 name = "silencio"
 version = "0.5.0"
-source = { git = "ssh://git@github.com/MillionConcepts/silencio.git#af1a8d1ca1993a1e0574d91348afb08846540206" }
+source = { git = "https://github.com/MillionConcepts/silencio.git#af1a8d1ca1993a1e0574d91348afb08846540206" }
 dependencies = [
     { name = "dustgoggles", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "google-api-python-client", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
@@ -2082,7 +2082,7 @@ algorithm = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asdf", git = "ssh://git@github.com/MillionConcepts/asdf.git" },
+    { name = "asdf", git = "https://github.com/MillionConcepts/asdf.git" },
     { name = "astropy", specifier = ">=5.0" },
     { name = "boto3", specifier = ">=1.20.0" },
     { name = "fs", specifier = ">=2.4.0" },
@@ -2093,13 +2093,13 @@ requires-dist = [
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "jupyterlab", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "kneed", marker = "extra == 'algorithm'", specifier = ">=0.7.0" },
-    { name = "marslab", git = "ssh://git@github.com/MillionConcepts/marslab.git" },
+    { name = "marslab", git = "https://github.com/MillionConcepts/marslab.git" },
     { name = "matplotlib", specifier = ">=3.3.0" },
     { name = "numpy", specifier = ">=1.24,<2" },
     { name = "opencv-python", specifier = ">=4.5.0" },
     { name = "pandas", specifier = ">=1.3.0,<3.0" },
-    { name = "pdr", git = "ssh://git@github.com/MillionConcepts/pdr.git" },
-    { name = "pretty-plot", git = "ssh://git@github.com/MillionConcepts/pretty-plot.git" },
+    { name = "pdr", git = "https://github.com/MillionConcepts/pdr.git" },
+    { name = "pretty-plot", git = "https://github.com/MillionConcepts/pretty-plot.git" },
     { name = "psutil", marker = "extra == 'algorithm'", specifier = ">=5.8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapid", specifier = ">=0.0.3" },
@@ -2110,7 +2110,7 @@ requires-dist = [
     { name = "segment-anything", marker = "extra == 'algorithm'", specifier = ">=1.0" },
     { name = "setuptools", specifier = "<81" },
     { name = "sh", specifier = "==0.108" },
-    { name = "silencio", git = "ssh://git@github.com/MillionConcepts/silencio.git" },
+    { name = "silencio", git = "https://github.com/MillionConcepts/silencio.git" },
     { name = "torch", marker = "extra == 'algorithm'", specifier = ">=2.0.0,<2.3.0" },
     { name = "torchvision", marker = "extra == 'algorithm'", specifier = ">=0.15.0,<0.18.0" },
 ]
