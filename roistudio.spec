@@ -74,6 +74,7 @@ common_hidden_imports = [
     # --- Lightweight SPARC services used by both editions ---
     "sparc",
     "sparc.core",
+    "sparc.core.config",  # AlignmentConfig is also used by Lite scene loading.
     "sparc.core.constants",
     "sparc.data",
     "sparc.data.loading",
@@ -113,7 +114,6 @@ algorithm_hidden_imports = [
     "psutil",
     # --- SPARC algorithm package ---
     "sparc.core.functional",
-    "sparc.core.config",
     "sparc.core.pipeline",
     "sparc.core.state",
     "sparc.core.result",
@@ -197,7 +197,6 @@ lite_excludes = [
     "controllers.sparc_callbacks",
     "workers.sparc_runner",
     "sparc.core.functional",
-    "sparc.core.config",
     "sparc.core.pipeline",
     "sparc.core.sparc",
     "sparc.core.state",

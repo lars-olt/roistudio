@@ -1,8 +1,11 @@
-"""Fail a Lite build if algorithm modules or libraries entered the bundle."""
+"""Check that Lite includes shared services and excludes algorithm dependencies."""
 
 import argparse
 from pathlib import Path
 import re
+
+
+REQUIRED_MODULES = ('sparc.core.config',)
 
 
 BANNED_MODULES = (
@@ -65,6 +68,10 @@ def audit(dist_path, module_toc_path):
         )
         leaked = sorted({name for name in quoted_names if _is_banned(name)})
         failures.extend(f'banned analyzed module: {name}' for name in leaked)
+        failures.extend(
+            f'missing required Lite module: {name}'
+            for name in REQUIRED_MODULES if name not in quoted_names
+        )
 
     if failures:
         raise SystemExit('\n'.join(failures))

@@ -60,21 +60,35 @@ class LiteEditionTests(unittest.TestCase):
         'ROIStudio runtime tests require Python 3.11',
     )
     def test_lite_import_succeeds_with_algorithm_dependencies_blocked(self):
-        # This starts the real Lite UI while making algorithm imports impossible.
+        # Exercise startup with the same module exclusions as the frozen Lite app.
+        spec = ast.parse((ROOT / 'roistudio.spec').read_text(encoding='utf-8'))
+        exclusions = next(
+            ast.literal_eval(node.value)
+            for node in spec.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == 'lite_excludes'
+                    for target in node.targets)
+        )
         script = r'''
 import importlib.abc
 import sys
 
-banned = {'torch', 'torchvision', 'segment_anything', 'sklearn', 'kneed', 'psutil'}
+banned = set(SPEC_EXCLUSIONS) | {
+    'torch', 'torchvision', 'segment_anything', 'sklearn', 'kneed', 'psutil',
+    'sparc.experimental', 'romatch', 'local_corr',
+}
+
+def is_banned(name):
+    return any(name == module or name.startswith(module + '.') for module in banned)
 
 class Blocker(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in banned:
+        if is_banned(fullname):
             raise ModuleNotFoundError(f'blocked Lite dependency: {fullname}')
 
 sys.meta_path.insert(0, Blocker())
 import main_lite
-leaked = sorted(name for name in sys.modules if name.split('.')[0] in banned)
+leaked = sorted(name for name in sys.modules if is_banned(name))
 if leaked:
     raise RuntimeError(f'algorithm modules loaded by Lite: {leaked}')
 
@@ -93,7 +107,7 @@ assert view.panel_image_editing.run_button is None
 assert not view.panel_settings.algorithm_enabled
 assert controller.algorithm_controller is None
 view.close()
-'''
+'''.replace('SPEC_EXCLUSIONS', repr(exclusions))
         result = subprocess.run(
             [sys.executable, '-c', script],
             cwd=ROOT,

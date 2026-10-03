@@ -23,7 +23,10 @@ class LiteBuildAuditTests(unittest.TestCase):
         self.dist = self.root / 'dist'
         self.toc = self.root / 'PYZ-00.toc'
         self.dist.mkdir()
-        self.toc.write_text("[('controllers.controller', 'controller.py')]", encoding='utf-8')
+        self.toc.write_text(
+            "[('controllers.controller', 'controller.py'), "
+            "('sparc.core.config', 'config.py')]", encoding='utf-8',
+        )
 
     def test_clean_bundle_passes(self):
         (self.dist / 'ROIStudio Lite.exe').touch()
@@ -35,6 +38,12 @@ class LiteBuildAuditTests(unittest.TestCase):
         forbidden.mkdir(parents=True)
 
         with self.assertRaisesRegex(SystemExit, 'banned bundle path'):
+            audit(self.dist, self.toc)
+
+    def test_missing_shared_configuration_fails(self):
+        self.toc.write_text("[('controllers.controller', 'controller.py')]", encoding='utf-8')
+
+        with self.assertRaisesRegex(SystemExit, 'missing required Lite module: sparc.core.config'):
             audit(self.dist, self.toc)
 
     def test_algorithm_module_in_toc_fails(self):

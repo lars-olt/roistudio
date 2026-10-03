@@ -50,12 +50,14 @@ class ContinuousDeliveryContractTests(unittest.TestCase):
     def test_packaged_applications_are_smoke_tested_before_upload(self):
         # Every uploaded app should have proved that it can at least start.
         smoke_commands = (
-            '& "dist\\${{ matrix.product_name }}\\'
-            '${{ matrix.product_name }}.exe" --smoke-test',
+            'Start-Process -FilePath "dist\\${{ matrix.product_name }}\\'
+            '${{ matrix.product_name }}.exe" -ArgumentList "--smoke-test" '
+            '-WindowStyle Hidden -Wait -PassThru',
             '"dist/${{ matrix.product_name }}.app/Contents/MacOS/'
             '${{ matrix.product_name }}" --smoke-test',
         )
         upload_step = self.build.index('- name: Upload artifact')
+        self.assertIn('if ($app.ExitCode -ne 0) { throw ', self.build)
 
         for command in smoke_commands:
             self.assertIn(command, self.build)

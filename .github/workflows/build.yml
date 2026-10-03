@@ -140,7 +140,8 @@ jobs:
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
-          & "dist\${{ matrix.product_name }}\${{ matrix.product_name }}.exe" --smoke-test
+          $app = Start-Process -FilePath "dist\${{ matrix.product_name }}\${{ matrix.product_name }}.exe" -ArgumentList "--smoke-test" -WindowStyle Hidden -Wait -PassThru
+          if ($app.ExitCode -ne 0) { throw "Smoke test failed with exit code $($app.ExitCode)" }
 
       - name: Smoke-test application (macOS)
         if: runner.os == 'macOS'
