@@ -49,6 +49,7 @@ def on_scene_load_complete(load_result, scene_id, model, view):
         )
 
     has_stereo = bool(load_result.get('left_band_keys')) and bool(load_result.get('right_band_keys'))
+    view.panel_image_editing.canvas_container.set_stereo_mapping(load_result.get('stereo_mapping'))
     view.panel_image_editing.set_split_screen_enabled(has_stereo)
 
     instrument = load_result.get('instrument', 'ZCAM')
@@ -60,6 +61,8 @@ def on_scene_load_complete(load_result, scene_id, model, view):
     view.panel_spectral_view.clear_plot()
     view.stop_loading()
     message = f"Scene loaded: {load_result['id']}"
+    if load_result.get('alignment_method') == 'roma':
+        message += f" — RoMa experimental, {load_result['alignment_coverage']:.0%} confident overlap"
     if instrument == 'ZCAM':
         pixmap_status = (
             "pixel maps applied"

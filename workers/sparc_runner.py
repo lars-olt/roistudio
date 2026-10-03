@@ -8,7 +8,7 @@ from sparc.core.config import (
     ROIConfig, SpectralConfig,
     SegmentationBackend, ROIBackend,
 )
-from sparc.utils.memory import release_cuda_memory
+from sparc.utils.memory import release_accelerator_memory
 
 
 class SparcRunThread(QThread):
@@ -50,6 +50,7 @@ class SparcRunThread(QThread):
                 segment=SegmentConfig(
                     sam_model_path      = self.sam_path,
                     backend             = SegmentationBackend.GPU,
+                    device              = (self.load_result or {}).get('compute_device', 'auto'),
                     preserve_background = seg.get('preserve_background', False),
                     points_per_side     = seg.get('points_per_side', 32),
                     pred_iou_thresh     = seg.get('pred_iou_thresh', 0.88),
@@ -94,7 +95,7 @@ class SparcRunThread(QThread):
 
         # Run after the except block so traceback frames no longer retain SAM
         # tensors. This also releases PyTorch's unused caching-allocator blocks.
-        release_cuda_memory()
+        release_accelerator_memory()
 
         if error_message is not None:
             self.sparc_error.emit(error_message)

@@ -23,6 +23,8 @@ class SceneController(QObject):
         super().__init__()
         self._scan_thread = None
         self._load_thread = None
+        self.alignment_method = 'homography'
+        self.device = 'auto'
         self._scene_cache = {}  # scene_id -> (folder_path, seq_id, obs_ix, instrument)
 
     def open_folder_dialog(self, parent):
@@ -59,7 +61,10 @@ class SceneController(QObject):
 
         folder_path, seq_id, obs_ix, instrument = self._scene_cache[scene_id]
 
-        self._load_thread = SceneLoadThread(folder_path, seq_id, obs_ix, instrument)
+        self._load_thread = SceneLoadThread(
+            folder_path, seq_id, obs_ix, instrument, alignment_method=self.alignment_method,
+            device=self.device,
+        )
         self._load_thread.load_complete.connect(self.load_complete.emit)
         self._load_thread.load_error.connect(self.load_error.emit)
         self._load_thread.start()
@@ -73,7 +78,10 @@ class SceneController(QObject):
             self._load_thread.quit()
             self._load_thread.wait()
 
-        self._load_thread = SceneLoadThread(folder_path, seq_id, obs_ix, instrument)
+        self._load_thread = SceneLoadThread(
+            folder_path, seq_id, obs_ix, instrument, alignment_method=self.alignment_method,
+            device=self.device,
+        )
         self._load_thread.load_complete.connect(self.load_complete.emit)
         self._load_thread.load_error.connect(self.load_error.emit)
         self._load_thread.start()

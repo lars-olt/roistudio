@@ -45,6 +45,13 @@ def full_scene(instrument='ZCAM'):
 
 
 class AlgorithmCoordinatesTests(unittest.TestCase):
+    def test_dense_mapping_crop_uses_same_origin_as_algorithm_arrays(self):
+        scene = full_scene()
+        scene['stereo_mapping'] = Mock()
+        result = callbacks._apply_crop(scene, (3, 4, 12, 10))
+        scene['stereo_mapping'].cropped.assert_called_once_with((3, 4, 12, 10))
+        self.assertIs(result['stereo_mapping'], scene['stereo_mapping'].cropped.return_value)
+
     def test_default_margins_and_user_crop_intersect_in_full_image_coordinates(self):
         scene = full_scene()
         self.assertEqual(callbacks._algorithm_crop_rect(scene), (2, 4, 25, 11))

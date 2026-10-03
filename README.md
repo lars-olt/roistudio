@@ -74,6 +74,7 @@ Run `uv run python main.py --help` for the complete launch syntax.
 ## Table of Contents
 
 - [Installation](#installation)
+- [Experimental RoMa](#experimental-roma)
 - [Interface Overview](#interface-overview)
 - [Loading Scenes](#loading-scenes)
 - [Running SPARC](#running-sparc)
@@ -98,6 +99,8 @@ Each release contains two editions built from the same source:
 - **ROIStudio Lite** supports scene loading, manual ROI editing, spectra, and SEL/FITS import and export without Torch, Segment Anything, or SPARC's clustering dependencies.
 
 ### Manual Install
+
+For RoMa, follow [Experimental RoMa](#experimental-roma) below instead.
 
 Requires Python 3.11 and [uv](https://docs.astral.sh/uv/).
 
@@ -137,6 +140,114 @@ ROIStudio requires a SAM model checkpoint to run the SPARC pipeline. Download `s
 
 <img width="1601" height="924" alt="Screenshot of the Set SAM Path file dialog" src="https://github.com/user-attachments/assets/bbea956e-be95-482f-af24-409dc4b382c0" />
 
+
+---
+
+## Experimental RoMa
+
+RoMa is an experimental alternative to homography for aligning the left and
+right images. ROIStudio uses SPARC’s implementation, and paired ROIs remain
+inscribed rectangles. RoMa is available from source; packaged applications
+do not include it.
+
+This setup supports **Windows (64-bit), with CPU or NVIDIA CUDA**, and
+**Apple Silicon macOS, with CPU or MPS**. Intel Macs cannot use this setup:
+[official PyTorch wheels for Intel Macs ended after 2.2](https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690),
+and RoMa needs a newer version.
+
+### 1. Set up the environment
+
+Install [Git](https://git-scm.com/downloads) and
+[uv](https://docs.astral.sh/uv/getting-started/installation/), then open PowerShell
+on Windows or Terminal on macOS. Use these instructions instead of the standard
+installation above. uv creates a Python 3.11 environment in `.venv` and downloads
+Python if needed. On Apple Silicon, use a native ARM64 terminal, without Rosetta.
+
+```bash
+git clone https://github.com/lars-olt/roistudio.git
+git clone https://github.com/lars-olt/sparc.git
+cd roistudio
+uv sync --python 3.11 --inexact --no-install-package torch --no-install-package torchvision
+```
+
+Keep the two repositories beside each other: ROIStudio is configured to use
+`../sparc`. This installs the GUI and full SPARC pipeline into
+`roistudio/.venv`; a separate SPARC environment is not needed.
+
+For an existing source installation, skip cloning, open the `roistudio` directory,
+and run the `uv sync` command above to reuse its Python 3.11 `.venv`. Deactivate
+any other environment before following these steps. `--inexact` keeps additional
+packages you have installed.
+
+The command installs the pipeline dependencies but leaves PyTorch for the next
+step. The standard environment pins an older PyTorch version; RoMa uses 2.6.
+
+### 2. Install PyTorch and RoMa
+
+Run **one** of these commands from the same directory:
+
+**Windows — CPU:**
+
+```bash
+uv pip install --reinstall torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
+```
+
+**Windows — NVIDIA GPU:** use this with a CUDA-compatible GPU and an up-to-date
+NVIDIA driver. The wheel includes the CUDA runtime.
+
+```bash
+uv pip install --reinstall torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+```
+
+**macOS — Apple Silicon:** the same build supports CPU and MPS.
+
+```bash
+uv pip install --reinstall torch==2.6.0 torchvision==0.21.0
+```
+
+These are the [PyTorch 2.6 installation builds](https://pytorch.org/get-started/previous-versions/#v260).
+`--reinstall` also handles switching an existing installation between CPU and CUDA.
+Then install RoMa:
+
+```bash
+uv pip install -r ../sparc/requirements-roma.txt
+```
+
+### 3. Check and run
+
+Check that RoMa imports and see which device will be selected:
+
+```bash
+uv run --no-sync python -c "import romatch; from sparc.utils.device import resolve_device; print('RoMa device:', resolve_device('auto'))"
+```
+
+`auto` chooses CUDA, then MPS, then CPU. Use `--device cpu` to run without a GPU,
+`--device cuda` for an NVIDIA GPU, or `--device mps` for an Apple Silicon GPU.
+If the check reports `cpu` when you expected a GPU, check the PyTorch build and
+driver or macOS support before running. An explicitly requested unavailable GPU
+raises an error. Unsupported MPS operations can fall back to CPU.
+
+Download `sam_vit_h_4b8939.pth` from
+[Segment Anything](https://github.com/facebookresearch/segment-anything#model-checkpoints)
+if you do not already have it, then launch:
+
+```bash
+uv run --no-sync python main.py --device auto
+```
+
+In ROIStudio, set **File > Set SAM Path** to that checkpoint. Select
+**Settings > Experimental Alignment > RoMa**, then load or reload a scene and
+press **Run**. The SAM checkpoint is needed for automatic ROI generation; RoMa
+downloads its own weights on first use, so the first scene needs internet access
+and takes longer to load.
+
+This environment also runs SPARC directly: from the ROIStudio directory, use
+`uv run --no-sync python -m sparc --help`. See
+[SPARC’s terminal guide](https://github.com/lars-olt/sparc#terminal-use) for a full run.
+
+**Keep `--no-sync` when launching.** A plain `uv run` or `uv sync` restores the
+standard dependency pins and can remove RoMa or downgrade PyTorch. If that
+happens, repeat step 2. You can also activate `.venv` and run `python` directly.
 
 ---
 
@@ -274,7 +385,7 @@ In the application **Settings** panel, the **View Settings** section controls:
 The **ROI Editing** section controls:
 
 - **Draw/delete both eyes** - when enabled (the default), drawing in either
-  split-screen canvas also creates the homography-mapped rectangle in the other
+  split-screen canvas also creates the mapped rectangle in the other
   eye, and deleting removes the paired region from both eyes. Disable it to draw
   or delete only in the active eye.
 

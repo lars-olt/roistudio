@@ -83,6 +83,12 @@ class Controller(QObject):
             self.config = {'sam_model_path': ''}
             self.save_config()
 
+    def _on_alignment_method_changed(self, method):
+        self.scene_controller.alignment_method = method
+        self._view.show_status_message(
+            'Alignment changed for the next scene load. Reload the scene to apply it.'
+        )
+
     def save_config(self):
         if self.config_path is None:
             return
@@ -146,6 +152,7 @@ class Controller(QObject):
         self._view.panel_roi_metadata.roi_activated.connect(self._on_roi_metadata_activated)
         self._view.mode_changed.connect(self._on_view_mode_changed)
         self._view.panel_settings.exposure_changed.connect(self._on_exposure_changed)
+        self._view.panel_settings.alignment_method_changed.connect(self._on_alignment_method_changed)
         self._view.panel_settings.paired_roi_drawing_changed.connect(
             self._on_paired_roi_drawing_changed
         )
@@ -311,7 +318,12 @@ class Controller(QObject):
             )
             self._update_roi_view()
             self._view.set_export_enabled(True)
-            self._view.show_status_message("ROI created")
+            if (self._model.sparc_load_result.get('stereo_mapping') is not None
+                    and (roi_data.get('left_rect') is None or roi_data.get('right_rect') is None)
+                    and (camera == 'single' or self._paired_roi_drawing)):
+                self._view.show_status_message('ROI created in one eye; no confident RoMa rectangle fits in the other.')
+            else:
+                self._view.show_status_message("ROI created")
         except Exception as e:
             self._view.show_status_message(f"Error creating ROI: {e}")
 

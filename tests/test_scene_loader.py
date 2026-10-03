@@ -32,13 +32,15 @@ class SceneSourceFolderTests(unittest.TestCase):
                     "left_band_keys": ['L0B', 'L0G', 'L0R'], "right_band_keys": [],
                 }
                 loading.load_cube.return_value = result
-                worker = module.SceneLoadThread(folder, "sequence", 0, "ZCAM")
+                worker = module.SceneLoadThread(folder, "sequence", 0, "ZCAM", device='cpu')
                 worker.run()
 
                 expected = str(folder.absolute())
                 self.assertEqual(result["source_folder"], expected)
                 self.assertEqual(loading.load_cube.call_args.kwargs["iof_path"], expected)
                 self.assertIs(loading.load_cube.call_args.kwargs["crop_zcam"], False)
+                self.assertEqual(loading.load_cube.call_args.kwargs['alignment'].device, 'cpu')
+                self.assertEqual(result['compute_device'], 'cpu')
                 self.assertIs(result['rgb_img'], left_image)
                 worker.load_complete.emit.assert_called_with(result)
                 worker.load_error.emit.assert_not_called()

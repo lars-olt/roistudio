@@ -63,7 +63,7 @@ def _load_sparc_runner(run_from_load_result):
         def __init__(self, **values):
             self.__dict__.update(values)
 
-    release_cuda_memory = Mock()
+    release_accelerator_memory = Mock()
     sparc = _module('sparc')
     sparc.__path__ = []
     core = _module('sparc.core')
@@ -90,7 +90,7 @@ def _load_sparc_runner(run_from_load_result):
         ),
         'sparc.utils': utils,
         'sparc.utils.memory': _module(
-            'sparc.utils.memory', release_cuda_memory=release_cuda_memory,
+            'sparc.utils.memory', release_accelerator_memory=release_accelerator_memory,
         ),
     }
     path = ROOT / 'workers' / 'sparc_runner.py'
@@ -100,7 +100,7 @@ def _load_sparc_runner(run_from_load_result):
     module = importlib.util.module_from_spec(spec)
     with patch.dict(sys.modules, stand_ins):
         spec.loader.exec_module(module)
-    return module.SparcRunThread, release_cuda_memory
+    return module.SparcRunThread, release_accelerator_memory
 
 
 AlgorithmController = _load_algorithm_controller()
@@ -144,6 +144,30 @@ class FakeThread:
 
 # Only one SPARC run should exist, and every run should release its large data.
 class AlgorithmWorkerLifecycleTests(unittest.TestCase):
+    def test_worker_passes_scene_device_to_sparc(self):
+        run_pipeline = Mock(return_value=object())
+        thread_type, _ = _load_sparc_runner(run_pipeline)
+        thread = thread_type('', '', None, 0, 'ZCAM', load_result={'compute_device': 'cpu'})
+        thread.run()
+        self.assertEqual(run_pipeline.call_args.args[1].segment.device, 'cpu')
+
+    def test_worker_preserves_rectangles_returned_by_sparc(self):
+        import numpy as np
+        result = types.SimpleNamespace(final_rois=np.array([[2, 3, 4, 5]]),
+                                       final_left_rois=np.array([[1, 3, 3, 5]]))
+        mapping = Mock()
+        run_pipeline = Mock(return_value=result)
+        thread_type, _ = _load_sparc_runner(run_pipeline)
+        thread = thread_type('', '', None, 0, 'ZCAM', load_result={'stereo_mapping': mapping})
+        completed, errors = [], []
+        thread.sparc_complete.connect(completed.append)
+        thread.sparc_error.connect(errors.append)
+        thread.run()
+        self.assertEqual(errors, [])
+        self.assertEqual(completed, [result])
+        mapping.map_rect.assert_not_called()
+        np.testing.assert_array_equal(result.final_left_rois, [[1, 3, 3, 5]])
+
     def test_duplicate_run_is_rejected_and_finished_thread_is_disposed(self):
         controller = AlgorithmController()
         thread = FakeThread()
@@ -169,7 +193,7 @@ class AlgorithmWorkerLifecycleTests(unittest.TestCase):
 
     def test_failed_worker_releases_scene_references_and_cuda_cache(self):
         run_pipeline = Mock(side_effect=RuntimeError('pipeline failed'))
-        thread_type, release_cuda_memory = _load_sparc_runner(run_pipeline)
+        thread_type, release_accelerator_memory = _load_sparc_runner(run_pipeline)
         thread = thread_type(
             '', '', None, 0, 'ZCAM',
             load_result={'cube': 'large scene'},
@@ -182,14 +206,14 @@ class AlgorithmWorkerLifecycleTests(unittest.TestCase):
 
         self.assertIsNone(thread.load_result)
         self.assertIsNone(thread.presegmented)
-        self.assertEqual(release_cuda_memory.call_args_list, [call()])
+        self.assertEqual(release_accelerator_memory.call_args_list, [call()])
         self.assertEqual(len(errors), 1)
         self.assertIn('RuntimeError: pipeline failed', errors[0])
 
     def test_successful_worker_returns_result_then_releases_scene_memory(self):
         result = object()
         run_pipeline = Mock(return_value=result)
-        thread_type, release_cuda_memory = _load_sparc_runner(run_pipeline)
+        thread_type, release_accelerator_memory = _load_sparc_runner(run_pipeline)
         thread = thread_type(
             '', '', None, 0, 'ZCAM',
             load_result={'cube': 'large scene'},
@@ -206,7 +230,7 @@ class AlgorithmWorkerLifecycleTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertIsNone(thread.load_result)
         self.assertIsNone(thread.presegmented)
-        release_cuda_memory.assert_called_once_with()
+        release_accelerator_memory.assert_called_once_with()
 
 
 # Loading should lock the Full run button and remain safe when Lite has no button.

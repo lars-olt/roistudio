@@ -222,6 +222,10 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # Source-only RoMa experiments must never enter either release edition.
+        "sparc.experimental",
+        "romatch",
+        "local_corr",
         "IPython",
         "jupyter",
         "notebook",

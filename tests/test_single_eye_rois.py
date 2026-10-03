@@ -80,6 +80,24 @@ sparc_controller_module = _load_sparc_controller()
 
 # Single-eye drawing and editing should not invent a rectangle in the other eye.
 class EyeLocalEditingTests(unittest.TestCase):
+    def test_dense_mapping_used_for_pair_and_confidence_failure_leaves_one_eye(self):
+        self.load_result['left_band_keys'] = ['L1']
+        self.load_result['right_band_keys'] = ['R1']
+        mapping = MagicMock()
+        self.load_result['stereo_mapping'] = mapping
+        mapping.map_rect.return_value = (2, 3, 4, 5)
+        created = roi_controller.on_roi_created(
+            (10, 11, 4, 5), 'right', self.load_result, {}, self.spectra, True, paired_draw=True,
+        )
+        self.assertEqual(created['left_rect'], (2, 3, 4, 5))
+        mapping.map_rect.assert_called_with((10, 11, 4, 5), 'right')
+        mapping.map_rect.return_value = None
+        created = roi_controller.on_roi_created(
+            (10, 11, 4, 5), 'right', self.load_result, {}, self.spectra, True, paired_draw=True,
+        )
+        self.assertIsNone(created['left_rect'])
+        self.assertEqual(created['right_rect'], (10, 11, 4, 5))
+
     def setUp(self):
         self.load_result = {
             "instrument": "ZCAM",

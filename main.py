@@ -1,3 +1,8 @@
+from sparc.utils.device import DEVICES, prepare_accelerators
+
+prepare_accelerators()
+
+
 def _bootstrap_torch():
     """Import torch early to avoid DLL conflicts on Windows."""
     try:
@@ -61,6 +66,8 @@ def _parse_args():
     parser.add_argument('roi_file',     nargs='?', help='Optional .sel or .fits ROI file to load after the scene')
     parser.add_argument('--notes',      default=None,
                         help='Observation-level science notes shown in the status panel')
+    parser.add_argument('--device', choices=DEVICES, default='auto',
+                        help='Compute device: auto prefers CUDA, then MPS, then CPU')
     parser.add_argument('--smoke-test', action='store_true', help=argparse.SUPPRESS)
     add_ui_arguments(parser)
     # strip Qt's own args before parsing so --style etc. don't confuse argparse
@@ -126,6 +133,7 @@ def run(edition=FULL):
     model      = Model()
     view       = View(edition=edition)
     controller = Controller(model, view)
+    controller.scene_controller.device = args.device
     ui_settings.restore_view(view)
     apply_view_overrides(args, view)
     app.aboutToQuit.connect(lambda: ui_settings.save(view))

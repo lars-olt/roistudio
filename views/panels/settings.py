@@ -1,7 +1,9 @@
+import sys
+
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QScrollArea, QWidget,
                              QFormLayout, QLabel, QDoubleSpinBox, QSpinBox,
-                             QCheckBox, QSlider, QAbstractSpinBox)
+                             QCheckBox, QSlider, QAbstractSpinBox, QComboBox)
 
 from colors import Colors
 from utils.scale import Scale, scaled, scaled_font
@@ -25,6 +27,7 @@ class SettingsPanel(QFrame):
     line_width_changed    = pyqtSignal(float)
     exposure_changed      = pyqtSignal(float)
     paired_roi_drawing_changed = pyqtSignal(bool)
+    alignment_method_changed = pyqtSignal(str)
 
     def __init__(self, algorithm_enabled=True):
         super().__init__()
@@ -92,10 +95,23 @@ class SettingsPanel(QFrame):
         )
         self._add_section("roi_editing", "ROI Editing", self._form([
             ("Draw/delete both eyes", self.chk_paired_roi_drawing,
-             "In split screen, create a homography-mapped ROI in the other "
+             "In split screen, create a mapped ROI in the other "
              "eye and delete paired ROIs from both eyes. Disable this to draw "
              "or delete only in the active eye."),
         ]))
+
+        if not getattr(sys, 'frozen', False):
+            self.combo_alignment = QComboBox()
+            self.combo_alignment.addItem('Homography (default)', 'homography')
+            self.combo_alignment.addItem('RoMa (experimental)', 'roma')
+            self.combo_alignment.currentIndexChanged.connect(
+                lambda _index: self.alignment_method_changed.emit(self.combo_alignment.currentData())
+            )
+            self._add_section('experimental_alignment', 'Experimental Alignment', self._form([
+                ('Next scene load', self.combo_alignment,
+                 'Select before loading or reloading a scene. RoMa requires a separate installation; '
+                 'paired ROIs remain inscribed rectangles. Available only in source runs.'),
+            ]))
 
         if self.algorithm_enabled:
             self._build_algorithm_settings()

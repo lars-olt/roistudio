@@ -132,6 +132,9 @@ jobs:
         if: matrix.edition == 'lite'
         run: python packaging/audit_lite_build.py --dist "dist/${{ matrix.product_name }}" --module-toc build/roistudio/PYZ-00.toc
 
+      - name: Verify both editions exclude experimental RoMa
+        run: python packaging/audit_experimental_build.py --dist "dist/${{ matrix.product_name }}" --module-toc build/roistudio/PYZ-00.toc
+
       - name: Smoke-test executable (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

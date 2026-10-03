@@ -926,6 +926,7 @@ class DualCanvasContainer(QWidget):
         self.is_split_mode             = False
         self.homography_matrix         = None
         self.inverse_homography_matrix = None
+        self.stereo_mapping = None
         self._sync_enabled             = False
         self._syncing                  = False
 
@@ -1022,7 +1023,12 @@ class DualCanvasContainer(QWidget):
     def _apply_synced_view(self, source: CanvasContainer, target: CanvasContainer,
                            zoom: float, cx: float, cy: float, H):
         """Transform (cx, cy) through H and recenter the target at the same zoom."""
-        if H is not None:
+        if self.stereo_mapping is not None:
+            point = self.stereo_mapping.map_point((cx, cy), self._camera_label(source))
+            if point is None:
+                return
+            cx, cy = point
+        elif H is not None:
             pt     = np.array([[[cx, cy]]], dtype=np.float32)
             tpt    = cv2.perspectiveTransform(pt, H).reshape(2)
             cx, cy = float(tpt[0]), float(tpt[1])
@@ -1057,6 +1063,9 @@ class DualCanvasContainer(QWidget):
         self.inverse_homography_matrix = (cv2.invert(homography_matrix)[1]
                                           if homography_matrix is not None else None)
 
+    def set_stereo_mapping(self, mapping):
+        self.stereo_mapping = mapping
+
     def set_camera_images(self, left_pixmap, right_pixmap):
         if self.is_split_mode:
             self.canvas_left.set_image(left_pixmap)
@@ -1087,6 +1096,10 @@ class DualCanvasContainer(QWidget):
                 continue
             if 'left_rect' in roi_data:
                 rect = roi_data['left_rect']
+            elif self.stereo_mapping is not None:
+                rect = self.stereo_mapping.map_rect(
+                    roi_data.get('right_rect', roi_data['roi']), 'right',
+                )
             elif self.inverse_homography_matrix is not None:
                 x, y, w, h = map(float, roi_data['right_rect'] if 'right_rect' in roi_data else roi_data['roi'])
                 corners = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]],

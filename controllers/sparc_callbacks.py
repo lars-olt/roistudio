@@ -113,6 +113,8 @@ def _apply_crop(load_result: dict, crop_rect: tuple) -> dict:
         array = load_result.get(key)
         result[key] = array[y:y+h, x:x+w].copy() if array is not None else None
     result['roi_origin'] = (x, y)
+    if load_result.get('stereo_mapping') is not None:
+        result['stereo_mapping'] = load_result['stereo_mapping'].cropped((x, y, w, h))
     left, right, top, bottom = load_result.get('sensor_crop', (0, 0, 0, 0))
     full_h, full_w = load_result['rgb_img'].shape[:2]
     result['sensor_crop'] = (left + x, right + full_w - x - w,

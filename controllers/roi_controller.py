@@ -14,8 +14,10 @@ def _image_bounds(load_result):
     return (W, H)
 
 
-def _derive_left(right_rect, homography, bounds):
+def _derive_left(right_rect, homography, bounds, mapping=None):
     """Left-camera rect for a right rect, snapped to the pixel grid."""
+    if mapping is not None:
+        return mapping.map_rect(right_rect, 'right')
     if homography is None:
         return right_rect
     left = right_rect_to_left_inscribed(tuple(right_rect), homography)
@@ -24,8 +26,10 @@ def _derive_left(right_rect, homography, bounds):
     return snap_rect(*left, bounds=bounds)
 
 
-def _derive_right(left_rect, homography, bounds):
+def _derive_right(left_rect, homography, bounds, mapping=None):
     """Right-camera rect for a left rect, snapped to the pixel grid."""
+    if mapping is not None:
+        return mapping.map_rect(left_rect, 'left')
     if homography is None:
         return left_rect
     return snap_rect(*_left_rect_to_right(left_rect, homography), bounds=bounds)
@@ -81,13 +85,14 @@ def on_roi_created(rect, camera, load_result, instrument_config,
 
     if has_dual_cubes:
         homography = load_result.get('homography_matrix')
+        mapping = load_result.get('stereo_mapping')
         bounds     = _image_bounds(load_result)
         if paired_draw and camera == 'left':
             left_rect  = tuple(rect)
-            right_rect = _derive_right(left_rect, homography, bounds)
+            right_rect = _derive_right(left_rect, homography, bounds, mapping)
         elif paired_draw:
             right_rect = tuple(rect)
-            left_rect  = _derive_left(right_rect, homography, bounds)
+            left_rect  = _derive_left(right_rect, homography, bounds, mapping)
         elif camera == 'left':
             left_rect, right_rect = tuple(rect), None
         else:
@@ -126,6 +131,7 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
     roi_data   = existing_roi_data[roi_index]
     instrument = load_result.get('instrument', 'ZCAM').strip().upper()
     homography = load_result.get('homography_matrix') if has_dual_cubes else None
+    mapping = load_result.get('stereo_mapping') if has_dual_cubes else None
     bounds     = _image_bounds(load_result)
 
     # Single view edits the available camera selected for display.
@@ -134,13 +140,13 @@ def on_roi_changed(roi_index, new_rect, camera, existing_roi_data,
         if display_camera(load_result) == 'left':
             left_rect  = tuple(new_rect)
             right_rect = roi_data.get('right_rect')
-            if right_rect is not None and homography is not None:
-                right_rect = _derive_right(left_rect, homography, bounds)
+            if right_rect is not None and (homography is not None or mapping is not None):
+                right_rect = _derive_right(left_rect, homography, bounds, mapping)
         else:
             right_rect = tuple(new_rect)
             left_rect  = roi_data.get('left_rect')
-            if left_rect is not None and homography is not None:
-                left_rect = _derive_left(right_rect, homography, bounds)
+            if left_rect is not None and (homography is not None or mapping is not None):
+                left_rect = _derive_left(right_rect, homography, bounds, mapping)
     # split screen edits one camera directly - the other side keeps its stored rect.
     elif camera == 'left':
         left_rect  = tuple(new_rect)
