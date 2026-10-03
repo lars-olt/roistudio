@@ -189,36 +189,38 @@ Run **one** of these commands from the same directory:
 **Windows — CPU:**
 
 ```bash
-uv pip install --reinstall torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
+uv pip install --python .venv --reinstall "numpy<2" torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
 ```
 
 **Windows — NVIDIA GPU:** use this with a CUDA-compatible GPU and an up-to-date
 NVIDIA driver. The wheel includes the CUDA runtime.
 
 ```bash
-uv pip install --reinstall torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+uv pip install --python .venv --reinstall "numpy<2" torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 ```
 
 **macOS — Apple Silicon:** the same build supports CPU and MPS.
 
 ```bash
-uv pip install --reinstall torch==2.6.0 torchvision==0.21.0
+uv pip install --python .venv --reinstall "numpy<2" torch==2.6.0 torchvision==0.21.0
 ```
 
 These are the [PyTorch 2.6 installation builds](https://pytorch.org/get-started/previous-versions/#v260).
 `--reinstall` also handles switching an existing installation between CPU and CUDA.
-Then install RoMa:
+Then install RoMa in that same environment. This step is required after
+installing PyTorch; wait for it to finish successfully before launching:
 
 ```bash
-uv pip install -r ../sparc/requirements-roma.txt
+uv pip install --python .venv -r ../sparc/requirements-roma.txt
 ```
 
 ### 3. Check and run
 
-Check that RoMa imports and see which device will be selected:
+Check the Python path, RoMa import, and selected device. The printed Python
+path should be inside this checkout’s `roistudio/.venv`:
 
 ```bash
-uv run --no-sync python -c "import romatch; from sparc.utils.device import resolve_device; print('RoMa device:', resolve_device('auto'))"
+uv run --no-sync python -c "import sys; print('Python:', sys.executable); from romatch import roma_outdoor; from sparc.utils.device import resolve_device; print('RoMa device:', resolve_device('auto'))"
 ```
 
 `auto` chooses CUDA, then MPS, then CPU. Use `--device cpu` to run without a GPU,
