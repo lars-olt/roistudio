@@ -6,71 +6,6 @@ ROIStudio is a desktop GUI for running and interacting with SPARC, an algorithm 
 
 ---
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `V` | Selection tool |
-| `R` | Rectangle tool |
-| `G` | Set all canvases to RGB |
-| `C` | Set all canvases to DCS (Color) |
-| `L` | Toggle ROI labels |
-| `M` | Toggle merge spectra |
-| `F` | Fit canvas to panel |
-| `S` | Toggle sync views |
-| `Z` | Toggle zoom context navigator |
-| `1` | Show Scene Loading |
-| `2` | Show Settings |
-| `3` | Show ROI Metadata |
-| `Escape` | Deselect ROI |
-| `Delete` / `Backspace` | Delete selected ROI |
-| `Ctrl+S` | Export SEL |
-| `Ctrl++` / `Ctrl+-` | Increase / decrease UI scale |
-| `Ctrl+Scroll` | Zoom canvas |
-| `ScrollWheel+Drag` | Pan canvas |
-
-> [!Note]
-> Trackpad users can pinch to zoom, and pan around a canvas with two fingers.
-
-ROIStudio remembers the GUI scale, window layout, active upper-left panel,
-collapsed parameter sections, ROI-label visibility, and spectral display
-preferences between sessions.
-
-### Command-line UI overrides
-
-Saved UI settings remain the defaults, but any of them can be overridden when
-ROIStudio is launched from a terminal. Explicit overrides become the new saved
-state when the application exits.
-
-```bash
-uv run python main.py --ui-scale 1.2 --window-size 1600 900 --left-panel-ratio 0.35 --upper-left-panel settings --spectral-y-min 0.0 --spectral-y-max 1.0 --spectral-line-width 1.5 --no-merge-spectra
-```
-
-Available UI options:
-
-| Option | Value |
-|--------|-------|
-| `--ui-scale` | GUI scale from `0.5` to `3.0` |
-| `--window-size` | Width and height in pixels |
-| `--window-position` | X and Y screen coordinates |
-| `--maximized` / `--no-maximized` | Maximized window state |
-| `--left-panel-ratio` | Left-panel fraction from `0.05` to `0.95` |
-| `--upper-panel-ratio` | Upper-left-panel fraction from `0.05` to `0.95` |
-| `--upper-left-panel` | `scene-loading`, `settings`, or `roi-metadata` |
-| `--view-settings-section` | `expanded` or `collapsed` |
-| `--segmentation-section` | `expanded` or `collapsed` |
-| `--roi-extraction-section` | `expanded` or `collapsed` |
-| `--spectral-analysis-section` | `expanded` or `collapsed` |
-| `--roi-labels` / `--no-roi-labels` | ROI-label visibility |
-| `--spectral-y-min` | Spectral Y-axis minimum |
-| `--spectral-y-max` | Spectral Y-axis maximum |
-| `--spectral-line-width` | Spectral line width from `0.5` to `3.0` |
-| `--merge-spectra` / `--no-merge-spectra` | Merge-camera-spectra state |
-
-Run `uv run python main.py --help` for the complete launch syntax.
-
----
-
 ## Table of Contents
 
 - [Installation](#installation)
@@ -82,6 +17,8 @@ Run `uv run python main.py --help` for the complete launch syntax.
 - [Spectral View](#spectral-view)
 - [Split Screen Mode](#split-screen-mode)
 - [Exporting and Loading SEL Files](#exporting-and-loading-sel-files)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Development](#development)
 
 ---
 
@@ -98,19 +35,39 @@ Each release contains two editions built from the same source:
 - **ROIStudio** includes automatic SPARC ROI generation and requires a SAM checkpoint.
 - **ROIStudio Lite** supports scene loading, manual ROI editing, spectra, and SEL/FITS import and export without Torch, Segment Anything, or SPARC's clustering dependencies.
 
+### Install the source tools
+
+Install [Git](https://git-scm.com/downloads), then install
+[uv](https://docs.astral.sh/uv/getting-started/installation/) using the command for
+your platform. Skip this if `git --version` and `uv --version` already work.
+uv will download Python 3.11 when it creates the environment.
+
+**Windows (PowerShell):**
+
+```powershell
+winget install --id astral-sh.uv -e
+```
+
+**macOS (Terminal):**
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Reopen your terminal after installation and check `uv --version` before continuing.
+
 ### Manual Install
 
 For RoMa, follow [Experimental RoMa](#experimental-roma) below instead.
 
-Requires Python 3.11 and [uv](https://docs.astral.sh/uv/).
+After installing the source tools above, create the Python 3.11 environment:
 
 ```bash
 git clone https://github.com/lars-olt/roistudio.git
 git clone https://github.com/lars-olt/sparc.git
 
 cd roistudio
-uv venv
-uv sync
+uv sync --python 3.11
 ```
 
 **GPU acceleration (optional)** - if you have a CUDA-compatible GPU, install PyTorch with CUDA support on top of the uv environment. Find the right command for your system and CUDA version at [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/), then run it with `--force-reinstall`:
@@ -122,17 +79,29 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu
 
 Without this step ROIStudio will run in CPU mode, which is slower for segmentation but otherwise fully functional.
 
-### Running tests
+Activate `.venv` from the repository directory:
 
-Tests run headlessly and do not require a SAM checkpoint or real rover data:
+**Windows (PowerShell):**
 
-```bash
-uv run --no-sync python -m unittest discover -s tests -p "test_*.py"
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
-Pull requests and pushes to `main` run the suite on Windows and Apple Silicon.
-Version tags trigger the packaged Full and Lite builds, executable smoke tests,
-Lite dependency audit, and GitHub release.
+**macOS (Terminal):**
+
+```bash
+source .venv/bin/activate
+```
+
+If PowerShell blocks activation, run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` and try again.
+This applies only to the current terminal.
+
+Launch from `roistudio` with:
+
+```bash
+python main.py
+```
 
 ### Setting the SAM Model Path
 
@@ -146,22 +115,20 @@ ROIStudio requires a SAM model checkpoint to run the SPARC pipeline. Download `s
 ## Experimental RoMa
 
 RoMa is an experimental alternative to homography for aligning the left and
-right images. ROIStudio uses SPARC’s implementation, and paired ROIs remain
-inscribed rectangles. RoMa is available from source; packaged applications
-do not include it.
+right images. ROIStudio uses SPARC’s implementation, and paired ROIs remain inscribed
+rectangles. RoMa is available from source; packaged applications exclude it.
 
-This setup supports **Windows (64-bit), with CPU or NVIDIA CUDA**, and
-**Apple Silicon macOS, with CPU or MPS**. Intel Macs cannot use this setup:
-[official PyTorch wheels for Intel Macs ended after 2.2](https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690),
-and RoMa needs a newer version.
+Supported platforms are **64-bit Windows (CPU or NVIDIA CUDA)** and **Apple
+Silicon macOS (CPU or MPS)**. On Apple Silicon, use a native ARM64 terminal,
+without Rosetta. Intel Macs lack the required PyTorch wheels; see the
+[PyTorch support notice](https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690).
 
-### 1. Set up the environment
+For a new setup, first [install Git and uv](#install-the-source-tools), then follow
+the steps below. If RoMa already works, go straight to [launching](#5-launch-with-roma).
 
-Install [Git](https://git-scm.com/downloads) and
-[uv](https://docs.astral.sh/uv/getting-started/installation/), then open PowerShell
-on Windows or Terminal on macOS. Use these instructions instead of the standard
-installation above. uv creates a Python 3.11 environment in `.venv` and downloads
-Python if needed. On Apple Silicon, use a native ARM64 terminal, without Rosetta.
+### 1. Create and activate the environment
+
+Clone the source and install the pipeline dependencies:
 
 ```bash
 git clone https://github.com/lars-olt/roistudio.git
@@ -170,21 +137,44 @@ cd roistudio
 uv sync --python 3.11 --inexact --no-install-package torch --no-install-package torchvision
 ```
 
-Keep the two repositories beside each other: ROIStudio is configured to use
-`../sparc`. This installs the GUI and full SPARC pipeline into
-`roistudio/.venv`; a separate SPARC environment is not needed.
+Keep the two repositories beside each other. ROIStudio uses `../sparc` and
+installs both applications into `roistudio/.venv`; no separate SPARC environment
+is needed.
 
-For an existing source installation, close ROIStudio, skip cloning, open the `roistudio` directory,
-and run the `uv sync` command above to reuse its Python 3.11 `.venv`. Deactivate
-any other environment before following these steps. `--inexact` keeps additional
-packages you have installed.
+For an existing source installation, close any running app, skip cloning, and
+run the `uv sync` command from `roistudio` to reuse its Python 3.11 `.venv`.
+`--inexact` keeps extra packages. PyTorch is installed separately in the next
+step because RoMa needs a newer version than the standard environment.
 
-The command installs the pipeline dependencies but leaves PyTorch for the next
-step. The standard environment pins an older PyTorch version; RoMa uses 2.6.
+Activate `.venv` from the repository directory:
+
+**Windows (PowerShell):**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+**macOS (Terminal):**
+
+```bash
+source .venv/bin/activate
+```
+
+If PowerShell blocks activation, run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` and try again.
+This applies only to the current terminal.
+
+Keep this terminal open for the remaining steps. Check which Python is active:
+
+```bash
+python -c "import sys; print(sys.executable)"
+```
+
+The path must point inside this repository’s `.venv`.
 
 ### 2. Install PyTorch
 
-Run **one** of these commands from the same directory:
+Run **one** command for your platform:
 
 **Windows — CPU:**
 
@@ -192,70 +182,95 @@ Run **one** of these commands from the same directory:
 uv pip install --python .venv --reinstall "numpy<2" torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
 ```
 
-**Windows — NVIDIA GPU:** use this with a CUDA-compatible GPU and an up-to-date
-NVIDIA driver. The wheel includes the CUDA runtime.
+**Windows — NVIDIA GPU:** requires a compatible GPU and an up-to-date NVIDIA
+driver. The wheel includes the CUDA runtime.
 
 ```bash
 uv pip install --python .venv --reinstall "numpy<2" torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 ```
 
-**macOS — Apple Silicon:** the same build supports CPU and MPS.
+**macOS — Apple Silicon:** supports both CPU and MPS.
 
 ```bash
 uv pip install --python .venv --reinstall "numpy<2" torch==2.6.0 torchvision==0.21.0
 ```
 
-These are the [PyTorch 2.6 installation builds](https://pytorch.org/get-started/previous-versions/#v260).
-`--reinstall` also handles switching an existing installation between CPU and CUDA.
+These use the [PyTorch 2.6 builds](https://pytorch.org/get-started/previous-versions/#v260).
+`--reinstall` also handles switching an existing environment between CPU and CUDA.
 
 ### 3. Install requirements-roma.txt (required)
 
-From the `roistudio` directory, run this command on Windows or macOS to install
-RoMa and its dependencies into `roistudio/.venv`:
+From `roistudio`, install RoMa into the same `.venv`:
 
 ```bash
 uv pip install --python .venv -r ../sparc/requirements-roma.txt
 ```
 
-Complete this step after installing PyTorch, including when updating an existing
-environment. Wait for the installation to succeed before continuing.
-
-### 4. Check and run
-
-Check the Python path, RoMa import, and selected device. The printed Python
-path should be inside this checkout’s `roistudio/.venv`:
+Wait for installation to finish, then verify the import and selected device:
 
 ```bash
-uv run --no-sync python -c "import sys; print('Python:', sys.executable); from romatch import roma_outdoor; from sparc.utils.device import resolve_device; print('RoMa device:', resolve_device('auto'))"
+python -c "from romatch import roma_outdoor; from sparc.utils.device import resolve_device; print('RoMa device:', resolve_device('auto'))"
 ```
 
-`auto` chooses CUDA, then MPS, then CPU. Use `--device cpu` to run without a GPU,
-`--device cuda` for an NVIDIA GPU, or `--device mps` for an Apple Silicon GPU.
-If the check reports `cpu` when you expected a GPU, check the PyTorch build and
-driver or macOS support before running. An explicitly requested unavailable GPU
-raises an error. Unsupported MPS operations can fall back to CPU.
+### 4. Prepare the model weights
 
-Download `sam_vit_h_4b8939.pth` from
+**SAM:** download `sam_vit_h_4b8939.pth` from
 [Segment Anything](https://github.com/facebookresearch/segment-anything#model-checkpoints)
-if you do not already have it, then launch:
+and keep it in a permanent location. This checkpoint is required for automatic
+ROI generation. Reuse your existing file if you already have it.
+
+**RoMa:** the `roma_outdoor.pth` and `dinov2_vitl14_pretrain.pth` weights are
+required, but download automatically when RoMa first loads a scene. Allow internet
+access and several gigabytes of disk space for this first run. Installing
+`requirements-roma.txt` installs the software; the weight download happens later.
+
+PyTorch caches the weights outside `.venv`, normally in
+`~/.cache/torch/hub/checkpoints` (`~` is your user folder). Existing weights in
+that cache are reused across environments for the same user. To see the actual
+cache folder, including any `TORCH_HOME` override, run:
 
 ```bash
-uv run --no-sync python main.py --device auto
+python -c "from pathlib import Path; import torch; print(Path(torch.hub.get_dir()) / 'checkpoints')"
 ```
 
-In ROIStudio, set **File > Set SAM Path** to that checkpoint. Select
-**Settings > Experimental Alignment > RoMa**, then load or reload a scene and
-press **Run**. The SAM checkpoint is needed for automatic ROI generation; RoMa
-downloads its own weights on first use, so the first scene needs internet access
-and takes longer to load.
+To download and check RoMa’s weights before launching, or before going offline,
+run this once while connected. It uses CPU and reuses cached files:
 
-This environment also runs SPARC directly: from the ROIStudio directory, use
-`uv run --no-sync python -m sparc --help`. See
-[SPARC’s terminal guide](https://github.com/lars-olt/sparc#terminal-use) for a full run.
+```bash
+python -c "from romatch import roma_outdoor; roma_outdoor(device='cpu', use_custom_corr=False); print('RoMa weights ready')"
+```
 
-**Keep `--no-sync` when launching.** A plain `uv run` or `uv sync` restores the
-standard dependency pins and can remove RoMa or downgrade PyTorch. If that
-happens, repeat steps 2 and 3. You can also activate `.venv` and run `python` directly.
+Wait for `RoMa weights ready`. The local-correlation warning on Windows and macOS
+is expected and does not prevent setup.
+
+### 5. Launch with RoMa
+
+From `roistudio`, with `.venv` active:
+
+```bash
+python main.py
+```
+
+Set **File > Set SAM Path** to your SAM checkpoint. In **Settings > Experimental
+Alignment**, select **RoMa**, then load or reload a scene and press **Run**.
+The first scene takes longer if weights still need to download.
+
+Device selection defaults to `auto`: CUDA, then MPS, then CPU. To choose explicitly,
+launch with `python main.py --device cpu`, `--device cuda`, or `--device mps`.
+An unavailable requested GPU raises an error; unsupported MPS operations can
+fall back to CPU.
+
+This environment can also run SPARC from the terminal with `python -m sparc`.
+See [SPARC’s terminal guide](https://github.com/lars-olt/sparc#terminal-use).
+
+**On later launches:** open a terminal in the repository, activate `.venv` using
+the command in step 1, and run the launch command above. Dependencies and cached
+weights do not need reinstalling. Run `deactivate` when finished.
+
+If you prefer to skip activation, use `uv run --no-sync python` in place of
+`python`. Always include `--no-sync`: plain `uv run` or `uv sync` can restore the
+standard pins and remove RoMa or downgrade PyTorch. If that happens, repeat
+steps 2 and 3.
 
 ---
 
@@ -422,3 +437,82 @@ ROIStudio exports ROIs as `.sel` files compatible with MERSpect. Left-only and r
 
 - **Export** - **File > Export sel** (or `Ctrl+S`) saves the current ROIs to a `.sel` file. ROI colors are encoded as MERSpect label indices so they round-trip correctly.
 - **Load** - **File > Load sel** imports ROIs from an existing `.sel` file into the current scene.
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `V` | Selection tool |
+| `R` | Rectangle tool |
+| `G` | Set all canvases to RGB |
+| `C` | Set all canvases to DCS (Color) |
+| `L` | Toggle ROI labels |
+| `M` | Toggle merge spectra |
+| `F` | Fit canvas to panel |
+| `S` | Toggle sync views |
+| `Z` | Toggle zoom context navigator |
+| `1` | Show Scene Loading |
+| `2` | Show Settings |
+| `3` | Show ROI Metadata |
+| `Escape` | Deselect ROI |
+| `Delete` / `Backspace` | Delete selected ROI |
+| `Ctrl+S` | Export SEL |
+| `Ctrl++` / `Ctrl+-` | Increase / decrease UI scale |
+| `Ctrl+Scroll` | Zoom canvas |
+| `ScrollWheel+Drag` | Pan canvas |
+
+> [!Note]
+> Trackpad users can pinch to zoom, and pan around a canvas with two fingers.
+
+ROIStudio remembers the GUI scale, window layout, active upper-left panel,
+collapsed parameter sections, ROI-label visibility, and spectral display
+preferences between sessions.
+
+### Command-line UI overrides
+
+With `.venv` active, launch ROIStudio from a terminal to override saved UI
+settings. Explicit overrides become the new saved
+state when the application exits.
+
+```bash
+python main.py --ui-scale 1.2 --window-size 1600 900 --left-panel-ratio 0.35 --upper-left-panel settings --spectral-y-min 0.0 --spectral-y-max 1.0 --spectral-line-width 1.5 --no-merge-spectra
+```
+
+Available UI options:
+
+| Option | Value |
+|--------|-------|
+| `--ui-scale` | GUI scale from `0.5` to `3.0` |
+| `--window-size` | Width and height in pixels |
+| `--window-position` | X and Y screen coordinates |
+| `--maximized` / `--no-maximized` | Maximized window state |
+| `--left-panel-ratio` | Left-panel fraction from `0.05` to `0.95` |
+| `--upper-panel-ratio` | Upper-left-panel fraction from `0.05` to `0.95` |
+| `--upper-left-panel` | `scene-loading`, `settings`, or `roi-metadata` |
+| `--view-settings-section` | `expanded` or `collapsed` |
+| `--segmentation-section` | `expanded` or `collapsed` |
+| `--roi-extraction-section` | `expanded` or `collapsed` |
+| `--spectral-analysis-section` | `expanded` or `collapsed` |
+| `--roi-labels` / `--no-roi-labels` | ROI-label visibility |
+| `--spectral-y-min` | Spectral Y-axis minimum |
+| `--spectral-y-max` | Spectral Y-axis maximum |
+| `--spectral-line-width` | Spectral line width from `0.5` to `3.0` |
+| `--merge-spectra` / `--no-merge-spectra` | Merge-camera-spectra state |
+
+Run `python main.py --help` for the complete launch syntax.
+
+---
+
+## Development
+
+Tests run headlessly and do not require a SAM checkpoint or real rover data:
+
+```bash
+uv run --no-sync python -m unittest discover -s tests -p "test_*.py"
+```
+
+Pull requests and pushes to `main` run the suite on Windows and Apple Silicon.
+Version tags trigger the packaged Full and Lite builds, executable smoke tests,
+Lite dependency audit, and GitHub release.
