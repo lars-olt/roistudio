@@ -48,7 +48,7 @@ uv will download Python 3.11 when it creates the environment.
 winget install --id astral-sh.uv -e
 ```
 
-**macOS (Terminal):**
+**macOS / Linux (Terminal):**
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -87,7 +87,7 @@ Activate `.venv` from the repository directory:
 .\.venv\Scripts\Activate.ps1
 ```
 
-**macOS (Terminal):**
+**macOS / Linux (Terminal):**
 
 ```bash
 source .venv/bin/activate

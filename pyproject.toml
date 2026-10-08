@@ -19,7 +19,7 @@ dependencies = [
     "PyQt5==5.15.11",
     # Preserve the Windows runtime pin; macOS needs a platform-compatible Qt wheel.
     "pyqt5-qt5==5.15.2; sys_platform == 'win32'",
-    "pyqt5-qt5>=5.15.16; sys_platform == 'darwin'",
+    "pyqt5-qt5>=5.15.16; sys_platform == 'darwin' or sys_platform == 'linux'",
     "pyqt5-sip>=12.11",
 
     # --- Plotting (Qt backend) ---
@@ -38,6 +38,7 @@ environments = [
     "sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
     "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [tool.uv.sources]
