@@ -17,6 +17,7 @@
           "LIBS-cleared surface",
           "gDRT-cleared surface",
           "abraded surface",
+          "abrasion average",
           "coating (not dust)",
           "clast/inclusion",
           "tailings",
