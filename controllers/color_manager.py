@@ -42,10 +42,19 @@ class ColorManager:
         # Eraser is not a valid ROI color.
         usable = [k for k in merspect_order if k != 'eraser']
 
-        preferred = [
-            'red', 'magenta', 'cyan', 'orange', 'azure', 'purple',
-            'lime', 'rust', 'green', 'blue', 'yellow', 'magenta+2', 'magenta-3',
-        ]
+        # schema to be replaced
+        # preferred = [
+        #     'red', 'magenta', 'cyan', 'orange', 'azure', 'purple',
+        #     'lime', 'rust', 'green', 'blue', 'yellow', 'magenta+2', 'magenta-3',
+        # ]
+        
+        # proposed replacement schema
+        preferred = ['red', 'magenta', 'cyan', 'orange', 'azure', 'purple', 'lime', 'rust',
+                    'green', 'blue', 'yellow', 'magenta+2', 'blue+2', 'cyan-2', 'magenta-2', 'red+2',
+                    'orange-2', 'orange+2', 'yellow-2', 'green-2', 'cyan+2', 'cyan-3', 'magenta+1', 'green+2',
+                    'magenta-3', 'orange-3', 'azure+2', 'blue-2', 'red-2', 'magenta-1', 'orange+1', 'cyan+1',
+                    'azure+1', 'blue-1', 'red-1', 'cyan-1', 'orange-1', 'green-1',]
+        
         self._build_palette(usable, preferred)
         self._aliases = {name.lower(): name for name in usable}
 
